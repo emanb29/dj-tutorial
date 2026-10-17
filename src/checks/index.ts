@@ -5,6 +5,7 @@ export type { GradedAttempt } from "./deck-controls.ts";
 export {
   applyCheckResult,
   criterionRecords,
+  DUE_SLACK_HOURS,
   FINAL_MIX_ROUTE,
   isCourseComplete,
   lessonOfCriterion,

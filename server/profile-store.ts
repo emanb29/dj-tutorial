@@ -8,12 +8,13 @@ import {
   type LearnerId,
   type LearnerRecord,
 } from "@shared/learner.ts";
+import { DEFAULT_MAX_LEARNERS } from "./config.ts";
 import { SerialQueue, readJsonIfPresent, writeJsonAtomic } from "./json-file.ts";
 
 export const PROFILE_STORE_SCHEMA_VERSION = 1;
 export const PROFILE_STORE_FILE = "profiles.json";
-/** Bounds the file, which is rewritten whole on every save. A local app has few Learners. */
-export const MAX_LEARNERS = 16;
+/** Bounds the file, which is rewritten whole on every save (`DEFAULT_MAX_LEARNERS`, server/config.ts). */
+export const MAX_LEARNERS = DEFAULT_MAX_LEARNERS;
 
 const ProfileStoreFileSchema = z
   .strictObject({
@@ -55,9 +56,10 @@ export class ProfileStore {
   private constructor(
     private readonly path: string,
     private learners: Readonly<Record<LearnerId, LearnerRecord>>,
+    readonly maxLearners: number,
   ) {}
 
-  static async open(dataDir: string): Promise<ProfileStore> {
+  static async open(dataDir: string, maxLearners: number = MAX_LEARNERS): Promise<ProfileStore> {
     const path = join(dataDir, PROFILE_STORE_FILE);
     let raw: unknown;
     try {
@@ -66,13 +68,13 @@ export class ProfileStore {
       throw new ProfileStoreError(path, [error instanceof Error ? error.message : String(error)]);
     }
     if (raw === undefined) {
-      const store = new ProfileStore(path, { [DEFAULT_LEARNER_ID]: emptyLearnerRecord(DEFAULT_LEARNER_ID) });
+      const store = new ProfileStore(path, { [DEFAULT_LEARNER_ID]: emptyLearnerRecord(DEFAULT_LEARNER_ID) }, maxLearners);
       await store.persist(store.learners);
       return store;
     }
     const parsed = ProfileStoreFileSchema.safeParse(raw);
     if (!parsed.success) throw new ProfileStoreError(path, describeIssues(parsed.error));
-    return new ProfileStore(path, parsed.data.learners);
+    return new ProfileStore(path, parsed.data.learners, maxLearners);
   }
 
   get(learnerId: LearnerId): LearnerRecord | undefined {
@@ -83,9 +85,9 @@ export class ProfileStore {
     return learnerId in this.learners;
   }
 
-  /** `true` once the store holds `MAX_LEARNERS`; no new Learner can be added then. */
+  /** `true` once the store holds `maxLearners`; no new Learner can be added then. */
   get isFull(): boolean {
-    return Object.keys(this.learners).length >= MAX_LEARNERS;
+    return Object.keys(this.learners).length >= this.maxLearners;
   }
 
   /** Creates or replaces one Learner's record. Resolves once the file is on disk. */

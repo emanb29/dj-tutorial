@@ -11,6 +11,7 @@ import {
   checkSpecFor,
   classifyTap,
   GAIN_ZONE_DB,
+  LESSON_GRADING,
   practiceDecksFor,
   practiceLoopFor,
   sliceTrack,
@@ -18,6 +19,7 @@ import {
   type CheckPlan,
   type DeckSetup,
   type DeckSetups,
+  type Grading,
   type LessonDefinition,
   type LessonTrack,
   type LoopPlan,
@@ -68,6 +70,8 @@ interface RunningCheck {
   sliceCued: boolean;
   /** Set once the audio part ended: the recorder's stop, with the end reason. */
   stopped: Promise<Result<{ attempt: RecordedAttempt }>> | null;
+  /** performance.now() when the Learner last closed each channel fader, while it stays closed. */
+  readonly closedAtMs: Map<DeckId, number>;
 }
 
 export class LessonSession {
@@ -102,6 +106,8 @@ export class LessonSession {
       readonly checkFailed: (message: string) => void;
     },
     hasDeckB: boolean,
+    /** How attempts are graded: a Lesson Check, or (Placement) a short-form task. */
+    private readonly grading: Grading = LESSON_GRADING,
   ) {
     this.recorder = new AttemptRecorder(engine);
     this.onDeck = { A: track, B: hasDeckB ? track : null };
@@ -183,9 +189,14 @@ export class LessonSession {
 
   private onFader(deck: DeckId, value: number): void {
     this.observe({ kind: "fader", deck, value });
+    const check = this.check;
+    if (check !== null && check.stopped === null) {
+      if (value <= FADER_DOWN) {
+        if (!check.closedAtMs.has(deck)) check.closedAtMs.set(deck, performance.now());
+      } else check.closedAtMs.delete(deck);
+    }
     if (deck !== "A") return;
     if (value >= FADER_UP) this.faderWasUp = true;
-    const check = this.check;
     if (check?.plan.endWhen.kind === "faded-out" && this.faderWasUp && value <= FADER_DOWN) {
       setTimeout(() => {
         // Only the attempt that faded out: a restart within the settle time is a new attempt.
@@ -268,6 +279,7 @@ export class LessonSession {
     this.send({ control: "seek", deck, value: setup.pos });
     this.send({ control: "channel-fader", deck, value: setup.fader });
     if (setup.trim !== undefined) this.send({ control: "trim", deck, value: setup.trim });
+    if (setup.tempoPercent !== undefined) this.send({ control: "tempo", deck, value: setup.tempoPercent / this.engine.deckState(deck).tempoRangePercent });
     if (setup.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck, value: setup.headphoneCue });
     if (setup.cuePoint === true && this.engine.deckState(deck).cuePointSec !== setup.pos) {
       this.send({ control: "deck-cue", deck, value: true });
@@ -391,7 +403,7 @@ export class LessonSession {
       this.listener.checkFailed(`The attempt could not be recorded (${started.error.kind}). Try again with Enter.`);
       return;
     }
-    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null };
+    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map() };
     this.check = check;
     this.faderWasUp = false;
     this.playDecks(decks);
@@ -411,6 +423,11 @@ export class LessonSession {
         return false;
       case "after":
         return elapsedMs >= end.sec * 1000;
+      case "faded-out-then": {
+        const closedAt = check.closedAtMs.get(end.deck);
+        const barMs = (4 * 60_000) / this.track.grid.bpm;
+        return closedAt !== undefined && performance.now() - closedAt >= end.bars * barMs;
+      }
       case "position": {
         const reading = this.engine.playhead("A");
         return reading.ok && reading.positionSec >= end.pos;
@@ -551,6 +568,7 @@ export class LessonSession {
     const spec = checkSpecFor(this.definition, this.track, plan, attempt, {
       window: { from: attempt.startedCtx, to: attempt.endedCtx },
       passedLessons,
+      grading: this.grading,
     });
     return runCheck(spec, attempt);
   }

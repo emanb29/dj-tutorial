@@ -12,6 +12,7 @@ describe("loadRuntimeConfig", () => {
         coachMonthlyCapUsd: 5,
         coachLogPayloads: false,
         allowedOrigins: DEFAULT_ALLOWED_ORIGINS,
+        maxLearners: 16,
       },
     });
   });
@@ -29,6 +30,7 @@ describe("loadRuntimeConfig", () => {
       COACH_MONTHLY_CAP_USD: "2.5",
       COACH_LOG_PAYLOADS: "1",
       ALLOWED_ORIGINS: "http://127.0.0.1:5179, https://example.test",
+      MAX_LEARNERS: "500",
     });
     expect(result).toEqual({
       ok: true,
@@ -39,6 +41,7 @@ describe("loadRuntimeConfig", () => {
         coachMonthlyCapUsd: 2.5,
         coachLogPayloads: true,
         allowedOrigins: ["http://127.0.0.1:5179", "https://example.test"],
+        maxLearners: 500,
       },
     });
   });
@@ -51,11 +54,12 @@ describe("loadRuntimeConfig", () => {
       COACH_MONTHLY_CAP_USD: "-1",
       COACH_LOG_PAYLOADS: "yes",
       ALLOWED_ORIGINS: "http://127.0.0.1:5179/app",
+      MAX_LEARNERS: "0",
     });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.problems).toHaveLength(5);
+    expect(result.problems).toHaveLength(6);
     expect(result.problems.join("\n")).not.toContain("test-key-not-real");
   });
 });

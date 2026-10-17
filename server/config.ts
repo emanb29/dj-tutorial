@@ -60,6 +60,13 @@ export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
 export const DEFAULT_DATA_DIR = ".local/data";
 export const DEFAULT_ORIGINALS_DIR = ".local/tracks/originals";
 export const DEFAULT_COACH_MONTHLY_CAP_USD = 5;
+/**
+ * The profile store's size: it is one file rewritten whole on every save, and a local app has few
+ * Learners. The end-to-end tests, which make a fresh Learner per test, raise it with MAX_LEARNERS.
+ * Here, not in the store, because vite.config.ts reads this file and must not pull in @shared.
+ */
+export const DEFAULT_MAX_LEARNERS = 16;
+const MAX_LEARNERS_LIMIT = 10_000;
 
 /** Everything else the API needs: storage, the Coach key and its spend cap, and who may call it. */
 export interface RuntimeConfig {
@@ -71,6 +78,8 @@ export interface RuntimeConfig {
   readonly coachMonthlyCapUsd: number;
   readonly coachLogPayloads: boolean;
   readonly allowedOrigins: readonly string[];
+  /** How many Learners the profile store may hold. */
+  readonly maxLearners: number;
 }
 
 export type RuntimeConfigResult =
@@ -78,8 +87,8 @@ export type RuntimeConfigResult =
   | { readonly ok: false; readonly problems: readonly string[] };
 
 /**
- * Reads `DATA_DIR`, `ORIGINALS_DIR`, `ANTHROPIC_API_KEY`, `COACH_MONTHLY_CAP_USD`, `COACH_LOG_PAYLOADS` and
- * `ALLOWED_ORIGINS`, collecting every problem. Problems never include the key's value.
+ * Reads `DATA_DIR`, `ORIGINALS_DIR`, `ANTHROPIC_API_KEY`, `COACH_MONTHLY_CAP_USD`, `COACH_LOG_PAYLOADS`,
+ * `ALLOWED_ORIGINS` and `MAX_LEARNERS`, collecting every problem. Problems never include the key's value.
  */
 export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
   const problems: string[] = [];
@@ -131,6 +140,14 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
     problems.push(`ALLOWED_ORIGINS is set but lists no origin. Unset it to use ${DEFAULT_ALLOWED_ORIGINS.join(",")}.`);
   }
 
+  const rawMaxLearners = env["MAX_LEARNERS"];
+  const maxLearners = rawMaxLearners === undefined ? DEFAULT_MAX_LEARNERS : Number(rawMaxLearners);
+  if (rawMaxLearners !== undefined && (rawMaxLearners.trim() === "" || !Number.isInteger(maxLearners) || maxLearners < 1 || maxLearners > MAX_LEARNERS_LIMIT)) {
+    problems.push(
+      `MAX_LEARNERS is "${rawMaxLearners}", but it must be a whole number from 1 to ${String(MAX_LEARNERS_LIMIT)}. Unset it to use ${String(DEFAULT_MAX_LEARNERS)}.`,
+    );
+  }
+
   return problems.length > 0
     ? { ok: false, problems }
     : {
@@ -142,6 +159,7 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
           coachMonthlyCapUsd,
           coachLogPayloads: rawLogPayloads === "1",
           allowedOrigins,
+          maxLearners,
         },
       };
 }

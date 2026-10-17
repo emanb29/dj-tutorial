@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { curriculumRequest, isBuiltLesson, withCurriculum, type BuiltLessonId } from "@lessons";
+import { curriculumRequest, isBuiltLesson, placementCurriculumRequest, withCurriculum, withPlacement, type BuiltLessonId } from "@lessons";
 import type { CheckResult } from "@shared/check-result.ts";
+import type { PlacementResult } from "@shared/placement.ts";
 import { DEFAULT_LEARNER_ID, emptyLearnerRecord, LearnerIdSchema, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
 import { HealthIndicator } from "./HealthIndicator.tsx";
 import { loadLearner, requestCurriculum, saveLearner } from "./lesson/api-client.ts";
@@ -12,6 +13,7 @@ import { SaveQueue, type SaveStatus } from "./save-queue.ts";
 const Playground = lazy(() => import("./playground/Playground.tsx").then((module) => ({ default: module.Playground })));
 const LessonPlayer = lazy(() => import("./lesson/LessonPlayer.tsx").then((module) => ({ default: module.LessonPlayer })));
 // The Originals player is its own small page, and its own chunk.
+const Placement = lazy(() => import("./placement/Placement.tsx").then((module) => ({ default: module.Placement })));
 const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
@@ -31,6 +33,8 @@ export function playgroundEnabled(location: { pathname: string; search: string }
   return devServer || new URLSearchParams(location.search).has("playground");
 }
 const LESSON_PATH = /^\/lesson\/([a-z-]+)$/;
+/** Re-taking Placement, from the Lesson list. A first run (no profile yet) shows it at "/". */
+export const PLACEMENT_PATH = "/placement";
 
 /**
  * URL options, all optional:
@@ -57,6 +61,8 @@ export function App() {
   const [path, setPath] = useState(() => window.location.pathname);
   const [options] = useState(() => urlOptions(window.location.search));
   const [learner, setLearner] = useState<LearnerState>({ kind: "loading" });
+  /** A Learner the server has never seen takes Placement first (at "/"). */
+  const [firstRun, setFirstRun] = useState(false);
   /** The record as last set, for answers that arrive after a render (the Curriculum re-plan). */
   const latestRecord = useRef<LearnerRecord | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "saved" });
@@ -77,8 +83,10 @@ export function App() {
     const abort = new AbortController();
     void loadLearner(options.learnerId, abort.signal).then((loaded) => {
       if (abort.signal.aborted) return;
-      const record = loaded.ok ? loaded.value : emptyLearnerRecord(options.learnerId);
+      const record = loaded.ok ? loaded.value.record : emptyLearnerRecord(options.learnerId);
       if (!loaded.ok) console.warn(`[app] ${loaded.problem.message}`);
+      // No profile on the server yet: Placement first. Offline, the list (progress is not kept anyway).
+      if (loaded.ok && !loaded.value.found) setFirstRun(true);
       latestRecord.current = record;
       setLearner({ kind: "ready", record, offline: loaded.ok ? null : loaded.problem.message });
     });
@@ -124,6 +132,40 @@ export function App() {
     [changeLearner],
   );
 
+  // Placement's end: write the record, then (once it is on the server) ask the Coach in the background.
+  // The deterministic Curriculum is already in the record, so Start never waits (placement-design §7).
+  const finishPlacement = useCallback(
+    (result: PlacementResult, graded: readonly CheckResult[]) => {
+      const record = latestRecord.current;
+      if (record === null) return;
+      const placed = withPlacement(record, result, graded);
+      if (!placed.ok) {
+        console.warn("[placement] the record refused the Placement result", placed.issues);
+        return;
+      }
+      changeLearner(placed.record);
+      const request = placementCurriculumRequest({ mission: result.mission, profileAfter: placed.record.skillProfile, graded }, crypto.randomUUID());
+      void saves.settled().then(async (saved) => {
+        if (!saved) return;
+        const answer = await requestCurriculum(record.learnerId, request);
+        const current = latestRecord.current;
+        if (answer === null || current?.learnerId !== record.learnerId) return;
+        changeLearner(withCurriculum(current, answer));
+      });
+    },
+    [changeLearner, saves],
+  );
+  const placementDone = useCallback(
+    (lessonId: BuiltLessonId | null) => {
+      setFirstRun(false);
+      navigate(lessonId === null ? "/" : `/lesson/${lessonId}`);
+    },
+    [navigate],
+  );
+  const retakePlacement = useCallback(() => {
+    navigate(PLACEMENT_PATH);
+  }, [navigate]);
+
   if (playgroundEnabled({ pathname: path, search: window.location.search }, import.meta.env.DEV)) {
     return (
       <Suspense fallback={null}>
@@ -136,6 +178,23 @@ export function App() {
     return (
       <Suspense fallback={<p className="lesson-loading">Opening the Originals…</p>}>
         <OriginalsPlayer />
+      </Suspense>
+    );
+  }
+
+  const placementRun = path.replace(/\/$/, "") === PLACEMENT_PATH ? "retake" : path === "/" && firstRun ? "first" : null;
+  if (placementRun !== null && learner.kind === "ready") {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening Placement…</p>}>
+        <Placement
+          key={placementRun}
+          learner={learner.record}
+          run={placementRun}
+          trackPreference={options.trackPreference}
+          onLearnerChange={changeLearner}
+          onFinish={finishPlacement}
+          onDone={placementDone}
+        />
       </Suspense>
     );
   }
@@ -166,7 +225,7 @@ export function App() {
         <h1>Learn to DJ</h1>
         <HealthIndicator />
       </header>
-      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} /> : <p>Loading your progress…</p>}
+      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} /> : <p>Loading your progress…</p>}
     </main>
   );
 }

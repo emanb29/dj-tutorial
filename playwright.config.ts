@@ -56,7 +56,8 @@ export default defineConfig({
     {
       command: "npm run start:api",
       // The preview's origin, whichever port it is on, is the one the API accepts writes from.
-      env: { API_PORT: String(API_PORT), ALLOWED_ORIGINS: previewUrl, DATA_DIR: join(e2eData, "data"), ORIGINALS_DIR: join(e2eData, "originals") },
+      // Every test makes a fresh Learner (a first run is one with no profile): room for all of them.
+      env: { API_PORT: String(API_PORT), ALLOWED_ORIGINS: previewUrl, DATA_DIR: join(e2eData, "data"), ORIGINALS_DIR: join(e2eData, "originals"), MAX_LEARNERS: "1000" },
       url: `http://127.0.0.1:${String(API_PORT)}/api/health`,
       reuseExistingServer: false,
     },

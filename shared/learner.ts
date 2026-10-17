@@ -9,6 +9,7 @@ import {
   type CriterionId,
 } from "./check-types.ts";
 import { MISSION_MAX_CHARS, MissionTagSchema } from "./mission.ts";
+import { PLACEMENTS_KEPT, PlacementResultSchema } from "./placement.ts";
 
 /** Lower-case letters, digits and dashes, so ids are safe in paths and file names. */
 export const LearnerIdSchema = z
@@ -121,6 +122,8 @@ export const LearnerRecordSchema = z
      * Absent in records from before it existed.
      */
     headphones: z.strictObject({ checkedAt: IsoTimeSchema }).nullable().optional(),
+    /** Every Placement run, oldest first (placement-design §8). Absent in records from before Placement. */
+    placements: z.array(PlacementResultSchema).max(PLACEMENTS_KEPT).optional(),
     skillProfile: SkillProfileSchema,
   })
   .superRefine((record, context) => {

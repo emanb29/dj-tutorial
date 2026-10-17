@@ -85,4 +85,22 @@ describe("the profile save queue", () => {
     await settle();
     expect(statuses.at(-1)).toEqual({ kind: "saved" });
   });
+
+  it("settles once every record saved so far has landed, true when the last save succeeded", async () => {
+    const saver = manualSaver();
+    const queue = new SaveQueue(saver.save, () => undefined);
+    await expect(queue.settled()).resolves.toBe(true);
+    queue.save(record("first"));
+    queue.save(record("newest"));
+    let settled: boolean | null = null;
+    void queue.settled().then((ok) => {
+      settled = ok;
+    });
+    saver.calls[0]?.finish(true);
+    await settle();
+    expect(settled).toBeNull();
+    saver.calls[1]?.finish(false);
+    await settle();
+    expect(settled).toBe(false);
+  });
 });

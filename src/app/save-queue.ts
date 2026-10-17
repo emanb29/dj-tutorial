@@ -12,6 +12,8 @@ export class SaveQueue {
   private pending: LearnerRecord | null = null;
   /** The last record that failed to save: what a retry saves. */
   private failed: LearnerRecord | null = null;
+  /** Waiting for the queue to go idle (`settled`). */
+  private waiters: ((saved: boolean) => void)[] = [];
 
   constructor(
     private readonly saveRecord: (record: LearnerRecord) => Promise<Loaded<LearnerRecord>>,
@@ -22,6 +24,23 @@ export class SaveQueue {
     this.failed = null;
     this.pending = record;
     if (!this.inFlight) this.next();
+  }
+
+  /**
+   * Resolves once every record handed to `save` so far has been saved or has failed: true when the
+   * last one saved. For a request that needs the record on the server first (the Coach's Curriculum).
+   */
+  settled(): Promise<boolean> {
+    if (!this.inFlight && this.pending === null) return Promise.resolve(this.failed === null);
+    return new Promise((resolve) => {
+      this.waiters.push(resolve);
+    });
+  }
+
+  private idle(saved: boolean): void {
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const resolve of waiters) resolve(saved);
   }
 
   /** Saves the record whose save failed, again. */
@@ -48,11 +67,13 @@ export class SaveQueue {
       }
       if (saved.ok) {
         this.onStatus({ kind: "saved" });
+        this.idle(true);
         return;
       }
       console.warn(`[app] ${saved.problem.message}`);
       this.failed = record;
       this.onStatus({ kind: "failed", message: saved.problem.message });
+      this.idle(false);
     });
   }
 }

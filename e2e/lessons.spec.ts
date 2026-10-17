@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { checkPlayingPast, learner, openLesson, playingPast, seedPassed, tapAtBeats, type LessonWindow } from "./lesson-support.ts";
+import { checkPlayingPast, ensureProfile, learner, openLesson, playingPast, seedPassed, tapAtBeats, type LessonWindow } from "./lesson-support.ts";
 
 // Lessons 1–3 end to end, muted, on the synthetic practice groove (?track=synthetic): 124 BPM, the
 // first beat at 0 s, bar 1 on beat 0, so every beat and downbeat is known. Each test has its own
@@ -124,7 +124,9 @@ test("the Lesson screen fits a 13-inch laptop (1280×800) with the controller, w
 });
 
 test("a Lesson whose prerequisites are not passed is locked in the list", async ({ page }) => {
-  await page.goto(`/?learner=${learner("locked")}`);
+  const learnerId = learner("locked");
+  await ensureProfile(page, learnerId);
+  await page.goto(`/?learner=${learnerId}`);
   await expect(page.locator('li[data-lesson="deck-basics"]')).toHaveAttribute("data-standing", "ready");
   await expect(page.locator('li[data-lesson="phrases"]')).toHaveAttribute("data-standing", "locked");
 });

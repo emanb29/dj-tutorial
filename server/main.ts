@@ -17,7 +17,7 @@ if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
 const { host, port } = requireServerConfig(process.env);
 const runtime = requireRuntimeConfig(process.env);
 
-const profiles = await ProfileStore.open(runtime.dataDir);
+const profiles = await ProfileStore.open(runtime.dataDir, runtime.maxLearners);
 const ledger = await SpendLedger.open(runtime.dataDir, runtime.coachMonthlyCapUsd);
 const client = runtime.anthropicApiKey === null ? null : new Anthropic({ apiKey: runtime.anthropicApiKey });
 if (client === null) consoleLogger.info("coach.noKey", { message: "Coach: no API key, using built-in Curriculum and lines" });

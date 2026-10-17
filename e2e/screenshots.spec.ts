@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ensureProfile } from "./lesson-support.ts";
 
 // Screenshots of the app shell for the docs, taken only on request (muted, synthetic groove):
 //   SCREENSHOTS=1 npm run test:e2e -- screenshots
@@ -17,13 +18,17 @@ async function noPageScroll(page: Page): Promise<void> {
 }
 
 test("screenshot of the Lesson list", async ({ page }) => {
-  await page.goto(`/?learner=e2e-shots-list-${String(Date.now())}`);
+  const learnerId = `e2e-shots-list-${String(Date.now())}`;
+  await ensureProfile(page, learnerId);
+  await page.goto(`/?learner=${learnerId}`);
   await expect(page.locator('li[data-lesson="deck-basics"]')).toBeVisible();
   await page.screenshot({ path: path("lesson-list") });
 });
 
 test("screenshots of a Lesson: the hook and the result card", async ({ page }) => {
-  await page.goto(`/?learner=e2e-shots-lesson-${String(Date.now())}&track=synthetic`);
+  const learnerId = `e2e-shots-lesson-${String(Date.now())}`;
+  await ensureProfile(page, learnerId);
+  await page.goto(`/?learner=${learnerId}&track=synthetic`);
   await page.locator('li[data-lesson="deck-basics"]').getByRole("button").click();
   await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("Press X");
   await page.waitForTimeout(500);

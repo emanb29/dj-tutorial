@@ -1,7 +1,7 @@
 // The minimal Lesson list: Lessons 1–3 with passed / retained state from the Skill profile.
 // A Lesson opens once its prerequisites are passed; progress is never time-gated.
 import { lessonRetention } from "@checks";
-import { LESSONS, type BuiltLessonId } from "@lessons";
+import { hasPlacement, LESSONS, startLesson, type BuiltLessonId } from "@lessons";
 import { lessonById } from "@shared/catalogue.ts";
 import type { LearnerRecord } from "@shared/learner.ts";
 import "./lesson-list.css";
@@ -30,9 +30,12 @@ interface LessonListProps {
   readonly learner: LearnerRecord;
   readonly offline: string | null;
   readonly onStart: (lessonId: BuiltLessonId) => void;
+  /** Placement again (placement-design §9): any time, it only adds credit. */
+  readonly onRetakePlacement: () => void;
 }
 
-export function LessonList({ learner, offline, onStart }: LessonListProps) {
+export function LessonList({ learner, offline, onStart, onRetakePlacement }: LessonListProps) {
+  const startHere = startLesson(learner.skillProfile);
   return (
     <section className="lesson-list" aria-label="Lessons">
       {offline === null ? null : (
@@ -40,12 +43,17 @@ export function LessonList({ learner, offline, onStart }: LessonListProps) {
           {offline} Progress is kept for this visit only.
         </p>
       )}
+      <p className="lesson-list-placement">
+        <button type="button" className="btn btn-quiet" onClick={onRetakePlacement}>
+          {hasPlacement(learner) ? "Re-take Placement" : "Show me what you can do"}
+        </button>
+      </p>
       <ol>
         {LESSONS.map((lesson, index) => {
           const standing = lessonStanding(learner, lesson.id);
           const prerequisites = lessonById(lesson.id).prerequisites.map((id) => lessonById(id).title);
           return (
-            <li key={lesson.id} data-lesson={lesson.id} data-standing={standing}>
+            <li key={lesson.id} data-lesson={lesson.id} data-standing={standing} data-start={lesson.id === startHere || undefined}>
               <span className="lesson-number">{index + 1}</span>
               <span className="lesson-title">{lesson.title}</span>
               <span className="lesson-standing">{STANDING_WORDS[standing]}</span>

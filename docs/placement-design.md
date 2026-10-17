@@ -249,6 +249,26 @@ declare function nextTask(result: PlacementResult, profile: SkillProfile, catalo
 | Uses the existing `CurriculumRequest` unchanged | One Coach contract; the privacy table in coach-design §5 still holds |
 | `creditedLessons` derived from `tasks`, not stored | One source of truth |
 
+## Decided in the build (ISS-83)
+
+Code: rules in `src/lessons/placement.ts`, tasks in `src/lessons/placement-tasks.ts`, screens in
+`src/app/placement/`, stored types in `shared/placement.ts`.
+
+| Decision | Rationale |
+|---|---|
+| `tempo-fader` is credited only by a task that measured `tempo-fader.tempo-matched` as met (the `bass-swap` task with SYNC off and tempos apart), or by `blend-by-ear` (SYNC locked off, tempos 0.5–2% apart). A `sync-blend` or `nudge-phase` pass credits the rest of its closure but not `tempo-fader` | ISS-81; credit rests on a measurement, and sync (or equal tempos) shows nothing about the tempo fader. This narrows the §3 table's "`tempo-fader`, `sync-blend` + ancestors" |
+| A narrowing pass credits its Lesson and its ancestors, not the rest of its skip group (§3 rule 2's group part is for group tasks) | The §3 table; `nudge-phase` passing must not credit `blend-by-ear` |
+| Not yet counts as "failed" for sequencing: its group is narrowed, and Lessons on top of it are not tested | It was not passed; testing on top of it would break §3 rule 3 |
+| A task stores a reduced Check result (each criterion's status), not the full `CheckResult` | It is all `creditedLessons` reads; the full result goes into the Skill profile and the Coach request |
+| Placement writes the record once, at the Summary, with the deterministic Curriculum already in it; the Coach request waits for that save | The Coach endpoint needs the Learner on the server; Start never waits |
+| First run = the server has no profile for the Learner. Re-take: the Lesson list's "Re-take Placement" (`/placement`) | There is no Curriculum menu yet |
+| Skipping at the Mission still shows the Summary (Start = Lesson 1) and is stored as a run (`skippedAtMission`) | §1 diagram; the Learner is not asked again |
+| The phrases task plays 32 bars from a phrase start and grades the next three phrase starts; the drop is pad 1–4 of those four phrases. beats-and-bars has a 4-bar count-in, nudge-phase grades phase from 4 bars in | The hook (§4.2) without stretching an attempt past a minute |
+| The cue-point task loads the slice on deck A, as the Lesson does ("Cue on a 1 by ear, then R") | One code path with the Lesson |
+| Captions are at most 9 words; three of §4.1's were shortened to fit | §4.1's own limit |
+| A Start Lesson that is not built yet (Lessons 8+) shows "coming soon" and Start opens the Lesson list | Lessons 8–16 exist only as Checks |
+| One track for the whole run (the synthetic groove, or an Original that suits every task); no "first alternate" yet | Lesson track sets do not exist yet |
+
 ## Questions for the owner
 
 None. Time, money and privacy are already settled: the 6-minute budget is the brief, the Coach

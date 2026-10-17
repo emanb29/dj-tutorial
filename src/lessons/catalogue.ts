@@ -1,6 +1,6 @@
 // Lessons 1–7 as data (docs/lesson-catalogue.md §1, check-design §4): the hook, practice, the Check
 // plan on the chosen track, and authored tips. Captions, not prose: a few words, the key in brackets.
-import type { Aids, Attempt, CtxSpan, DeckId, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
+import type { Aids, Attempt, CheckMode, CheckVariant, CtxSpan, DeckId, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
 import { barStart, beatSec, cuedAt, heardTimeOf, phraseOf, phraseStart, sliceTrack, trimKnobFor } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
@@ -19,7 +19,7 @@ export const LESSON_AIDS: Aids = { sync: false, quantize: false, bpmDisplay: fal
  * starts, the practice is still heard. A bound the deck never reached is +Infinity: runCheck voids such
  * an attempt (`sectionNotHeard`) rather than failing it.
  */
-function heardSpan(track: LessonTrack, plan: CheckPlan, attempt: Attempt, window: CtxSpan, fromPos: number, toPos: number, deck: DeckId = "A"): CtxSpan {
+export function heardSpan(track: LessonTrack, plan: CheckPlan, attempt: Attempt, window: CtxSpan, fromPos: number, toPos: number, deck: DeckId = "A"): CtxSpan {
   const playhead = attempt.decks[deck]?.playhead;
   const startPos = deck === "A" ? plan.startPos : plan.deckB?.pos;
   const cued = playhead === undefined || startPos === undefined ? null : cuedAt(playhead, startPos, window.from);
@@ -29,7 +29,7 @@ function heardSpan(track: LessonTrack, plan: CheckPlan, attempt: Attempt, window
 }
 
 /** The first phrase at or after 2 whose 16 bars hold no breakdown or build (they may have no kick). */
-function steadyPhrase(track: LessonTrack): number {
+export function steadyPhrase(track: LessonTrack): number {
   const quiet = track.sections.filter((section) => section.name === "breakdown" || section.name === "build").map((section) => section.phrase);
   for (let phrase = 2; phrase + 1 < track.phraseStarts.length; phrase += 1) {
     if (!quiet.includes(phrase) && !quiet.includes(phrase + 1)) return phrase;
@@ -477,14 +477,24 @@ export function unlocksAfter(lessons: readonly LessonId[]): ReadonlySet<ControlI
   return new Set(LESSONS.filter((lesson) => lessons.includes(lesson.id)).flatMap((lesson) => lesson.unlocks));
 }
 
+/** How an attempt is graded: a Lesson Check (the default), or another mode such as a Placement task. */
+export interface Grading {
+  readonly mode: CheckMode;
+  readonly variant: CheckVariant;
+  readonly aids: Aids;
+}
+
+export const LESSON_GRADING: Grading = { mode: "lesson", variant: "full", aids: LESSON_AIDS };
+
 /** The TaskSpec to grade an attempt of `definition` on `track` with `plan`. */
 export function checkSpecFor(
   definition: LessonDefinition,
   track: LessonTrack,
   plan: CheckPlan,
   attempt: Attempt,
-  options: { readonly window: CtxSpan; readonly passedLessons: readonly LessonId[] },
+  options: { readonly window: CtxSpan; readonly passedLessons: readonly LessonId[]; readonly grading?: Grading },
 ): TaskSpec {
+  const grading = options.grading ?? LESSON_GRADING;
   const trackSetId = track.source === "synthetic" ? null : `${definition.id}-house`;
   const tracks: readonly TaskTrack[] =
     definition.taskTracks?.(track, plan, trackSetId) ?? [
@@ -492,11 +502,11 @@ export function checkSpecFor(
       ...(plan.deckB === undefined ? [] : [{ trackId: track.trackId, trackSetId, deck: "B" as const }]),
     ];
   return {
-    mode: "lesson",
-    variant: "full",
+    mode: grading.mode,
+    variant: grading.variant,
     task: definition.taskFor(track, plan, attempt, options.window),
     tracks,
-    aids: LESSON_AIDS,
+    aids: grading.aids,
     window: options.window,
     passedLessons: options.passedLessons,
   };

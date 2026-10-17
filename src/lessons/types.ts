@@ -107,6 +107,8 @@ export interface DeckSetup {
   readonly headphoneCue?: boolean;
   /** Set the deck's cue point at `pos` (the deck is left paused there). */
   readonly cuePoint?: true;
+  /** Tempo off the track's own, percent (Placement: B starts 1–3% apart). Set with the tempo fader. */
+  readonly tempoPercent?: number;
 }
 
 export interface DeckSetups {
@@ -136,7 +138,9 @@ export type CheckEnd =
   /** The Learner pressed Ready on every slice (cue-point). */
   | { readonly kind: "slices-done" }
   /** This long after the Check starts. */
-  | { readonly kind: "after"; readonly sec: number };
+  | { readonly kind: "after"; readonly sec: number }
+  /** `bars` after the Learner closed this deck's channel fader: a blend's end, plus the bars loud-steady reads. */
+  | { readonly kind: "faded-out-then"; readonly deck: DeckId; readonly bars: number };
 
 /** How the app sets the deck up for the Check and when the audio part ends. */
 export interface CheckPlan {

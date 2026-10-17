@@ -26,15 +26,21 @@ async function jsonOrUndefined(response: Response): Promise<unknown> {
 
 const RecordEnvelope =z.object({ success: z.literal(true), data: LearnerRecordSchema });
 
+/** A loaded record, and whether the server had one: a Learner it has never seen starts empty (first run). */
+export interface LoadedLearner {
+  readonly record: LearnerRecord;
+  readonly found: boolean;
+}
+
 /** The Learner's record; a Learner the server has never seen starts empty. */
-export async function loadLearner(learnerId: LearnerId, signal?: AbortSignal): Promise<Loaded<LearnerRecord>> {
+export async function loadLearner(learnerId: LearnerId, signal?: AbortSignal): Promise<Loaded<LoadedLearner>> {
   let response: Response;
   try {
     response = await fetch(learnerPaths.profile(learnerId), { signal: signal ?? null, credentials: "same-origin" });
   } catch (error) {
     return { ok: false, problem: { kind: "offline", message: `The API is not reachable (${String(error)}). Start it with npm run dev.` } };
   }
-  if (response.status === 404) return { ok: true, value: emptyLearnerRecord(learnerId) };
+  if (response.status === 404) return { ok: true, value: { record: emptyLearnerRecord(learnerId), found: false } };
   if (!response.ok) {
     return { ok: false, problem: { kind: "refused", status: response.status, message: `Loading the profile failed with HTTP ${String(response.status)}; the server log says why.` } };
   }
@@ -42,7 +48,7 @@ export async function loadLearner(learnerId: LearnerId, signal?: AbortSignal): P
   if (!parsed.success) {
     return { ok: false, problem: { kind: "refused", status: response.status, message: "The server sent a profile this app cannot read. Check that the server and app versions match." } };
   }
-  return { ok: true, value: parsed.data.data };
+  return { ok: true, value: { record: parsed.data.data, found: true } };
 }
 
 export async function saveLearner(record: LearnerRecord): Promise<Loaded<LearnerRecord>> {

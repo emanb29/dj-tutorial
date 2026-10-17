@@ -27,8 +27,24 @@ export interface LessonWindow {
 
 export const learner = (name: string) => `e2e-${name}-${String(Date.now())}`;
 
+/**
+ * Gives a Learner the server has never seen an empty profile, so the app shows the Lesson list
+ * instead of the first-run Placement. A Learner who already has one keeps it.
+ */
+export async function ensureProfile(page: Page, learnerId: string): Promise<void> {
+  await page.goto(`/?learner=${learnerId}`);
+  const status = await page.evaluate(async (id) => {
+    if ((await fetch(`/api/learners/${id}/profile`)).ok) return 200;
+    const record = { schemaVersion: 1, learnerId: id, mission: "", missionTags: [], curriculum: null, skillProfile: { schemaVersion: 1, learnerId: id, lessons: {}, criteria: {}, courseCompletedAt: null } };
+    const response = await fetch(`/api/learners/${id}/profile`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) });
+    return response.status;
+  }, learnerId);
+  expect(status).toBe(200);
+}
+
 /** Opens a Lesson from the list; unless told otherwise, waits for its hook (past any headphones check). */
 export async function openLesson(page: Page, learnerId: string, lessonId: string, options: { waitForHook?: boolean } = {}): Promise<void> {
+  await ensureProfile(page, learnerId);
   await page.goto(`/?learner=${learnerId}&track=synthetic`);
   await page.locator(`li[data-lesson="${lessonId}"]`).getByRole("button").click();
   await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson !== undefined);

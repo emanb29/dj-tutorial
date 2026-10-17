@@ -27,8 +27,8 @@ interface Box {
 async function openLesson(page: Page, lessonId: string, options: { readonly touch: boolean; readonly passed?: readonly string[]; readonly headphones?: boolean }): Promise<void> {
   const learnerId = `e2e-mobile-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
   const passed = options.passed ?? [];
-  if (passed.length > 0) {
-    // Earlier Lessons passed, through the app's own API (from the page, so it sees the app's Origin).
+  {
+    // A profile (so the list shows, not the first-run Placement), with earlier Lessons passed, through the app's own API (from the page, so it sees the app's Origin).
     await page.goto(`/?learner=${learnerId}`);
     const status = await page.evaluate(
       async ({ id, lessonIds, headphones }) => {

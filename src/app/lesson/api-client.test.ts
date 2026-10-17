@@ -41,6 +41,13 @@ describe("the API client when the server answers with something that is not JSON
   });
 });
 
+describe("loading the profile", () => {
+  it("says whether the server had one: an unknown Learner starts empty, on a first run", async () => {
+    answering({ success: false, error: { code: "notFound", message: "No Learner" } }, 404);
+    await expect(loadLearner("default")).resolves.toMatchObject({ ok: true, value: { found: false, record: { learnerId: "default", curriculum: null } } });
+  });
+});
+
 describe("the Curriculum answer is checked against the shared contract", () => {
   it("accepts a well-formed answer", async () => {
     answering({ success: true, source: "fallback", data: { job: "curriculum", curriculum: ["gain-staging"], missionTags: [], electiveNotes: { "hot-cues": "for bass music" } } });

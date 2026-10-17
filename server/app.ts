@@ -7,7 +7,7 @@ import { CheckLineRequestSchema, CurriculumRequestSchema } from "@shared/coach-c
 import { LearnerIdSchema, LearnerRecordSchema, describeIssues, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
 import type { CoachService } from "./coach/coach-service.ts";
 import { consoleLogger, type Logger } from "./logger.ts";
-import { MAX_LEARNERS, type ProfileStore } from "./profile-store.ts";
+import type { ProfileStore } from "./profile-store.ts";
 import { requireSameOrigin, sameOriginPolicy, type SameOriginPolicy } from "./same-origin.ts";
 import { DEFAULT_ALLOWED_ORIGINS } from "./config.ts";
 import { originalsRoutes } from "./originals.ts";
@@ -135,7 +135,7 @@ function mountLearnerRoutes(app: Hono, services: AppServices): void {
       ]);
     }
     if (!profiles.has(learnerId) && profiles.isFull) {
-      return failure(context, 403, "forbidden", `The store already holds ${String(MAX_LEARNERS)} Learners. Reuse an existing Learner id.`);
+      return failure(context, 403, "forbidden", `The store already holds ${String(profiles.maxLearners)} Learners. Reuse an existing Learner id.`);
     }
     await profiles.put(body.value);
     return context.json({ success: true, data: body.value } satisfies ApiSuccess<LearnerRecord>);

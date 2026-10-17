@@ -6,6 +6,8 @@ export {
   GAIN_ZONE_DB,
   isBuiltLesson,
   LESSON_AIDS,
+  LESSON_GRADING,
+  type Grading,
   LESSONS,
   lessonDefinition,
   practiceDecksFor,
@@ -30,6 +32,25 @@ export {
   type LineFacts,
 } from "./coach.ts";
 export { classifyTap } from "./feedback.ts";
+export {
+  ancestorsOf,
+  applyPlacement,
+  creditedLessons,
+  hasPlacement,
+  nextStep,
+  nextTask,
+  PLACEMENT_GROUPS,
+  PLACEMENT_TASK_IDS,
+  placementCurriculumRequest,
+  startLesson,
+  withPlacement,
+  withTaskOutcome,
+  type PlacementStep,
+  type PlacementTask,
+  type PlacementTaskId,
+  type TaskOutcome,
+} from "./placement.ts";
+export { placementControls, placementTask, placementTrackProblems, type PlacementTaskDefinition } from "./placement-tasks.ts";
 export { initialLessonState, lessonReducer, TIP_AFTER_MISSES, type LessonEvent, type LessonPhase, type LessonState } from "./runtime.ts";
 export { SYNTHETIC_HOUSE, SYNTHETIC_TRACK_ID, synthesizeHouse, syntheticLessonTrack, type SyntheticLayout } from "./synthetic-track.ts";
 export { barStart, beatSec, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, peakDbfsOf, phraseStart, sliceTrack } from "./track.ts";

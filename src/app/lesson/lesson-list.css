@@ -140,3 +140,13 @@ li[data-standing="lapsed"] .lesson-standing {
     text-align: left;
   }
 }
+
+/* Placement: re-take it any time; the Lesson the Learner starts at is marked. */
+.lesson-list-placement {
+  margin: 0 0 var(--space-3);
+}
+
+.lesson-list li[data-start="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
