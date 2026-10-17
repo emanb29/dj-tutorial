@@ -58,11 +58,14 @@ export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
   "http://127.0.0.1:4179",
 ];
 export const DEFAULT_DATA_DIR = ".local/data";
+export const DEFAULT_ORIGINALS_DIR = ".local/tracks/originals";
 export const DEFAULT_COACH_MONTHLY_CAP_USD = 5;
 
 /** Everything else the API needs: storage, the Coach key and its spend cap, and who may call it. */
 export interface RuntimeConfig {
   readonly dataDir: string;
+  /** The generator's Originals, served under /api/originals. */
+  readonly originalsDir: string;
   /** `null` = no-key mode: every Coach answer comes from the deterministic Coach. */
   readonly anthropicApiKey: string | null;
   readonly coachMonthlyCapUsd: number;
@@ -75,7 +78,7 @@ export type RuntimeConfigResult =
   | { readonly ok: false; readonly problems: readonly string[] };
 
 /**
- * Reads `DATA_DIR`, `ANTHROPIC_API_KEY`, `COACH_MONTHLY_CAP_USD`, `COACH_LOG_PAYLOADS` and
+ * Reads `DATA_DIR`, `ORIGINALS_DIR`, `ANTHROPIC_API_KEY`, `COACH_MONTHLY_CAP_USD`, `COACH_LOG_PAYLOADS` and
  * `ALLOWED_ORIGINS`, collecting every problem. Problems never include the key's value.
  */
 export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
@@ -85,6 +88,12 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
   const dataDir = rawDataDir === undefined ? DEFAULT_DATA_DIR : rawDataDir.trim();
   if (dataDir === "") {
     problems.push(`DATA_DIR is set but empty. Unset it to use ${DEFAULT_DATA_DIR}, or set it to a directory.`);
+  }
+
+  const rawOriginalsDir = env["ORIGINALS_DIR"];
+  const originalsDir = rawOriginalsDir === undefined ? DEFAULT_ORIGINALS_DIR : rawOriginalsDir.trim();
+  if (originalsDir === "") {
+    problems.push(`ORIGINALS_DIR is set but empty. Unset it to use ${DEFAULT_ORIGINALS_DIR}, or set it to a directory.`);
   }
 
   const rawKey = env["ANTHROPIC_API_KEY"]?.trim();
@@ -128,6 +137,7 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
         ok: true,
         config: {
           dataDir,
+          originalsDir,
           anthropicApiKey,
           coachMonthlyCapUsd,
           coachLogPayloads: rawLogPayloads === "1",

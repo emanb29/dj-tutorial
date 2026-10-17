@@ -10,6 +10,8 @@ import { consoleLogger, type Logger } from "./logger.ts";
 import { MAX_LEARNERS, type ProfileStore } from "./profile-store.ts";
 import { requireSameOrigin, sameOriginPolicy, type SameOriginPolicy } from "./same-origin.ts";
 import { DEFAULT_ALLOWED_ORIGINS } from "./config.ts";
+import { originalsRoutes } from "./originals.ts";
+import { ORIGINALS_PATH } from "@shared/originals.ts";
 
 export const MAX_BODY_BYTES = 32 * 1024;
 
@@ -22,8 +24,12 @@ export interface AppServices {
 
 export interface AppOptions {
   readonly sameOrigin?: SameOriginPolicy;
-  /** Without services, only the health route is served. */
+  /** Without services, only the health route (and the Originals, if set) are served. */
   readonly services?: AppServices;
+  /** Folder holding the generator's Originals (shared/originals.ts). Unset = no `/api/originals`. */
+  readonly originalsDir?: string;
+  /** Used when there are no services; otherwise `services.logger` wins. */
+  readonly logger?: Logger;
 }
 
 type Status = 400 | 403 | 404 | 413 | 415 | 500;
@@ -63,7 +69,7 @@ async function readBody<Schema extends z.ZodType>(
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
   const policy = options.sameOrigin ?? sameOriginPolicy(DEFAULT_ALLOWED_ORIGINS, []);
-  const logger = options.services?.logger ?? consoleLogger;
+  const logger = options.services?.logger ?? options.logger ?? consoleLogger;
 
   app.use("/api/*", requireSameOrigin(policy));
   app.use(
@@ -80,6 +86,7 @@ export function createApp(options: AppOptions = {}): Hono {
   );
 
   if (options.services !== undefined) mountLearnerRoutes(app, options.services);
+  if (options.originalsDir !== undefined) app.route(ORIGINALS_PATH, originalsRoutes(options.originalsDir, logger));
 
   app.notFound((context) =>
     failure(context, 404, "notFound", `No API route matches ${context.req.method} ${context.req.path}.`),

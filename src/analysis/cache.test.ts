@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CONTENT_HASH_PREFIX_BYTES, hashDecodedAudio, hashTrackBytes, MemoryAnalysisCache } from "./cache.ts";
+import { hashTrackBytes as sharedHashTrackBytes } from "@shared/track-hash.ts";
 import { sampleAnalysis } from "./sample-analysis.ts";
 
 describe("content hash", () => {
@@ -19,6 +20,14 @@ describe("content hash", () => {
     headChanged[10] = 7;
     expect(await hashTrackBytes(headChanged, 360.5)).not.toBe(await hashTrackBytes(bytes, 360.5));
     expect(await hashTrackBytes(bytes, 361)).not.toBe(await hashTrackBytes(bytes, 360.5));
+  });
+
+  it("is the shared track-source key, in its pinned format", async () => {
+    // printf 'ID3fake|duration-ms=2000' | sha256sum. Track sources (src/tracks) key loads the same way.
+    expect(await hashTrackBytes(new TextEncoder().encode("ID3fake"), 2)).toBe(
+      "8fc5c551daa68a9a88b68cb010dedc5bdb0f32e2b58a87744c80543fec1044b6",
+    );
+    expect(hashTrackBytes).toBe(sharedHashTrackBytes);
   });
 
   it("hashes decoded audio by its samples and rate", async () => {

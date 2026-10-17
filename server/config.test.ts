@@ -7,6 +7,7 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         dataDir: ".local/data",
+        originalsDir: ".local/tracks/originals",
         anthropicApiKey: null,
         coachMonthlyCapUsd: 5,
         coachLogPayloads: false,
@@ -23,6 +24,7 @@ describe("loadRuntimeConfig", () => {
   it("reads every variable", () => {
     const result = loadRuntimeConfig({
       DATA_DIR: "/tmp/dj",
+      ORIGINALS_DIR: "/tmp/originals",
       ANTHROPIC_API_KEY: "test-key-not-real",
       COACH_MONTHLY_CAP_USD: "2.5",
       COACH_LOG_PAYLOADS: "1",
@@ -32,6 +34,7 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         dataDir: "/tmp/dj",
+        originalsDir: "/tmp/originals",
         anthropicApiKey: "test-key-not-real",
         coachMonthlyCapUsd: 2.5,
         coachLogPayloads: true,
@@ -44,6 +47,7 @@ describe("loadRuntimeConfig", () => {
     const result = loadRuntimeConfig({
       ANTHROPIC_API_KEY: "test-key-not-real",
       DATA_DIR: "",
+      ORIGINALS_DIR: " ",
       COACH_MONTHLY_CAP_USD: "-1",
       COACH_LOG_PAYLOADS: "yes",
       ALLOWED_ORIGINS: "http://127.0.0.1:5179/app",
@@ -51,7 +55,7 @@ describe("loadRuntimeConfig", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.problems).toHaveLength(4);
+    expect(result.problems).toHaveLength(5);
     expect(result.problems.join("\n")).not.toContain("test-key-not-real");
   });
 });

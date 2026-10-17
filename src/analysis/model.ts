@@ -3,6 +3,7 @@
 // with onnxruntime-node (scripts/analysis/onnx-node-model.ts). Model files are not committed;
 // scripts/fetch-models.ts puts them under public/models/ (see src/analysis/index.ts).
 
+import { sha256Hex } from "@shared/track-hash.ts";
 import type { AnalysisError, AnalysisWarning } from "./types.ts";
 
 export const BEAT_THIS_SMALL0 = {
@@ -55,10 +56,7 @@ export function chooseThreadCount(environment: {
   return { threads: Math.max(1, Math.min(4, Math.floor(environment.hardwareConcurrency / 2))), warning: null };
 }
 
-export async function sha256Hex(bytes: BufferSource): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
-}
+export { sha256Hex };
 
 /** Checks downloaded model bytes are the exported small0 model, not an HTML fallback page or a
  * different export. */

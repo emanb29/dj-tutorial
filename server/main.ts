@@ -27,12 +27,14 @@ const ownAddress = `${host}:${String(port)}`;
 const app = createApp({
   sameOrigin: sameOriginPolicy(runtime.allowedOrigins, [ownAddress, `localhost:${String(port)}`]),
   services: { profiles, coach, logger: consoleLogger },
+  originalsDir: runtime.originalsDir,
 });
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   consoleLogger.info("api.listening", {
     url: `http://${info.address}:${String(info.port)}`,
     dataDir: runtime.dataDir,
+    originalsDir: runtime.originalsDir,
     coach: client === null ? "noKey" : "key",
     monthlyCapUsd: runtime.coachMonthlyCapUsd,
   });
