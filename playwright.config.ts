@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 // End-to-end tests run against the built app (`vite preview`) and the API server.
@@ -7,6 +9,8 @@ const PREVIEW_PORT = 4179;
 const API_PORT = 4180;
 const previewUrl = `http://127.0.0.1:${String(PREVIEW_PORT)}`;
 const isCi = process.env["CI"] !== undefined;
+// The API keeps profiles in a throwaway folder (never the owner's .local/data) and serves no Originals.
+const e2eData = join(tmpdir(), `learn-to-dj-e2e-${String(process.pid)}`);
 
 export default defineConfig({
   testDir: "e2e",
@@ -30,7 +34,7 @@ export default defineConfig({
   webServer: [
     {
       command: "npm run start:api",
-      env: { API_PORT: String(API_PORT) },
+      env: { API_PORT: String(API_PORT), DATA_DIR: join(e2eData, "data"), ORIGINALS_DIR: join(e2eData, "originals") },
       url: `http://127.0.0.1:${String(API_PORT)}/api/health`,
       reuseExistingServer: false,
     },

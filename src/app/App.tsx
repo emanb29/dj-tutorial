@@ -1,8 +1,14 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { isBuiltLesson, type BuiltLessonId } from "@lessons";
+import { DEFAULT_LEARNER_ID, emptyLearnerRecord, LearnerIdSchema, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
 import { HealthIndicator } from "./HealthIndicator.tsx";
+import { loadLearner } from "./lesson/api-client.ts";
+import { LessonList } from "./lesson/LessonList.tsx";
+import type { TrackPreference } from "./lesson/track-loader.ts";
 
-// The dev playground loads the audio engine and the controller, so it is a separate chunk.
+// The dev playground and the Lesson player load the audio engine and the controller: separate chunks.
 const Playground = lazy(() => import("./playground/Playground.tsx").then((module) => ({ default: module.Playground })));
+const LessonPlayer = lazy(() => import("./lesson/LessonPlayer.tsx").then((module) => ({ default: module.LessonPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
 
@@ -14,19 +20,104 @@ export function playgroundEnabled(location: { pathname: string; search: string }
   if (location.pathname.replace(/\/$/, "") !== PLAYGROUND_PATH) return false;
   return devServer || new URLSearchParams(location.search).has("playground");
 }
+const LESSON_PATH = /^\/lesson\/([a-z-]+)$/;
+
+/**
+ * URL options, all optional:
+ *   ?learner=ID        a Learner other than the default (lower-case letters, digits, dashes)
+ *   ?track=synthetic   skip the Originals and starter pack; use the synthetic practice groove
+ */
+function urlOptions(search: string): { learnerId: LearnerId; trackPreference: TrackPreference } {
+  const params = new URLSearchParams(search);
+  const learner = LearnerIdSchema.safeParse(params.get("learner") ?? DEFAULT_LEARNER_ID);
+  return {
+    learnerId: learner.success ? learner.data : DEFAULT_LEARNER_ID,
+    trackPreference: params.get("track") === "synthetic" ? "synthetic" : "auto",
+  };
+}
+
+function lessonInPath(pathname: string): BuiltLessonId | null {
+  const id = LESSON_PATH.exec(pathname.replace(/\/$/, ""))?.[1];
+  return id !== undefined && isBuiltLesson(id) ? id : null;
+}
+
+type LearnerState = { kind: "loading" } | { kind: "ready"; record: LearnerRecord; offline: string | null };
 
 export function App() {
-  if (playgroundEnabled(window.location, import.meta.env.DEV)) {
+  const [path, setPath] = useState(() => window.location.pathname);
+  const [options] = useState(() => urlOptions(window.location.search));
+  const [learner, setLearner] = useState<LearnerState>({ kind: "loading" });
+
+  useEffect(() => {
+    const onPop = () => {
+      setPath(window.location.pathname);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+    };
+  }, []);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    void loadLearner(options.learnerId, abort.signal).then((loaded) => {
+      if (abort.signal.aborted) return;
+      if (loaded.ok) setLearner({ kind: "ready", record: loaded.value, offline: null });
+      else {
+        console.warn(`[app] ${loaded.problem.message}`);
+        setLearner({ kind: "ready", record: emptyLearnerRecord(options.learnerId), offline: loaded.problem.message });
+      }
+    });
+    return () => {
+      abort.abort();
+    };
+  }, [options.learnerId]);
+
+  // Navigation keeps the query (learner, track) and the page's user activation, so audio can start.
+  const navigate = useCallback((pathname: string) => {
+    window.history.pushState(null, "", `${pathname}${window.location.search}`);
+    setPath(pathname);
+  }, []);
+  const openLesson = useCallback((lessonId: BuiltLessonId) => {
+    navigate(`/lesson/${lessonId}`);
+  }, [navigate]);
+  const exit = useCallback(() => {
+    navigate("/");
+  }, [navigate]);
+  const changeLearner = useCallback((record: LearnerRecord) => {
+    setLearner((current) => ({ kind: "ready", record, offline: current.kind === "ready" ? current.offline : null }));
+  }, []);
+
+  if (playgroundEnabled({ pathname: path, search: window.location.search }, import.meta.env.DEV)) {
     return (
       <Suspense fallback={null}>
         <Playground />
       </Suspense>
     );
   }
+
+  const lessonId = lessonInPath(path);
+  if (lessonId !== null && learner.kind === "ready") {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening the Lesson…</p>}>
+        <LessonPlayer
+          key={lessonId}
+          lessonId={lessonId}
+          learner={learner.record}
+          onLearnerChange={changeLearner}
+          trackPreference={options.trackPreference}
+          onExit={exit}
+          onOpenLesson={openLesson}
+        />
+      </Suspense>
+    );
+  }
+
   return (
-    <main>
+    <main className="home">
       <h1>Learn to DJ</h1>
       <HealthIndicator />
+      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} /> : <p>Loading your progress…</p>}
     </main>
   );
 }

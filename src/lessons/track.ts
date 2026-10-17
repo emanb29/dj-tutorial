@@ -1,0 +1,110 @@
+// Lesson tracks: turning what a track source knows (an Original's exact grid, a starter-pack
+// analysis, the synthetic track's layout) into the `LessonTrack` a Lesson plans its Check on.
+// Pure: no audio here.
+import type { BeatGrid, CtxTime, PlayheadModel } from "@shared/attempt.ts";
+import type { KnownBeatGrid } from "@tracks";
+import type { LessonTrack, TrackSection } from "./types.ts";
+
+export const BEATS_PER_BAR = 4;
+export const BARS_PER_PHRASE = 8;
+
+export function beatSec(grid: BeatGrid): number {
+  return 60 / grid.bpm;
+}
+
+/** Track seconds where 1-based `bar` starts. Bar 1 is the grid's first downbeat at or after its first beat. */
+export function barStart(grid: BeatGrid, bar: number): number {
+  const firstDownbeat = ((grid.downbeatIndex % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR;
+  return grid.firstBeat + (firstDownbeat + (bar - 1) * BEATS_PER_BAR) * beatSec(grid);
+}
+
+/** Track seconds where 1-based 8-bar `phrase` starts. */
+export function phraseStart(grid: BeatGrid, phrase: number): number {
+  return barStart(grid, (phrase - 1) * BARS_PER_PHRASE + 1);
+}
+
+/** Every 8-bar phrase start from bar 1 that has at least one full bar before the track ends. */
+export function phraseStartsOf(grid: BeatGrid, durationSec: number): number[] {
+  const barLength = BEATS_PER_BAR * beatSec(grid);
+  const starts: number[] = [];
+  for (let phrase = 1; phraseStart(grid, phrase) + barLength <= durationSec + 1e-9; phrase += 1) {
+    starts.push(phraseStart(grid, phrase));
+  }
+  return starts;
+}
+
+/** The first section called `name` at or after phrase `from`; null when the track has none. */
+export function phraseOf(sections: readonly TrackSection[], name: string, from = 1): number | null {
+  return sections.find((section) => section.name === name && section.phrase >= from)?.phrase ?? null;
+}
+
+interface TrackMeta {
+  readonly id: string;
+  readonly title: string;
+  readonly attribution: LessonTrack["attribution"];
+}
+
+/** An Original's exact grid (src/tracks KnownBeatGrid): no analysis, sections from the generator. */
+export function lessonTrackFromKnownGrid(
+  meta: TrackMeta,
+  known: KnownBeatGrid,
+): LessonTrack {
+  const grid: BeatGrid = { bpm: known.bpm, firstBeat: known.firstBeatSec, downbeatIndex: known.downbeatPhase, rmsResidualMs: 0 };
+  return {
+    trackId: meta.id,
+    title: meta.title,
+    attribution: meta.attribution,
+    source: "original",
+    durationSec: known.durationSec,
+    grid,
+    phraseStarts: phraseStartsOf(grid, known.durationSec),
+    sections: known.phrases.map((phrase) => ({
+      name: phrase.section,
+      phrase: Math.floor((phrase.bar - 1) / BARS_PER_PHRASE) + 1,
+    })),
+  };
+}
+
+/**
+ * A starter-pack track's analysis (src/analysis TrackAnalysis). Null when the analysis found no bar 1
+ * or gave no residual (the dj-core fallback): the Check could not grade on it.
+ */
+export function lessonTrackFromAnalysis(
+  meta: TrackMeta,
+  analysis: {
+    readonly bpm: number;
+    readonly durationSec: number;
+    readonly firstBeatSec: number;
+    readonly downbeatPhase: number | null;
+    readonly residualRmsMs: number | null;
+  },
+): LessonTrack | null {
+  if (analysis.downbeatPhase === null || analysis.residualRmsMs === null) return null;
+  const grid: BeatGrid = {
+    bpm: analysis.bpm,
+    firstBeat: analysis.firstBeatSec,
+    downbeatIndex: analysis.downbeatPhase,
+    rmsResidualMs: analysis.residualRmsMs,
+  };
+  return {
+    trackId: meta.id,
+    title: meta.title,
+    attribution: meta.attribution,
+    source: "starter-pack",
+    durationSec: analysis.durationSec,
+    grid,
+    phraseStarts: phraseStartsOf(grid, analysis.durationSec),
+    sections: [],
+  };
+}
+
+/** The heard time at which a recorded deck plays track position `pos`; null if it never does. */
+export function heardTimeOf(playhead: PlayheadModel, pos: number): CtxTime | null {
+  for (const [index, segment] of playhead.segments.entries()) {
+    if (segment.rate <= 0) continue;
+    const end = playhead.segments[index + 1]?.fromCtx ?? Number.POSITIVE_INFINITY;
+    const at = segment.fromCtx + (pos - segment.pos) / segment.rate;
+    if (at >= segment.fromCtx - 1e-9 && at < end) return at;
+  }
+  return null;
+}

@@ -34,7 +34,8 @@ export const CriterionRecordSchema = z.strictObject({
       at: IsoTimeSchema,
       mode: CheckModeSchema,
       status: z.enum(["met", "notMet"]),
-      measured: z.number(),
+      /** `null` when there was nothing to measure (e.g. a fade in that was never heard). */
+      measured: z.number().nullable(),
     })
     .nullable(),
   best: z
@@ -140,6 +141,18 @@ export function emptyLearnerRecord(learnerId: LearnerId): LearnerRecord {
     curriculum: null,
     skillProfile: { schemaVersion: 1, learnerId, lessons: {}, criteria: {}, courseCompletedAt: null },
   };
+}
+
+/**
+ * The record with a new Skill profile (from `applyCheckResult`), checked against the schema the
+ * server enforces, so a profile the server would refuse is caught before it is saved.
+ */
+export function withSkillProfile(
+  record: LearnerRecord,
+  skillProfile: unknown,
+): { readonly ok: true; readonly record: LearnerRecord } | { readonly ok: false; readonly issues: readonly string[] } {
+  const parsed = LearnerRecordSchema.safeParse({ ...record, skillProfile });
+  return parsed.success ? { ok: true, record: parsed.data } : { ok: false, issues: describeIssues(parsed.error) };
 }
 
 /** Formats every zod issue as "path: message", so a caller sees all problems at once. */

@@ -1,0 +1,97 @@
+:root {
+  color-scheme: dark;
+  --lesson-bg: #1b1c1f;
+  --lesson-panel: #232428;
+  --lesson-edge: #34363c;
+  --lesson-ink: #e8e8ea;
+  --lesson-dim: #8d9099;
+  --lesson-good: #3ee07a;
+  --lesson-warn: #ffad33;
+  --lesson-accent: #3fb8ff;
+}
+
+body {
+  margin: 0;
+  background: var(--lesson-bg);
+  color: var(--lesson-ink);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.home {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.lesson-list ol {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.lesson-list li {
+  display: grid;
+  grid-template-columns: 2em 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--lesson-edge);
+  border-radius: 8px;
+  background: var(--lesson-panel);
+}
+
+.lesson-list li[data-standing="locked"] {
+  opacity: 0.55;
+}
+
+.lesson-number {
+  font-weight: 700;
+  color: var(--lesson-dim);
+}
+
+.lesson-title {
+  font-weight: 600;
+}
+
+.lesson-standing,
+.lesson-needs {
+  font-size: 13px;
+  color: var(--lesson-dim);
+}
+
+li[data-standing="passed"] .lesson-standing,
+li[data-standing="retained"] .lesson-standing {
+  color: var(--lesson-good);
+}
+
+.lesson-list button,
+.lesson button {
+  font: inherit;
+  color: var(--lesson-ink);
+  background: #2d3036;
+  border: 1px solid var(--lesson-edge);
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.lesson-list button:hover,
+.lesson button:hover {
+  border-color: var(--lesson-accent);
+}
+
+.lesson-problem {
+  color: var(--lesson-warn);
+}
+
+.home kbd,
+.lesson kbd {
+  font: 600 11px/1 ui-monospace, monospace;
+  padding: 2px 5px;
+  border: 1px solid var(--lesson-edge);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--lesson-dim);
+}

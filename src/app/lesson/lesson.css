@@ -1,0 +1,257 @@
+/* The Lesson screen: caption line, feedback strip and result card above the controller. Captions,
+   not prose: one big line, with the concept just named smaller beside it. */
+
+.lesson {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lesson-bar,
+.lesson-caption,
+.feedback-strip,
+.lesson-credit {
+  max-width: 1440px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.lesson-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 10px;
+}
+
+.lesson-bar h1 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.lesson-audio-off {
+  color: var(--lesson-warn);
+  font-size: 13px;
+}
+
+.lesson-caption {
+  min-height: 2.2em;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.lesson-named {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lesson-good);
+  animation: named-in 400ms ease-out;
+}
+
+@keyframes named-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.feedback-strip {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.beat-pulse {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.beat-pulse span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--lesson-edge);
+}
+
+.beat-pulse span.one {
+  width: 16px;
+  height: 16px;
+}
+
+.beat-pulse[data-beat="1"] span:nth-child(1),
+.beat-pulse[data-beat="2"] span:nth-child(2),
+.beat-pulse[data-beat="3"] span:nth-child(3),
+.beat-pulse[data-beat="4"] span:nth-child(4) {
+  background: var(--lesson-accent);
+}
+
+.tap-dots {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 220px;
+  height: 18px;
+  border-left: 1px solid var(--lesson-edge);
+  border-right: 1px solid var(--lesson-edge);
+  background: linear-gradient(90deg, transparent 49.5%, var(--lesson-edge) 49.5%, var(--lesson-edge) 50.5%, transparent 50.5%);
+}
+
+.tap-dots li {
+  position: absolute;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  opacity: 0.35;
+}
+
+.tap-dots li:last-child {
+  opacity: 1;
+}
+
+.tap-dots li.good,
+.practice-reps .good {
+  background: var(--lesson-good);
+}
+
+.tap-dots li.off,
+.practice-reps .off {
+  background: var(--lesson-warn);
+}
+
+.practice-reps {
+  display: flex;
+  gap: 4px;
+}
+
+.practice-reps span {
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+.lesson-questions,
+.result-card {
+  max-width: 1440px;
+  width: calc(100% - 32px);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 12px 16px;
+  border: 1px solid var(--lesson-edge);
+  border-radius: 8px;
+  background: var(--lesson-panel);
+}
+
+.lesson-question {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+}
+
+.lesson-question[data-answered="true"] {
+  opacity: 0.6;
+}
+
+.lesson-question button[aria-pressed="true"] {
+  border-color: var(--lesson-good);
+}
+
+.result-card h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.result-card.passed h2 {
+  color: var(--lesson-good);
+}
+
+.result-card.failed h2,
+.result-card.void h2 {
+  color: var(--lesson-warn);
+}
+
+.result-criteria {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.result-criteria li[data-status="met"] span {
+  color: var(--lesson-good);
+}
+
+.result-criteria li[data-status="notMet"] span {
+  color: var(--lesson-warn);
+}
+
+/* Fixed height, so the line filling in never shifts the card. */
+.coach-line {
+  min-height: 1.4em;
+  margin: 8px 0 4px;
+  font-style: italic;
+}
+
+.coach-tip,
+.review-offer {
+  margin: 4px 0;
+  color: var(--lesson-accent);
+}
+
+.review-offer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.unlock-badge {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--lesson-good) 18%, transparent);
+  animation: unlock-pop 600ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes unlock-pop {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+}
+
+.result-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.lesson-credit {
+  padding-bottom: 12px;
+  font-size: 12px;
+  color: var(--lesson-dim);
+}
+
+.lesson-credit a {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lesson-named,
+  .unlock-badge {
+    animation: none;
+  }
+}
