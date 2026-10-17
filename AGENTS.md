@@ -1,6 +1,6 @@
 # learn-to-dj
 
-An interactive wizard that teaches DJing. It introduces one or two concepts at a time on a simulated deck, using real music from a connected Spotify account. Hardware controller support is a later feature.
+An interactive wizard that teaches DJing, controller-first and tuned for ADHD. It introduces one or two concepts at a time on a simulated two-deck controller that grows toward a real one (DDJ-FLX4 layout). Music comes from Audius, local files and a Creative Commons starter pack; Spotify is used for metadata only. Hardware controller support is a later effort. The map is "Map: Learn to DJ v1" in Linear (ISS-46).
 
 ## Agent skills
 
