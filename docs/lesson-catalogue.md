@@ -244,3 +244,7 @@ Additions from `/teach` (see GLOSSARY.md):
 - **Reference cards** unlock as Lessons are passed. Each Lesson links one primary source.
 - Placement opens by asking for the Learner's **Mission**: a goal, not a self-rating.
 - After `final-mix`, the app links to DJ communities. Sharing a recording waits on set recording, which is out of scope.
+
+### Final project (owner, 2026-10-16)
+
+The owner's Mission is to post their own mixes and edits (DJ remixes, not produced remixes) to SoundCloud. So `final-mix` becomes the **final project**: the app records the Learner's mix from the master bus to an audio file they can download. Set recording is in v1 scope **for the final project only**. A general set-recording feature stays out. Uploading to SoundCloud is done by hand, and licensing is handled outside this map. Produced (DAW) remixes are a possible future effort.
