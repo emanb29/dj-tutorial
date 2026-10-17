@@ -1,7 +1,9 @@
 // Lessons 1–7 as data (docs/lesson-catalogue.md §1, check-design §4): the hook, practice, the Check
 // plan on the chosen track, and authored tips. Captions, not prose: a few words, the key in brackets.
-import type { Aids, Attempt, CheckMode, CheckVariant, CtxSpan, DeckId, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
-import { barStart, beatSec, cuedAt, heardTimeOf, phraseOf, phraseStart, sliceTrack, trimKnobFor } from "./track.ts";
+import type { Aids, Attempt, CheckMode, CheckVariant, CtxSpan, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
+import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
+import { barsSec, fromOwnCue, heardSpan, steadyPhrase } from "./plan.ts";
+import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
@@ -10,32 +12,6 @@ const CHECKPOINT_BARS = 4;
 
 /** Lesson aids for Lessons 1–3: no sync or quantize to speak of, captions on. */
 export const LESSON_AIDS: Aids = { sync: false, quantize: false, bpmDisplay: false, phaseMeter: false, lessonText: true };
-
-/**
- * Heard span of track positions `[fromPos, toPos)` on a deck, both shifted half a beat early so beats
- * sit inside, as the deck played them after the Check's own cue to its start position (`plan.startPos`
- * on A, `plan.deckB.pos` on B) in `window`. The recorded playhead also holds the hook, practice and
- * earlier attempts, which play the same positions; and for the output latency after the attempt
- * starts, the practice is still heard. A bound the deck never reached is +Infinity: runCheck voids such
- * an attempt (`sectionNotHeard`) rather than failing it.
- */
-export function heardSpan(track: LessonTrack, plan: CheckPlan, attempt: Attempt, window: CtxSpan, fromPos: number, toPos: number, deck: DeckId = "A"): CtxSpan {
-  const playhead = attempt.decks[deck]?.playhead;
-  const startPos = deck === "A" ? plan.startPos : plan.deckB?.pos;
-  const cued = playhead === undefined || startPos === undefined ? null : cuedAt(playhead, startPos, window.from);
-  const half = beatSec(track.grid) / 2;
-  const heard = (pos: number) => (playhead === undefined || cued === null ? null : heardTimeOf(playhead, pos - half, cued));
-  return { from: heard(fromPos) ?? Number.POSITIVE_INFINITY, to: heard(toPos) ?? Number.POSITIVE_INFINITY };
-}
-
-/** The first phrase at or after 2 whose 16 bars hold no breakdown or build (they may have no kick). */
-export function steadyPhrase(track: LessonTrack): number {
-  const quiet = track.sections.filter((section) => section.name === "breakdown" || section.name === "build").map((section) => section.phrase);
-  for (let phrase = 2; phrase + 1 < track.phraseStarts.length; phrase += 1) {
-    if (!quiet.includes(phrase) && !quiet.includes(phrase + 1)) return phrase;
-  }
-  return 2;
-}
 
 /** The first tap window (8 phrases from phrase ≥ 2) that holds a breakdown and a later drop. */
 function phraseWindow(track: LessonTrack): { first: number; breakdown: number; drop: number } | null {
@@ -195,7 +171,6 @@ const SLICE_BARS = 6;
 const CUT_LEAD_BARS = 6;
 const CUT_TAIL_BARS = 5;
 
-const barsSec = (track: LessonTrack, bars: number) => bars * 4 * beatSec(track.grid);
 const steadyBar = (track: LessonTrack) => (steadyPhrase(track) - 1) * BARS_PER_PHRASE + 1;
 const trimFor = (track: LessonTrack, targetPeakDb: number) => trimKnobFor(targetPeakDb - (track.peakDbfs ?? DEFAULT_PEAK_DB));
 const tooShort = (track: LessonTrack) => (track.phraseStarts.length < 4 ? ["The track is too short for a steady 16 bars."] : []);
@@ -403,10 +378,10 @@ const cutOnPhrase: LessonDefinition = {
   },
 };
 
-export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase";
+export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase" | SyncLessonId;
 export type BuiltLesson = LessonDefinition & { readonly id: BuiltLessonId };
 
-/** Lessons 1–7, in catalogue order. */
+/** Lessons 1–11, in catalogue order (8–11 in catalogue-sync.ts). */
 export const LESSONS: readonly BuiltLesson[] = [
   { ...deckBasics, id: "deck-basics" },
   { ...beatsAndBars, id: "beats-and-bars" },
@@ -415,6 +390,7 @@ export const LESSONS: readonly BuiltLesson[] = [
   { ...headphoneCue, id: "headphone-cue" },
   { ...cuePoint, id: "cue-point" },
   { ...cutOnPhrase, id: "cut-on-phrase" },
+  ...SYNC_LESSONS,
 ];
 
 /** Practice loops for Lessons that do not set their own: tap Lessons loop deck A from the practice start. */
@@ -440,6 +416,7 @@ export function checkDecksFor(plan: CheckPlan): DeckSetups {
   return {
     A: { pos: plan.startPos, fader: plan.faderAtStart, play: plan.autoPlay, ...plan.deckA },
     ...(plan.deckB === undefined ? {} : { B: plan.deckB }),
+    ...(plan.crossfader === undefined ? {} : { crossfader: plan.crossfader }),
   };
 }
 
@@ -458,7 +435,8 @@ export function withPlannedGrids<Recorded extends Attempt>(attempt: Recorded, tr
 /** Where the Lesson's Ready (R) does something: practice reps, the Check's end, or both. */
 export function readyUsedIn(definition: LessonDefinition, track: LessonTrack): { readonly practice: boolean; readonly check: boolean } {
   const end = definition.planCheck(track).endWhen.kind;
-  return { practice: definition.practice.rep === "ready", check: end === "ready-windows" || end === "slices-done" };
+  const rep = definition.practice.rep;
+  return { practice: rep === "ready" || rep === "tempo-set", check: end === "ready-windows" || end === "slices-done" || end === "readies" };
 }
 
 export function isBuiltLesson(id: string): id is BuiltLessonId {
@@ -499,15 +477,18 @@ export function checkSpecFor(
   const tracks: readonly TaskTrack[] =
     definition.taskTracks?.(track, plan, trackSetId) ?? [
       { trackId: track.trackId, trackSetId, deck: "A" },
-      ...(plan.deckB === undefined ? [] : [{ trackId: track.trackId, trackSetId, deck: "B" as const }]),
+      ...(plan.deckB === undefined ? [] : [{ trackId: trackOnDeck(track, "B").trackId, trackSetId, deck: "B" as const }]),
     ];
+  // From the Check's own cue: before it, what is heard (and metered) is still the practice.
+  const window = definition.gradeFromOwnCue === true ? fromOwnCue(plan, attempt, options.window) : options.window;
   return {
     mode: grading.mode,
     variant: grading.variant,
-    task: definition.taskFor(track, plan, attempt, options.window),
+    task: definition.taskFor(track, plan, attempt, window),
     tracks,
-    aids: grading.aids,
-    window: options.window,
+    // A Lesson's Check offers its own aids (sync, the BPM display); another grading names all of them.
+    aids: options.grading === undefined ? { ...LESSON_AIDS, ...definition.aids } : grading.aids,
+    window,
     passedLessons: options.passedLessons,
   };
 }

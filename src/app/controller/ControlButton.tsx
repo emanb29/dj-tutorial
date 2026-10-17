@@ -29,8 +29,9 @@ export function keepFocusWhereItIs(event: MouseEvent): void {
   event.preventDefault();
 }
 
-export function ControlButton({ id, label, ariaLabel, lit = false, shape = "pill", tone = "plain", keyHint = null, captionSide, onPress, onRelease }: ControlButtonProps) {
-  const { session } = useController();
+export function ControlButton({ id, label, ariaLabel, lit: litNow = false, shape = "pill", tone = "plain", keyHint = null, captionSide, onPress, onRelease }: ControlButtonProps) {
+  const { session, concealed } = useController();
+  const lit = litNow && !concealed.has(id);
   const input = (event: PointerEvent | MouseEvent, device = session.devices.fromPointer("mouse")): CommandInput => ({
     device,
     eventTimeMs: event.timeStamp,

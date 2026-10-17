@@ -26,18 +26,24 @@ export interface ControllerProps {
   readonly unlocks: ControllerUnlocks;
   readonly pulse?: ControlId | null;
   readonly captions?: readonly ControllerCaption[];
+  /**
+   * Unlocked controls to hold locked and unlit for now, without the unlock reward when they come back
+   * (tempo-fader's listening clips: MASTER TEMPO would give the answer away).
+   */
+  readonly concealed?: ReadonlySet<ControlId>;
   /** Whether the key legend starts open. The Learner can toggle it with "?" or its button. */
   readonly defaultLegendOpen?: boolean;
 }
 
 const NO_CAPTIONS: readonly ControllerCaption[] = [];
+const NONE_CONCEALED: ReadonlySet<ControlId> = new Set();
 
 function focusedElement(target: EventTarget | null): FocusedElement | null {
   if (!(target instanceof HTMLElement) || target === document.body) return null;
   return { tagName: target.tagName, role: target.getAttribute("role"), isContentEditable: target.isContentEditable };
 }
 
-export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIONS, defaultLegendOpen = false }: ControllerProps) {
+export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIONS, concealed = NONE_CONCEALED, defaultLegendOpen = false }: ControllerProps) {
   const [session] = useState(() => new ControllerSession(engine, { unlocks, macPlatform: isMacPlatform(navigator) }));
   const [frames] = useState(() => new FrameLoop());
   const [meters] = useState<MeterLevels>(() => new Map());
@@ -45,8 +51,8 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   const wording = useWording();
 
   useEffect(() => {
-    session.setUnlocks(unlocks);
-  }, [session, unlocks]);
+    session.setUnlocks(concealed.size === 0 ? unlocks : new Set([...unlocks].filter((id) => !concealed.has(id))));
+  }, [session, unlocks, concealed]);
 
   useEffect(() => session.connect(), [session]);
 
@@ -94,8 +100,8 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   // Captions are authored with keys ("Press X"); on a touchscreen they name the control instead.
   const captionMap = useMemo(() => new Map(captions.map((caption) => [caption.control, inputWording(caption.text, wording)])), [captions, wording]);
   const context = useMemo<ControllerContextValue>(
-    () => ({ session, engine, frames, meters, pulse, captions: captionMap, unlocks, legendOpen }),
-    [session, engine, frames, meters, pulse, captionMap, unlocks, legendOpen],
+    () => ({ session, engine, frames, meters, pulse, captions: captionMap, unlocks, concealed, legendOpen }),
+    [session, engine, frames, meters, pulse, captionMap, unlocks, concealed, legendOpen],
   );
 
   return (

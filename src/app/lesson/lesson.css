@@ -275,7 +275,13 @@
 .lesson-question .btn {
   justify-content: center;
   min-width: 44px;
-  padding: 0;
+  padding: 0 var(--space-2);
+}
+
+@media (pointer: coarse) {
+  .lesson-question .btn {
+    min-height: 44px;
+  }
 }
 
 .lesson-question[data-answered="true"] {

@@ -8,7 +8,6 @@ import {
   initialLessonState,
   lessonDefinition,
   lineFacts,
-
   peakDbfsOf,
   readyUsedIn,
   skipGroupsPassed,
@@ -18,6 +17,8 @@ import {
   type ControlId,
   type DeckId,
   type LessonPhase,
+  type CheckQuestion,
+  type ListeningClip,
   type LessonTrack,
   type Observation,
 } from "@lessons";
@@ -42,8 +43,10 @@ export interface LessonHandle {
   readonly engine: AudioEngine;
   readonly track: LessonTrack;
   readonly phase: () => LessonPhase["kind"];
-  /** The track on a deck now: the Lesson track, or a cue-point slice. */
+  /** The track on a deck now: the Lesson track, a cue-point slice, or the partner on B. */
   readonly deckTrack: (deck: DeckId) => LessonTrack | null;
+  /** The listening clip playing for a question now (tempo-fader), if any. */
+  readonly clip?: () => ListeningClip | null;
 }
 
 declare global {
@@ -83,6 +86,16 @@ function isGraded(outcome: CheckResult | VoidAttempt): outcome is CheckResult {
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+}
+
+const NOTHING_CONCEALED: ReadonlySet<ControlId> = new Set();
+/** A listening clip's deck controls that would tell (or change) what the clip is asking about. */
+const CLIP_CONCEALED = ["master-tempo", "tempo", "tempo-range", "sync"] as const;
+
+/** What answer key `value` (1, 2, …) records for a question: its choice's value, or the number itself. */
+export function answerValue(question: CheckQuestion, key: number): number | null {
+  if (question.choices === undefined) return key <= question.options ? key : null;
+  return question.choices[key - 1]?.value ?? null;
 }
 
 function tapMark(observation: Observation): TapMark | null {
@@ -137,8 +150,10 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     };
     void (async () => {
       try {
-        // Headphone Lessons use split cue: cue in the left ear, master in the right.
-        engine = await createAudioEngine({ masterTempo: false, monitor: definition.headphones === true ? new SplitCueMonitor() : new MasterOnlyMonitor() });
+        // Headphone Lessons use split cue: cue in the left ear, master in the right. Master Tempo
+        // (time-stretching) loads only where it is taught or already on the controller.
+        const masterTempo = definition.masterTempo === true || unlocksAfter(passedLessons(learnerRef.current)).has("B.master-tempo");
+        engine = await createAudioEngine({ masterTempo, monitor: definition.headphones === true ? new SplitCueMonitor() : new MasterOnlyMonitor() });
         const ready = await loadLessonTrack(definition, {
           preference: trackPreference,
           signal: abort.signal,
@@ -148,11 +163,14 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           },
         });
         if (cancelled()) return;
-        const channels = Array.from({ length: ready.audio.numberOfChannels }, (_, channel) => ready.audio.getChannelData(channel));
-        const track: LessonTrack = { ...ready.track, peakDbfs: peakDbfsOf(channels) };
+        const peakOf = (audio: AudioBuffer) => peakDbfsOf(Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel)));
+        const partner = ready.track.partner === undefined || ready.partnerAudio === undefined ? undefined : { ...ready.track.partner, peakDbfs: peakOf(ready.partnerAudio) };
+        const track: LessonTrack = { ...ready.track, peakDbfs: peakOf(ready.audio), ...(partner === undefined ? {} : { partner }) };
         const withDeckB = LessonSession.usesDeckB(definition, track);
         for (const deck of withDeckB ? (["A", "B"] as const) : (["A"] as const)) {
-          const loaded = await engine.load(deck, ready.audio, { trackId: track.trackId, grid: track.grid });
+          const onDeck = deck === "B" && partner !== undefined ? partner : track;
+          const audio = deck === "B" && ready.partnerAudio !== undefined ? ready.partnerAudio : ready.audio;
+          const loaded = await engine.load(deck, audio, { trackId: onDeck.trackId, grid: onDeck.grid });
           if (!loaded.ok) throw new Error(`deck ${deck} refused the track: ${describeError(loaded.error)}`);
         }
         if (cancelled()) return;
@@ -175,7 +193,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         );
         session = created;
         const running = engine;
-        window.learnToDjLesson = { engine: running, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck) };
+        window.learnToDjLesson = { engine: running, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip() };
         setSetup({ kind: "ready", engine: running, session: created });
       } catch (error) {
         if (abort.signal.aborted) return;
@@ -301,6 +319,18 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 
   // Lesson keys: Enter = into the Check (again), P = practice, Escape = back to the list, 1–8 = answers.
   const answering = phase.kind === "answering" ? phase.answers : null;
+  // The question asked now plays its listening clip (tempo-fader), on a loop until it is answered.
+  const asking = answering === null ? null : (definition.questions.find((question) => !(question.id in answering))?.id ?? null);
+  useEffect(() => {
+    if (session !== null && asking !== null) session.playClip(asking);
+  }, [session, asking]);
+  // While a clip plays, its deck's tempo controls are held locked and unlit: MASTER TEMPO lit (or a
+  // press to compare) would give the answer away.
+  const clipDeck = session === null || asking === null ? null : (session.clipFor(asking)?.deck ?? null);
+  const concealed = useMemo<ReadonlySet<ControlId>>(
+    () => (clipDeck === null ? NOTHING_CONCEALED : new Set(CLIP_CONCEALED.map((part) => `${clipDeck}.${part}` as const))),
+    [clipDeck],
+  );
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isTyping(event.target)) return;
@@ -323,7 +353,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           break;
         case "answer": {
           const question = definition.questions.find((candidate) => answering !== null && !(candidate.id in answering));
-          if (question !== undefined && key.value <= question.options) dispatch({ type: "answer", questionId: question.id, value: key.value });
+          const value = question === undefined ? null : answerValue(question, key.value);
+          if (question !== undefined && value !== null) dispatch({ type: "answer", questionId: question.id, value });
           break;
         }
       }
@@ -339,7 +370,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   const hookStep = phase.kind === "hook" ? phase.step : null;
   const unlocks = useMemo<ReadonlySet<ControlId>>(() => {
     const earlier = unlocksAfter(before);
-    const now = hookStep === null ? definition.unlocks : definition.hook.slice(0, hookStep + 1).map((step) => step.control);
+    const now = hookStep === null ? definition.unlocks : definition.hook.slice(0, hookStep + 1).flatMap((step) => [step.control, ...(step.reveals ?? [])]);
     return new Set([...earlier, ...now]);
   }, [before, hookStep, definition]);
   const step = hookStep === null ? undefined : definition.hook[hookStep];
@@ -358,7 +389,13 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 
       <div className="lesson-stage">
         <p className="lesson-caption" role="status" aria-live="polite" aria-label="Lesson caption">
-          <Caption phase={phase} definition={definition} setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null} cueLine={cueLine} />
+          <Caption
+            phase={phase}
+            definition={definition}
+            practiceCaption={session === null ? definition.practice.caption : (definition.practiceCaptionFor?.(session.track) ?? definition.practice.caption)}
+            setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null}
+            cueLine={cueLine}
+          />
         </p>
         {wording === "touch" ? <TouchGo phase={phase} dispatch={dispatch} /> : null}
         {wording === "touch" && session !== null ? <TouchReady phase={phase} session={session} definition={definition} /> : null}
@@ -372,17 +409,17 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
               <div key={question.id} className="lesson-question" data-answered={question.id in phase.answers}>
                 <span>{question.caption}</span>
                 <div role="group" aria-label={question.caption}>
-                  {Array.from({ length: question.options }, (_, index) => index + 1).map((option) => (
+                  {(question.choices ?? Array.from({ length: question.options }, (_, index) => ({ label: String(index + 1), value: index + 1 }))).map((choice) => (
                     <button
-                      key={option}
+                      key={choice.value}
                       type="button"
                       className="btn"
-                      aria-pressed={phase.answers[question.id] === option}
+                      aria-pressed={phase.answers[question.id] === choice.value}
                       onClick={() => {
-                        dispatch({ type: "answer", questionId: question.id, value: option });
+                        dispatch({ type: "answer", questionId: question.id, value: choice.value });
                       }}
                     >
-                      {option}
+                      {choice.label}
                     </button>
                   ))}
                 </div>
@@ -423,7 +460,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             </p>
           ) : null
         ) : (
-          <Controller engine={engine} unlocks={unlocks} pulse={step?.control ?? null} captions={captions} />
+          <Controller engine={engine} unlocks={unlocks} pulse={step?.control ?? null} captions={captions} concealed={concealed} />
         )}
       </div>
     </main>
@@ -455,12 +492,14 @@ function TrackCredit({ track }: { readonly track: LessonTrack }) {
 interface CaptionProps {
   readonly phase: LessonPhase;
   readonly definition: ReturnType<typeof lessonDefinition>;
+  /** The practice caption on this track (tempo-fader names its target BPM). */
+  readonly practiceCaption: string;
   readonly setupStatus: string | null;
   readonly cueLine: RefObject<HTMLSpanElement | null>;
 }
 
 /** One line: what to do now. The concept just named sits before it, smaller. */
-function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
+function Caption({ phase, definition, practiceCaption, setupStatus, cueLine }: CaptionProps) {
   const wording = useWording();
   const say = (text: string | undefined) => (text === undefined ? undefined : inputWording(text, wording));
   switch (phase.kind) {
@@ -480,7 +519,7 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
         <>
           {phase.named === null ? null : <span className="lesson-named">{phase.named}</span>}
           <span className="lesson-do">
-            {phase.ready ? "Ready? This one counts." : say(definition.practice.caption)}
+            {phase.ready ? "Ready? This one counts." : say(practiceCaption)}
             <span className="lesson-hint">
               <kbd>Enter</kbd> {phase.ready ? "to go" : "for the Check"}
             </span>
@@ -498,8 +537,17 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
           </span>
         </span>
       );
-    case "answering":
-      return <span className="lesson-do">{definition.questions.find((question) => !(question.id in phase.answers))?.caption ?? ""} (1–8)</span>;
+    case "answering": {
+      const question = definition.questions.find((candidate) => !(candidate.id in phase.answers));
+      if (question === undefined) return <span className="lesson-do" />;
+      const keys = question.choices === undefined ? `1–${String(question.options)}` : question.choices.map((choice, index) => `${String(index + 1)} ${choice.label}`).join(", ");
+      return (
+        <span className="lesson-do">
+          {question.caption}
+          {wording === "touch" ? null : <span className="lesson-hint">({keys})</span>}
+        </span>
+      );
+    }
     case "grading":
       return <span>Checking…</span>;
     case "result":

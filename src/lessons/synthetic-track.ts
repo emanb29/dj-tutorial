@@ -13,6 +13,11 @@ export interface SyntheticLayout {
   /** Silence after the last bar, seconds. */
   readonly tailSec: number;
   readonly peakDbfs: number;
+  /** The pad chord, Hz (default A minor). */
+  readonly padHz?: readonly number[];
+  /** Track id and title (default the 124 BPM practice groove's). */
+  readonly id?: string;
+  readonly title?: string;
 }
 
 /** 80 bars at 124 BPM: intro 16, groove 16, breakdown 8, build 8, drop 16, outro 16. */
@@ -32,6 +37,18 @@ export const SYNTHETIC_HOUSE: SyntheticLayout = {
 
 export const SYNTHETIC_TRACK_ID = "synthetic/house-124";
 
+/**
+ * The second groove, for Lessons that mix two tracks (sync-blend, crossfader): 121 BPM, 2.4% slower
+ * than the first, so SYNC has something to do; same layout, a G major pad so the two are told apart.
+ */
+export const SYNTHETIC_PARTNER: SyntheticLayout = {
+  ...SYNTHETIC_HOUSE,
+  bpm: 121,
+  padHz: [196, 246.94, 293.66],
+  id: "synthetic/house-121",
+  title: "Practice Groove B (synthetic)",
+};
+
 function totalBars(layout: SyntheticLayout): number {
   return layout.sections.reduce((sum, section) => sum + section.bars, 0);
 }
@@ -50,8 +67,8 @@ export function syntheticLessonTrack(layout: SyntheticLayout): LessonTrack {
     return named;
   });
   return {
-    trackId: SYNTHETIC_TRACK_ID,
-    title: "Practice Groove (synthetic)",
+    trackId: layout.id ?? SYNTHETIC_TRACK_ID,
+    title: layout.title ?? "Practice Groove (synthetic)",
     attribution: { text: "A practice groove generated in the browser by learn-to-dj", url: null },
     source: "synthetic",
     durationSec,
@@ -115,7 +132,7 @@ export function synthesizeHouse(layout: SyntheticLayout, sampleRate: number): Fl
     if (section.layers.includes("pad")) {
       addVoice(out, sampleRate, sectionStart, sectionLength, (t) => {
         const swell = Math.min(1, t / 0.5, (sectionLength - t) / 0.2);
-        return 0.06 * swell * PAD_HZ.reduce((sum, hz) => sum + Math.sin(2 * Math.PI * hz * t), 0);
+        return 0.06 * swell * (layout.padHz ?? PAD_HZ).reduce((sum, hz) => sum + Math.sin(2 * Math.PI * hz * t), 0);
       });
     }
     barIndex += section.bars;

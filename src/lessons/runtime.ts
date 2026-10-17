@@ -89,6 +89,11 @@ export type LessonEvent =
 export const TIP_AFTER_MISSES = 2;
 const FADER_UP = 0.9;
 const FADER_DOWN = 0.05;
+/** An EQ band at or below this is cut (the eq-basics Check's kill line), within this of 0 dB centred. */
+export const EQ_CUT_DB = -20;
+export const EQ_CENTRED_DB = 1;
+/** The crossfader within this of an end is all the way to that side. */
+const CROSSFADER_END = 0.05;
 
 export function initialLessonState(lessonId: BuiltLessonId): LessonState {
   return { lessonId, phase: { kind: "loading" }, attempts: 0, started: 0, missStreaks: {}, tipsShown: [], margins: {} };
@@ -122,6 +127,15 @@ function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "r
       return observation.kind === "cue-preview" ? 1 : 0;
     case "cut":
       return observation.kind === "cut" ? 1 : 0;
+    case "sync-on":
+      return observation.kind === "sync" && observation.deck === trigger.deck && observation.on ? 1 : 0;
+    case "eq-cut":
+      return observation.kind === "eq" && observation.deck === trigger.deck && observation.band === trigger.band && observation.db <= EQ_CUT_DB ? 1 : 0;
+    case "eq-centred":
+      return observation.kind === "eq" && observation.deck === trigger.deck && observation.band === trigger.band && Math.abs(observation.db) <= EQ_CENTRED_DB ? 1 : 0;
+    case "crossfader-to":
+      if (observation.kind !== "crossfader") return 0;
+      return (trigger.side === "A" ? observation.value <= CROSSFADER_END : observation.value >= 1 - CROSSFADER_END) ? 1 : 0;
     case "beat-taps":
       return observation.kind === "tap" && observation.onBeat ? 1 : 0;
     case "downbeat-taps":
@@ -163,6 +177,12 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
         : phase;
     case "cut":
       return observation.kind === "cut" ? withRep(config, phase, observation.onPhrase) : phase;
+    case "blend-start":
+      return observation.kind === "cut" ? withRep(config, phase, observation.withinBeat) : phase;
+    case "tempo-set":
+      return observation.kind === "tempo-set" ? withRep(config, phase, observation.onTarget) : phase;
+    case "eq-return":
+      return observation.kind === "eq-return" ? withRep(config, phase, observation.onPhrase) : phase;
   }
 }
 

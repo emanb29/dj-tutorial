@@ -227,6 +227,77 @@ function describeMixing(criterion: CriterionResult): string | null {
   }
 }
 
+const blendStartLine = (measured: number | null) =>
+  measured === null ? "Blend start: B never came in" : `Blend start: ${measured.toFixed(2)} beats from the phrase start (need 1 or less)`;
+
+function blendLengthLine(criterion: CriterionResult): string {
+  const range = criterion.threshold?.value;
+  const need = range === undefined || typeof range === "number" ? "" : ` (need ${String(Math.ceil(range[0]))}–${String(Math.floor(range[1]))})`;
+  return criterion.measured === null ? "Blend length: A never went all the way out" : `Blend: ${criterion.measured.toFixed(1)} bars${need}`;
+}
+
+const loudSteadyLine = (measured: number | null) =>
+  measured === null ? "Level through the blend: not measured" : `Level through the blend: moved ${measured.toFixed(1)} dB (need 3 or less)`;
+
+/** A part of a crossfader criterion (reported as its first part not met), by its unit. */
+function crossfaderPart(label: string, criterion: CriterionResult): string {
+  const { measured } = criterion;
+  const need = thresholdValue(criterion);
+  switch (criterion.unit) {
+    case "beats":
+      return label === "Blend" ? blendStartLine(measured) : measured === null ? `${label}: never happened` : `${label}: A in, B out ${measured.toFixed(2)} beats apart (need ${String(need)} or less)`;
+    case "bars":
+      return blendLengthLine(criterion);
+    case "dB":
+      return label === "Blend" ? loudSteadyLine(measured) : measured === null ? "Level jump: not measured" : `Level jump at the cut: ${measured.toFixed(1)} dB (need ${String(need)} or less)`;
+    case "ms":
+      return measured === null ? "Cut to A: A never came in" : `Cut to A: ${round(measured)} ms from the phrase start (need ${String(need)} or less)`;
+    case "s":
+      return measured === null ? "CUE A: A never came in" : `CUE A on ${measured.toFixed(1)} s before the cut (need ${String(need)})`;
+    default:
+      return label;
+  }
+}
+
+/** Lessons 8–11; null for criteria of other Lessons. */
+function describeSyncMixing(criterion: CriterionResult): string | null {
+  const measured = criterion.measured;
+  const need = thresholdValue(criterion);
+  switch (criterion.id) {
+    case "tempo-fader.set-bpm": {
+      const confirmed = criterion.detail?.["confirmed"] ?? 0;
+      const targets = criterion.detail?.["targets"] ?? 0;
+      return measured === null
+        ? `BPMs set: ${String(confirmed)} of ${String(targets)} confirmed with Ready`
+        : `BPMs: worst ${measured.toFixed(2)} BPM off (need ${String(need)} or less)`;
+    }
+    case "tempo-fader.master-tempo-ear":
+      return `Master Tempo clips: ${String(measured ?? 0)} of ${String(need)} right`;
+    case "sync-blend.blend-start":
+      return blendStartLine(measured);
+    case "sync-blend.blend-length":
+      return blendLengthLine(criterion);
+    case "sync-blend.loud-steady":
+      return loudSteadyLine(measured);
+    case "sync-blend.trim-untouched":
+      return measured === 0 ? "TRIM left alone during the blend" : `TRIM moved ${String(measured ?? 0)} times during the blend (need none)`;
+    case "crossfader.xf-blend":
+      return criterion.status === "met" ? "Crossfader blend: on the phrase, 8–16 bars, level steady" : crossfaderPart("Blend", criterion);
+    case "crossfader.xf-cut":
+      return criterion.status === "met" ? "Crossfader cut to A: on the phrase, cued, level even" : crossfaderPart("Cut", criterion);
+    case "crossfader.faders-up":
+      return measured === null ? "Channel faders: not measured" : `Channel faders: lowest at ${String(Math.round(measured * 100))}% (keep both up)`;
+    case "eq-basics.low-kill":
+      return `LOW cut: ${(measured ?? 0).toFixed(1)} bars at the bottom (need ${String(need)} or more)`;
+    case "eq-basics.low-return":
+      return measured === null ? "LOW back: it never came back to the middle" : `LOW back ${measured.toFixed(2)} beats from the phrase start (need 1 or less)`;
+    case "eq-basics.eq-centred":
+      return measured === null ? "EQs at the end: not measured" : `EQs at the end: ${measured.toFixed(1)} dB from the middle at most (need ${String(need)} or less)`;
+    default:
+      return null;
+  }
+}
+
 /** One plain line per criterion for the result card: what was measured against what was needed. */
 export function describeCriterion(criterion: CriterionResult): string {
   const measured = criterion.measured;
@@ -248,7 +319,7 @@ export function describeCriterion(criterion: CriterionResult): string {
       return `Sections named: ${String(questions - (measured ?? questions))} of ${String(questions)} right`;
     }
     default: {
-      const mixing = describeMixing(criterion);
+      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion);
       if (mixing !== null) return mixing;
       const name = criterionPlainName(criterion.id);
       const label = name.charAt(0).toUpperCase() + name.slice(1);

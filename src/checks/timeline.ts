@@ -135,7 +135,29 @@ function matches(event: ControlEvent, control: ControlId, deck: DeckId | undefin
   return event.control === control && event.deck === deck;
 }
 
-/** A control's value at `t`: the latest event at or before `t`, else `initial`. */
+/**
+ * Each attempt's events split by control and deck, built once per events array: a Check asks for a
+ * control's value at every 50 Hz meter frame, and a long drag records thousands of events, so a scan
+ * per lookup made grading a crossfader blend take a third of a second.
+ */
+const byControl = new WeakMap<readonly ControlEvent[], Map<string, ControlEvent[]>>();
+
+function eventsOf(events: readonly ControlEvent[], control: ControlId, deck: DeckId | undefined): readonly ControlEvent[] {
+  let index = byControl.get(events);
+  if (index === undefined) {
+    index = new Map();
+    for (const event of events) {
+      const key = `${event.control}/${event.deck ?? ""}`;
+      const list = index.get(key);
+      if (list === undefined) index.set(key, [event]);
+      else list.push(event);
+    }
+    byControl.set(events, index);
+  }
+  return index.get(`${control}/${deck ?? ""}`) ?? [];
+}
+
+/** A control's value at `t`: the latest event at or before `t`, else `initial`. Events are in time order. */
 export function controlValueAt(
   events: readonly ControlEvent[],
   control: ControlId,
@@ -143,12 +165,16 @@ export function controlValueAt(
   t: CtxTime,
   initial: number,
 ): number {
-  let value = initial;
-  for (const event of events) {
-    if (event.ctx > t + TIME_EPSILON) break;
-    if (matches(event, control, deck)) value = event.value;
+  const own = eventsOf(events, control, deck);
+  // Binary search for the last event at or before `t`.
+  let low = 0;
+  let high = own.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if ((own[middle]?.ctx ?? Infinity) <= t + TIME_EPSILON) low = middle + 1;
+    else high = middle;
   }
-  return value;
+  return low === 0 ? initial : (own[low - 1]?.value ?? initial);
 }
 
 /** Events of one control (and deck) inside `span`. */

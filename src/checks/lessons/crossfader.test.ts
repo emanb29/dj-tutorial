@@ -71,6 +71,13 @@ describe("crossfader", () => {
     expect(result.outcome).toEqual({ kind: "passed" });
   });
 
+  it("measures an even sweep short of its length: the ends are inaudible, so the Lesson asks for 10 bars, not 8", () => {
+    const sweep = (bars: number) => check([...ramp("crossfader", undefined, { from: 32, to: 32 + bars * BAR }, 0, 1), event(80, "crossfader", 0)]);
+    // B is heard from about 4% of the travel, A gone from about 96%: 8 bars measure about 7.4.
+    expect(byId(sweep(8), "crossfader.xf-blend")).toMatchObject({ status: "notMet" });
+    expect(byId(sweep(10), "crossfader.xf-blend")).toMatchObject({ status: "met" });
+  });
+
   it("drops the cut in the short form, which needs sync-blend's short 8–9 bar blend", () => {
     const shortBlend = [event(32, "crossfader", 0.5), event(32 + 8.5 * BAR, "crossfader", 1)];
     const result = check(shortBlend, { short: true });

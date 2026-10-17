@@ -83,8 +83,9 @@ describe("sync-blend", () => {
   });
 
   it("measures the blend to the first frame A is not audible, not to the start of a slow fader drag", () => {
-    // A's fader dragged down at 50 Hz from 62 s; it drops under −24 dB at 70 s, 19 bars after B came in.
-    const nineteenBars = check({ faderEvents: [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 62, to: 72.68 }, 1, 0)] });
+    // A's fader dragged down at 50 Hz from 62 s; it drops under −24 dB at 70 s, 19 bars after B came in
+    // (at 0.3 on the fader: the crossfader's centre is −3 dB).
+    const nineteenBars = check({ faderEvents: [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 62, to: 73.4 }, 1, 0)] });
     expect(byId(nineteenBars, "sync-blend.blend-length")).toMatchObject({ status: "notMet" });
     expect(byId(nineteenBars, "sync-blend.blend-length")?.measured).toBeCloseTo(19, 1);
   });

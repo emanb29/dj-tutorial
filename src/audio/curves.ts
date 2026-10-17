@@ -55,7 +55,7 @@ export function channelFaderGain(position: FaderPosition): number {
 
 /**
  * Crossfader gain (amplitude) for one deck, from the curve the Checks use. Position is 0 (full A) … 1
- * (full B): each deck is at unity from its own side to the centre, then fades linearly to the far side.
+ * (full B): constant power, cos/sin of the travel, so both decks are at −3 dB at the centre.
  */
 export function crossfaderGain(deck: DeckId, position: FaderPosition): number {
   return decibelsToGain(crossfaderGainDb(deck, position));

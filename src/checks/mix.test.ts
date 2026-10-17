@@ -22,14 +22,15 @@ function twoDecks(bOpenAt: number, aCloseAt: number) {
 }
 
 describe("channel gain", () => {
-  it("is the fader curve plus the crossfader curve", () => {
+  it("is the fader curve plus the crossfader curve (−3 dB at its centre)", () => {
     const recorded = twoDecks(20, 30);
 
-    expect(channelGainDb(recorded, "A", 5)).toBeCloseTo(0);
+    expect(channelGainDb(recorded, "A", 5)).toBeCloseTo(-3.01, 2);
     expect(channelGainDb(recorded, "B", 5)).toBe(-120);
     expect(
       channelGainDb(attempt({ initialMixer: { A: channel({ channelFader: 0.5 }), B: channel(), crossfader: 0.5 } }), "A", 0),
-    ).toBeCloseTo(-12.04, 2);
+    ).toBeCloseTo(-15.05, 2);
+    expect(channelGainDb(attempt({ initialMixer: { A: channel({ channelFader: 1 }), B: channel(), crossfader: 0 } }), "A", 0)).toBe(0);
   });
 });
 

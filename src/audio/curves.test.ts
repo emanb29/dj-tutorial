@@ -71,20 +71,24 @@ describe("channel fader (the shared curve from shared/attempt.ts)", () => {
 });
 
 describe("crossfader (the shared curve from shared/attempt.ts)", () => {
-  it("keeps both decks at unity at the centre", () => {
-    expect(crossfaderGain("A", 0.5)).toBe(1);
-    expect(crossfaderGain("B", 0.5)).toBe(1);
+  it("is constant power: both decks at −3 dB at the centre", () => {
+    expect(gainToDecibels(crossfaderGain("A", 0.5))).toBeCloseTo(-3.01, 2);
+    expect(gainToDecibels(crossfaderGain("B", 0.5))).toBeCloseTo(-3.01, 2);
   });
 
-  it("fades the far deck linearly in amplitude over the far half", () => {
-    expect(crossfaderGain("A", 0.75)).toBeCloseTo(0.5, 12);
-    expect(crossfaderGain("B", 0.25)).toBeCloseTo(0.5, 12);
-    expect(crossfaderGain("B", 0.75)).toBe(1);
+  it("keeps the summed power steady all the way across (cos/sin law)", () => {
+    for (const position of [0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1]) {
+      expect(crossfaderGain("A", position) ** 2 + crossfaderGain("B", position) ** 2).toBeCloseTo(1, 6);
+    }
+    expect(crossfaderGain("A", 0.25)).toBeCloseTo(Math.cos(Math.PI / 8), 12);
+    expect(crossfaderGain("B", 0.25)).toBeCloseTo(Math.sin(Math.PI / 8), 12);
   });
 
-  it("puts the far deck at the gain floor at each end", () => {
-    expect(gainToDecibels(crossfaderGain("A", 1))).toBeCloseTo(-120, 6);
+  it("cuts hard at the ends: fully one side is unity there and the other deck at the gain floor", () => {
     expect(crossfaderGain("A", 0)).toBe(1);
+    expect(gainToDecibels(crossfaderGain("B", 0))).toBeCloseTo(-120, 6);
+    expect(crossfaderGain("B", 1)).toBe(1);
+    expect(gainToDecibels(crossfaderGain("A", 1))).toBeCloseTo(-120, 6);
   });
 });
 

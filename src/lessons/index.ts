@@ -1,4 +1,4 @@
-// Lessons: the hand-authored Lesson catalogue (Lessons 1–7 so far) and the pure runtime that runs one.
+// Lessons: the hand-authored Lesson catalogue (Lessons 1–11 so far) and the pure runtime that runs one.
 // The app (src/app/lesson) owns audio, React and the network; everything here is data and pure functions.
 export {
   checkDecksFor,
@@ -51,7 +51,9 @@ export {
   type TaskOutcome,
 } from "./placement.ts";
 export { placementControls, placementTask, placementTrackProblems, type PlacementTaskDefinition } from "./placement-tasks.ts";
-export { initialLessonState, lessonReducer, TIP_AFTER_MISSES, type LessonEvent, type LessonPhase, type LessonState } from "./runtime.ts";
-export { SYNTHETIC_HOUSE, SYNTHETIC_TRACK_ID, synthesizeHouse, syntheticLessonTrack, type SyntheticLayout } from "./synthetic-track.ts";
-export { barStart, beatSec, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, peakDbfsOf, phraseStart, sliceTrack } from "./track.ts";
+export { pairProblems, PAIR_MAX_APART, PAIR_MIN_APART, tempoTargets } from "./catalogue-sync.ts";
+export { partnerOrder } from "./plan.ts";
+export { EQ_CENTRED_DB, EQ_CUT_DB, initialLessonState, lessonReducer, TIP_AFTER_MISSES, type LessonEvent, type LessonPhase, type LessonState } from "./runtime.ts";
+export { SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, SYNTHETIC_TRACK_ID, synthesizeHouse, syntheticLessonTrack, type SyntheticLayout } from "./synthetic-track.ts";
+export { barStart, beatSec, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, peakDbfsOf, phraseStart, sliceTrack, trackOnDeck } from "./track.ts";
 export type * from "./types.ts";

@@ -44,6 +44,10 @@ function touchWords(binding: KeyBinding): TouchWords | null {
       const deed = action.open ? `push ${fader} up` : `pull ${fader} down`;
       return { press: deed.charAt(0).toUpperCase() + deed.slice(1), aside: null, bare: deed };
     }
+    case "crossfader-cut": {
+      const deed = `snap the crossfader to ${action.side}`;
+      return { press: deed.charAt(0).toUpperCase() + deed.slice(1), aside: null, bare: deed };
+    }
     case "toggle-legend":
       return null;
   }

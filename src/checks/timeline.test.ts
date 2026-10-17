@@ -64,6 +64,19 @@ describe("mixer state from events", () => {
     expect(controlValueAt(events, "channelFader", "A", 9, 0)).toBe(1);
     expect(controlValueAt(events, "channelFader", "B", 9, 0.2)).toBe(0.2);
   });
+
+  it("keeps each control and deck apart in a long interleaved timeline, the later of two same-time events winning", () => {
+    const long = Array.from({ length: 3000 }, (_, index) =>
+      index % 3 === 0 ? event(index * 0.02, "crossfader", index / 3000) : event(index * 0.02, "channelFader", index % 2, index % 3 === 1 ? "A" : "B"),
+    );
+    const tied = [...long, event(60, "crossfader", 0.2), event(60, "crossfader", 0.7)];
+
+    expect(controlValueAt(tied, "crossfader", undefined, 30.01, 0)).toBeCloseTo(1500 / 3000);
+    expect(controlValueAt(tied, "channelFader", "A", 30.01, 9)).toBe(1498 % 2);
+    expect(controlValueAt(tied, "channelFader", "B", 30.01, 9)).toBe(1499 % 2);
+    expect(controlValueAt(tied, "crossfader", undefined, 60, 0)).toBe(0.7);
+    expect(controlValueAt(tied, "crossfader", undefined, -1, 0.5)).toBe(0.5);
+  });
 });
 
 describe("fader gesture start (judged on intent)", () => {

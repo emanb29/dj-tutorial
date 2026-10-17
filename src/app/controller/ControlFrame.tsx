@@ -21,8 +21,10 @@ interface ControlFrameProps {
 const UNLOCK_CLASS = "just-unlocked";
 
 export function ControlFrame({ id, label, className, keyHint = null, captionSide = "below", children }: ControlFrameProps) {
-  const { unlocks, pulse, captions, legendOpen } = useController();
+  const { unlocks, concealed, pulse, captions, legendOpen } = useController();
   const locked = !unlocks.has(id);
+  // Concealed for now: drawn and held as locked, but coming back is no unlock to reward.
+  const held = locked || concealed.has(id);
   const element = useRef<HTMLDivElement>(null);
   const wasLocked = useRef(locked);
 
@@ -44,7 +46,7 @@ export function ControlFrame({ id, label, className, keyHint = null, captionSide
 
   // On a phone the controller is taller than the screen: bring the control to touch next into view.
   // "nearest" leaves a control that is already on screen where it is, so a desktop never scrolls.
-  const pulsing = pulse === id && !locked;
+  const pulsing = pulse === id && !held;
   useEffect(() => {
     if (!pulsing) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -52,12 +54,12 @@ export function ControlFrame({ id, label, className, keyHint = null, captionSide
   }, [pulsing]);
 
   const caption = captions.get(id);
-  const classes = ["control", className, locked ? "locked" : null, pulsing ? "pulse" : null].filter(Boolean).join(" ");
+  const classes = ["control", className, held ? "locked" : null, pulsing ? "pulse" : null].filter(Boolean).join(" ");
   return (
-    <div ref={element} className={classes} data-control={id} data-locked={locked} inert={locked} aria-disabled={locked || undefined}>
+    <div ref={element} className={classes} data-control={id} data-locked={held} inert={held} aria-disabled={held || undefined}>
       {children}
       {label === undefined ? null : <span className="control-label">{label}</span>}
-      {legendOpen && keyHint !== null && !locked ? (
+      {legendOpen && keyHint !== null && !held ? (
         <kbd className="key-hint" aria-hidden="true">
           {keyHint}
         </kbd>

@@ -42,7 +42,7 @@ const levels = (before: FrameLevels, after: FrameLevels, at: number) => (t: numb
 
 describe("the Lesson catalogue for Lessons 1–7", () => {
   it("adds gain-staging, headphone-cue, cue-point and cut-on-phrase after the first three, in catalogue order", () => {
-    expect(LESSONS.map((lesson) => lesson.id)).toEqual(["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase"]);
+    expect(LESSONS.map((lesson) => lesson.id).slice(0, 7)).toEqual(["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase"]);
   });
 
   it("grows the controller with each Lesson's controls", () => {
@@ -55,7 +55,7 @@ describe("the Lesson catalogue for Lessons 1–7", () => {
   });
 
   it("asks for headphones in the Lessons that use the headphone cue", () => {
-    expect(LESSONS.filter((lesson) => lesson.headphones === true).map((lesson) => lesson.id)).toEqual(["headphone-cue", "cue-point", "cut-on-phrase"]);
+    expect(LESSONS.slice(0, 7).filter((lesson) => lesson.headphones === true).map((lesson) => lesson.id)).toEqual(["headphone-cue", "cue-point", "cut-on-phrase"]);
   });
 
   it("has an authored tip for every Lesson criterion of Lessons 4–7", () => {

@@ -1,10 +1,24 @@
 // Lesson 8, `tempo-fader`: set B to target BPMs, and hear whether Master Tempo is on (check-design §4).
+import type { Attempt, CtxTime, DeckId } from "@shared/attempt.ts";
 import { loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
+import { TIME_EPSILON } from "../measures.ts";
 import { tempoBpmAt } from "../phase.ts";
 import { controlEvents } from "../timeline.ts";
 
 const BPM_TOLERANCE = 0.05;
+const PLAYHEAD_CONTROLS: ReadonlySet<string> = new Set(["tempo", "jogBend", "sync", "masterTempo"]);
+
+/**
+ * When the deck's tempo as it stood at the press `at` is in the playhead model. A move takes effect an
+ * output latency (and, with Master Tempo, the stretch lead) after it was made, while the display shows
+ * it at once: a Ready pressed in that gap confirms the BPM the display read (input leeway).
+ */
+function settledAt(attempt: Attempt, deck: DeckId, at: CtxTime): CtxTime {
+  return attempt.events
+    .filter((event) => event.deck === deck && PLAYHEAD_CONTROLS.has(event.control) && event.ctx <= at + TIME_EPSILON)
+    .reduce((latest, event) => Math.max(latest, event.appliedCtx ?? event.ctx), at);
+}
 
 export const tempoFader: LessonCheck<TaskOf<"tempo-fader">> = {
   situations: { transition: false },
@@ -18,7 +32,7 @@ export const tempoFader: LessonCheck<TaskOf<"tempo-fader">> = {
       .slice(0, task.targetsBpm.length);
     const errors = task.targetsBpm.map((target, index) => {
       const at = confirms[index];
-      const bpm = at === undefined || deckB === null ? null : tempoBpmAt(attempt, deckB, at);
+      const bpm = at === undefined || deckB === null ? null : tempoBpmAt(attempt, deckB, settledAt(attempt, "B", at));
       return bpm === null ? null : Math.abs(bpm - target);
     });
     const worst = errors.some((error) => error === null) ? null : Math.max(...errors.filter((error) => error !== null));

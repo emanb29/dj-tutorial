@@ -401,3 +401,88 @@ for (const [width, height] of [
     });
   });
 }
+
+// Lessons 8–11 on a phone: each Lesson's new part is on screen and finger-sized when its step asks
+// for it, the captions name controls (no key), and Ready and the question answers are buttons.
+test.describe("Lessons 8–11 on a phone (412×915, touch)", () => {
+  test.use(phone(412, 915));
+  const FIRST_SEVEN = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase"];
+  const caption = (page: Page) => page.getByRole("status", { name: "Lesson caption" });
+  const phase = (page: Page) => page.locator("main.lesson");
+  const ready = (page: Page) => page.getByRole("button", { name: "Ready", exact: true });
+
+  test("tempo-fader: TEMPO B and its BPM on screen, Ready in practice and the Check, On/Off answers", async ({ page }) => {
+    test.setTimeout(90_000);
+    await openLesson(page, "tempo-fader", { touch: true, passed: ["deck-basics"] });
+    await expect(caption(page)).toHaveText("Slide TEMPO B");
+    await expectFingerSized(page, page.locator("section.deck-B").getByRole("slider", { name: "TEMPO" }));
+    await expect(page.locator('[data-control="B.bpm"]')).toBeInViewport();
+    await command(page, { control: "tempo", deck: "B", value: 0.1 });
+    await expect(caption(page)).toContainText("Press MASTER TEMPO B");
+    await expectFingerSized(page, page.getByRole("button", { name: "Deck B master tempo" }));
+    await page.getByRole("button", { name: "Deck B master tempo" }).tap();
+    await expectFingerSized(page, page.getByRole("button", { name: /Deck B tempo range/ }));
+    await page.getByRole("button", { name: /Deck B tempo range/ }).tap();
+
+    await expect(phase(page)).toHaveAttribute("data-phase", "practice");
+    await expect(caption(page)).toContainText("Set B to 126.0 BPM, then Ready");
+    await expect(caption(page)).not.toContainText("(R)");
+    await expectFingerSized(page, ready(page));
+
+    await page.getByRole("button", { name: "Start the Check" }).tap();
+    await expect(page.locator(".lesson-cue")).toHaveText("Set B to 127.0 BPM, then Ready");
+    for (let index = 0; index < 3; index += 1) await ready(page).tap();
+    const answer = page.getByRole("group", { name: "Clip 1: Master Tempo on or off?" }).getByRole("button", { name: "On" });
+    await expectFingerSized(page, answer);
+    await expect(caption(page)).toHaveText("Clip 1: Master Tempo on or off?");
+  });
+
+  test("tempo-fader: a finger slid out to the side of TEMPO moves it a fifth as far, for a BPM to a tenth", async ({ page }) => {
+    await openLesson(page, "tempo-fader", { touch: true, passed: ["deck-basics"] });
+    const tempo = page.locator("section.deck-B").getByRole("slider", { name: "TEMPO" });
+    const touchscreen = await page.context().newCDPSession(page);
+    const touch = async (type: "touchStart" | "touchMove", x: number, y: number) => touchscreen.send("Input.dispatchTouchEvent", { type, touchPoints: [{ x, y }] });
+    /** A 20 px stroke down the fader, the finger first slid `sideways` px off it; how far the value moved. */
+    const stroke = async (sideways: number) => {
+      const box = await settledBox(page, tempo);
+      const before = Number(await tempo.getAttribute("aria-valuenow"));
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await touch("touchStart", x, y);
+      for (let step = 1; step <= 4; step += 1) await touch("touchMove", x + (sideways * step) / 4, y);
+      for (let step = 1; step <= 4; step += 1) await touch("touchMove", x + sideways, y + 5 * step);
+      await touchscreen.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect.poll(async () => Number(await tempo.getAttribute("aria-valuenow"))).not.toBe(before);
+      return Math.abs(Number(await tempo.getAttribute("aria-valuenow")) - before);
+    };
+    const coarse = await stroke(0);
+    const fine = await stroke(80);
+    expect(fine).toBeGreaterThan(0);
+    expect(fine).toBeLessThan(coarse / 3);
+  });
+
+  test("sync-blend: BEAT SYNC on B is on screen and finger-sized, captions name PLAY on deck B", async ({ page }) => {
+    await openLesson(page, "sync-blend", { touch: true, passed: [...FIRST_SEVEN, "tempo-fader"], headphones: true });
+    await expect(caption(page)).toHaveText("Press BEAT SYNC on B");
+    await expectFingerSized(page, page.getByRole("button", { name: "Deck B beat sync" }));
+    await page.getByRole("button", { name: "Deck B beat sync" }).tap();
+    await expect(caption(page)).toContainText("On the phrase's 1: Tap PLAY on deck B");
+  });
+
+  test("crossfader: the crossfader is on screen and finger-sized, its cut key is not in the caption", async ({ page }) => {
+    await openLesson(page, "crossfader", { touch: true, passed: [...FIRST_SEVEN, "tempo-fader", "sync-blend"], headphones: true });
+    await expect(caption(page)).toHaveText("Tap PLAY on deck B to play B");
+    await command(page, { control: "play", deck: "B" });
+    await expect(caption(page)).toContainText("Slide the crossfader to B");
+    await expectFingerSized(page, page.getByRole("slider", { name: "CROSSFADER" }));
+    await command(page, { control: "crossfader", value: 1 });
+    await expect(caption(page)).toContainText("Snap it back to A");
+    await expect(caption(page)).not.toContainText("(C)");
+  });
+
+  test("eq-basics: LOW A is on screen and finger-sized", async ({ page }) => {
+    await openLesson(page, "eq-basics", { touch: true, passed: ["deck-basics", "beats-and-bars", "phrases", "gain-staging"] });
+    await expect(caption(page)).toHaveText("Turn LOW A all the way down");
+    await expectFingerSized(page, page.locator(".channel-A").getByRole("slider", { name: "LOW" }));
+  });
+});

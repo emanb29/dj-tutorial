@@ -187,6 +187,24 @@ describe("drag gestures", () => {
     ]);
   });
 
+  it("switches to fine adjust mid-drag from where the control is, without a jump", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine);
+    const drag = controller.beginDrag("A.channel-fader", "touch", { fullTravelPx: 100 });
+    drag?.move(-20, { fine: false, eventTimeMs: 1 });
+    drag?.move(-20, { fine: true, eventTimeMs: 2 });
+    drag?.move(-70, { fine: true, eventTimeMs: 3 });
+    drag?.move(-80, { fine: false, eventTimeMs: 4 });
+    drag?.move(-90, { fine: false, eventTimeMs: 5 });
+    const values = sent.map((entry) => ("value" in entry.command ? entry.command.value : null));
+    // 20 px of full travel (0.2), then 50 px at a fifth (0.1), then 10 px at full travel again (0.1);
+    // a switch alone moves nothing.
+    expect(values[0]).toBeCloseTo(0.8);
+    expect(values[1]).toBeCloseTo(0.7);
+    expect(values[2]).toBeCloseTo(0.6);
+    expect(values).toHaveLength(3);
+  });
+
   it("sweeps a fader end to end over the track length it is given", () => {
     const { engine, sent } = fakeEngine();
     const { session: controller } = session(engine);

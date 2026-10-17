@@ -68,13 +68,13 @@ describe("channel strip", () => {
 });
 
 describe("crossfader (the shared curve)", () => {
-  it("leaves deck A at unity from its side to the centre", async () => {
+  it("leaves deck A at unity on its side and at −3 dB at the centre (constant power)", async () => {
     expect(await gainDb(1000, [{ control: "crossfader", value: 0 }])).toBeCloseTo(0, 1);
-    expect(await gainDb(1000, [{ control: "crossfader", value: 0.5 }])).toBeCloseTo(0, 1);
+    expect(await gainDb(1000, [{ control: "crossfader", value: 0.5 }])).toBeCloseTo(-3.01, 1);
   });
 
-  it("fades deck A to -6 dB at three quarters and silence fully right", async () => {
-    expect(await gainDb(1000, [{ control: "crossfader", value: 0.75 }])).toBeCloseTo(-6.02, 1);
+  it("fades deck A to cos(3π/8) at three quarters and silence fully right", async () => {
+    expect(await gainDb(1000, [{ control: "crossfader", value: 0.75 }])).toBeCloseTo(20 * Math.log10(Math.cos((3 * Math.PI) / 8)), 1);
     expect(await gainDb(1000, [{ control: "crossfader", value: 1 }])).toBeLessThan(-100);
   });
 });

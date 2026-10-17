@@ -7,7 +7,7 @@ import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type PointerEve
 import type { InputDevice } from "@audio";
 import { keepFocusWhereItIs } from "./ControlButton.tsx";
 import { useController, useSessionValue } from "./context.tsx";
-import { faderTravelPx, type ContinuousControlId } from "./gestures.ts";
+import { faderTravelPx, isTempoFader, SIDEWAYS_FINE_PX, type ContinuousControlId } from "./gestures.ts";
 import type { DragGesture } from "./session.ts";
 
 export type DragAxis = "vertical" | "horizontal";
@@ -60,6 +60,10 @@ export function useContinuousControl(id: ContinuousControlId, axis: DragAxis, tr
   );
 
   const travel = (event: PointerEvent, start: ActiveDrag) => (axis === "vertical" ? start.startY - event.clientY : event.clientX - start.startX);
+  // A finger has no Shift: on a touchscreen, sliding it out to the side of a tempo fader is fine adjust
+  // (as media scrubbing on a phone), so a BPM can be set to a tenth.
+  const fineAdjust = (event: PointerEvent, start: ActiveDrag) =>
+    event.shiftKey || (event.pointerType === "touch" && isTempoFader(id) && Math.abs(event.clientX - start.startX) >= SIDEWAYS_FINE_PX);
 
   const release = (event: PointerEvent<HTMLDivElement>) => {
     const active = drag.current;
@@ -93,7 +97,7 @@ export function useContinuousControl(id: ContinuousControlId, axis: DragAxis, tr
       onPointerMove(event: PointerEvent<HTMLDivElement>) {
         const active = drag.current;
         if (active?.pointerId !== event.pointerId) return;
-        active.gesture.move(travel(event, active), { fine: event.shiftKey, eventTimeMs: event.timeStamp });
+        active.gesture.move(travel(event, active), { fine: fineAdjust(event, active), eventTimeMs: event.timeStamp });
       },
       onPointerUp: release,
       onPointerCancel: release,

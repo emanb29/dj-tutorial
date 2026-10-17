@@ -146,6 +146,13 @@ export function nudgeValue(spec: ContinuousSpec, value: number, key: string, opt
   }
 }
 
+/** A finger this far to the side of where a tempo-fader drag began is fine adjust (touch has no Shift). */
+export const SIDEWAYS_FINE_PX = 48;
+
+export function isTempoFader(id: ContinuousControlId): boolean {
+  return splitId(id).part === "tempo";
+}
+
 /** The deck a deck control belongs to. */
 export function deckOf(id: DeckControlId): DeckId {
   return id.startsWith("A.") ? "A" : "B";

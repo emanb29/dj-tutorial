@@ -71,11 +71,12 @@ describe("filter-transition", () => {
   });
 
   it("measures depth, length and reset from the first frame A is not audible, not from the start of its fader drag", () => {
-    // A's fader dragged down at 50 Hz from 52 s; it drops under −24 dB at 56 s. The sweep reaches 0.75 at 55 s.
+    // A's fader dragged down at 50 Hz from 52 s; it drops under −24 dB at 56 s (at 0.3 on the fader: the
+    // crossfader's centre is −3 dB). The sweep reaches 0.75 at 55 s.
     const result = check(
       [event(40, "filter", 0.06, "A"), event(55, "filter", 0.75, "A"), event(57, "filter", 0, "A")],
       "full",
-      [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 52, to: 57.34 }, 1, 0)],
+      [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 52, to: 57.7 }, 1, 0)],
     );
     expect(byId(result, "filter-transition.hpf-depth")?.status).toBe("met");
     expect(byId(result, "filter-transition.filter-length")?.measured).toBeCloseTo(8, 1);

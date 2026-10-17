@@ -56,7 +56,8 @@ describe("headphone-cue", () => {
     const result = check(bBeats, flick);
 
     expect(byId(result, "headphone-cue.b-off-master")?.status).toBe("notMet");
-    expect(byId(result, "headphone-cue.b-off-master")?.measured).toBeCloseTo(-52.04, 1);
+    // The fader at 0.05 is −52 dB, and the crossfader's centre −3 dB more.
+    expect(byId(result, "headphone-cue.b-off-master")?.measured).toBeCloseTo(-55.05, 1);
     expect(byId(check(bBeats, [event(8, "channelFader", 0.03, "B")]), "headphone-cue.b-off-master")?.status).toBe("met");
   });
 

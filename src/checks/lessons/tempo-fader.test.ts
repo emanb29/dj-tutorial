@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ControlEvent, PlayheadSegment } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { runCheck } from "../run-check.ts";
-import { BPM, attempt, event, spec } from "../testing/synthetic.ts";
+import { BPM, applied, attempt, event, spec } from "../testing/synthetic.ts";
 
 const TARGETS = [122, 118, 125];
 const CLIPS = [
@@ -70,6 +70,22 @@ describe("tempo-fader", () => {
     });
 
     expect(byId(result, "tempo-fader.set-bpm")?.status).toBe("met");
+  });
+
+  it("grades a Ready pressed right after the last tempo move by that move, not the rate still heard", () => {
+    // The last nudge (117.9 → 118) is heard at 18.9 and takes effect in the playhead at 19.15 (output
+    // latency plus the Master Tempo stretch lead); Ready comes at 19.0, while the display reads 118.0.
+    const segments = [
+      { fromCtx: 0, pos: 0, rate: 122 / BPM },
+      { fromCtx: 10, pos: 10 * (122 / BPM), rate: 117.9 / BPM },
+      { fromCtx: 19.15, pos: 10 * (122 / BPM) + 9.15 * (117.9 / BPM), rate: 118 / BPM },
+      { fromCtx: 20, pos: 10 * (122 / BPM) + 9.15 * (117.9 / BPM) + 0.85 * (118 / BPM), rate: 125 / BPM },
+    ];
+    const result = check(segments, {
+      events: [event(9, "ready", 1, "B"), applied(18.9, "tempo", 118 / BPM, "B", 0.25), event(19, "ready", 1, "B"), event(29, "done", 1)],
+    });
+
+    expect(byId(result, "tempo-fader.set-bpm")).toMatchObject({ status: "met" });
   });
 
   it("needs a confirm press per target", () => {

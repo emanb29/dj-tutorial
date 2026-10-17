@@ -4,19 +4,24 @@
 //
 // The audio part of a Check ends (and the recorder stops) before any questions are asked, so the
 // grading window and the end reason never include the time spent answering.
-import { AttemptRecorder, type AudioEngine, type CommandEvent, type EngineCommand, type RecordedAttempt, type Result } from "@audio";
+import { AttemptRecorder, eqKnobToDecibels, type AudioEngine, type CommandEvent, type EngineCommand, type RecordedAttempt, type Result } from "@audio";
 import { runCheck } from "@checks";
 import {
   checkDecksFor,
   checkSpecFor,
   classifyTap,
+  EQ_CENTRED_DB,
+  EQ_CUT_DB,
   GAIN_ZONE_DB,
   LESSON_GRADING,
   practiceDecksFor,
   practiceLoopFor,
   sliceTrack,
+  trackOnDeck,
   withPlannedGrids,
   type CheckPlan,
+  type EqBand,
+  type ListeningClip,
   type DeckSetup,
   type DeckSetups,
   type Grading,
@@ -42,6 +47,9 @@ const LEVEL_EVERY_MS = 500;
 const LEVEL_MATCH_DB = 1.5;
 /** A cut on the phrase in practice: Play B within this of A's phrase start (the Lesson's ±120 ms). */
 const CUT_TOLERANCE_MS = 120;
+/** tempo-fader practice: B's BPM this close to the target is on it (the Check's set-bpm limit). */
+const BPM_TOLERANCE = 0.05;
+const EQ_BANDS: Readonly<Record<"eq-low" | "eq-mid" | "eq-high", EqBand>> = { "eq-low": "low", "eq-mid": "mid", "eq-high": "high" };
 const DEVICE = { device: "keyboard" } as const;
 const DECKS: readonly DeckId[] = ["A", "B"];
 
@@ -87,6 +95,15 @@ export class LessonSession {
   private readonly peaks: Record<DeckId, { ctx: number; peak: number }[]> = { A: [], B: [] };
   private readonly lastLevel: Record<DeckId, number | null> = { A: null, B: null };
   private faderWasUp = false;
+  /** Decks whose LOW is cut now (at or below the kill line), for the eq-basics practice rep. */
+  private readonly lowCut: Record<DeckId, boolean> = { A: false, B: false };
+  /** The listening clip playing now (tempo-fader questions), if any. */
+  private clip: ListeningClip | null = null;
+  /**
+   * Check attempts started, for the plan's per-attempt variation (which clip has Master Tempo on). It
+   * starts at a random count, so a Lesson opened again does not replay the same answers in order.
+   */
+  private checksStarted = Math.floor(Math.random() * 1000);
   /** Commands the session sends itself (set-up) are not the Learner's: no observations from them. */
   private settingUp = false;
   /** Bumped by every set-up, so a slow load that finishes late does not set up an old phase. */
@@ -110,7 +127,7 @@ export class LessonSession {
     private readonly grading: Grading = LESSON_GRADING,
   ) {
     this.recorder = new AttemptRecorder(engine);
-    this.onDeck = { A: track, B: hasDeckB ? track : null };
+    this.onDeck = { A: track, B: hasDeckB ? trackOnDeck(track, "B") : null };
     this.requestedA = track.trackId;
     const stops = [
       engine.on("command", (event) => {
@@ -165,6 +182,22 @@ export class LessonSession {
       case "headphone-cue":
         this.observe({ kind: "headphone-cue", deck: command.deck, on: command.value });
         return;
+      case "sync":
+        this.observe({ kind: "sync", deck: command.deck, on: command.value });
+        return;
+      case "tempo":
+      case "tempo-range":
+      case "master-tempo":
+        this.observe({ kind: "touch", control: `${command.deck}.${command.control}` });
+        return;
+      case "eq-low":
+      case "eq-mid":
+      case "eq-high":
+        this.onEq(command.deck, EQ_BANDS[command.control], command.value, event.heardCtx);
+        return;
+      case "crossfader":
+        this.observe({ kind: "crossfader", value: command.value });
+        return;
       case "trim":
         this.observe({ kind: "touch", control: `${command.deck}.trim` });
         return;
@@ -213,15 +246,39 @@ export class LessonSession {
     if (reading !== null) this.observe(classifyTap(track.grid, track.phraseStarts, reading.positionSec));
   }
 
-  /** B started while A plays: a cut, placed against A's nearest phrase start. */
+  /** B started while A plays: a cut (or a blend's start), placed against A's nearest phrase start. */
   private onPlayB(heardCtx: number | null): void {
-    const track = this.onDeck.A;
-    if (heardCtx === null || track === null || !this.engine.deckState("A").playing) return;
-    const reading = this.engine.playheadAt("A", heardCtx);
-    if (reading === null || track.phraseStarts.length === 0) return;
+    const offsetMs = this.phraseOffsetMs("A", heardCtx);
+    if (offsetMs === null || !this.engine.deckState("A").playing) return;
+    const beatMs = 60_000 / (this.track.grid.bpm * this.engine.deckState("A").tempoRate);
+    this.observe({ kind: "cut", offsetMs, onPhrase: Math.abs(offsetMs) <= CUT_TOLERANCE_MS, withinBeat: Math.abs(offsetMs) <= beatMs });
+  }
+
+  /** Heard ms from the deck's nearest phrase start at `heardCtx` (in track time); null without a reading. */
+  private phraseOffsetMs(deck: DeckId, heardCtx: number | null): number | null {
+    const track = this.onDeck[deck];
+    if (heardCtx === null || track === null || track.phraseStarts.length === 0) return null;
+    const reading = this.engine.playheadAt(deck, heardCtx);
+    if (reading === null) return null;
     const nearest = track.phraseStarts.reduce((best, start) => (Math.abs(start - reading.positionSec) < Math.abs(best - reading.positionSec) ? start : best));
-    const offsetMs = Math.round((reading.positionSec - nearest) * 1000);
-    this.observe({ kind: "cut", offsetMs, onPhrase: Math.abs(offsetMs) <= CUT_TOLERANCE_MS });
+    return Math.round(((reading.positionSec - nearest) / this.engine.deckState(deck).tempoRate) * 1000);
+  }
+
+  /** An EQ move: its level, and for the LOW, a return to centre after a cut (eq-basics practice). */
+  private onEq(deck: DeckId, band: EqBand, value: number, heardCtx: number | null): void {
+    const db = eqKnobToDecibels(value);
+    this.observe({ kind: "eq", deck, band, db });
+    if (band !== "low" || this.settingUp) return;
+    if (db <= EQ_CUT_DB) {
+      this.lowCut[deck] = true;
+      return;
+    }
+    if (!this.lowCut[deck] || db < -EQ_CENTRED_DB) return;
+    this.lowCut[deck] = false;
+    const offsetMs = this.phraseOffsetMs(deck, heardCtx);
+    if (offsetMs === null || !this.engine.deckState(deck).playing) return;
+    const beatMs = 60_000 / (trackOnDeck(this.track, deck).grid.bpm * this.engine.deckState(deck).tempoRate);
+    this.observe({ kind: "eq-return", deck, onPhrase: Math.abs(offsetMs) <= beatMs });
   }
 
   private onCuePoint(deck: DeckId, pos: number): void {
@@ -279,11 +336,25 @@ export class LessonSession {
     this.send({ control: "seek", deck, value: setup.pos });
     this.send({ control: "channel-fader", deck, value: setup.fader });
     if (setup.trim !== undefined) this.send({ control: "trim", deck, value: setup.trim });
-    if (setup.tempoPercent !== undefined) this.send({ control: "tempo", deck, value: setup.tempoPercent / this.engine.deckState(deck).tempoRangePercent });
     if (setup.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck, value: setup.headphoneCue });
+    this.setDeckControls(deck, setup);
     if (setup.cuePoint === true && this.engine.deckState(deck).cuePointSec !== setup.pos) {
       this.send({ control: "deck-cue", deck, value: true });
       this.send({ control: "deck-cue", deck, value: false });
+    }
+  }
+
+  /** SYNC, the tempo range and fader, Master Tempo and the EQs, where the set-up names them. */
+  private setDeckControls(deck: DeckId, setup: Omit<DeckSetup, "pos" | "fader" | "play">): void {
+    const state = () => this.engine.deckState(deck);
+    // SYNC first: a synced deck's tempo fader is the leader's, and refuses to move.
+    if (setup.sync !== undefined && setup.sync !== state().syncOn) this.send({ control: "sync", deck, value: setup.sync });
+    if (setup.tempoRange !== undefined && setup.tempoRange !== state().tempoRangePercent) this.send({ control: "tempo-range", deck, value: setup.tempoRange });
+    if (setup.tempoPercent !== undefined && !state().syncOn) this.send({ control: "tempo", deck, value: setup.tempoPercent / state().tempoRangePercent });
+    if (setup.masterTempo !== undefined && setup.masterTempo !== state().masterTempo) this.send({ control: "master-tempo", deck, value: setup.masterTempo });
+    if (setup.eqCentred === true) {
+      for (const band of ["eq-low", "eq-mid", "eq-high"] as const) this.send({ control: band, deck, value: 0 });
+      this.lowCut[deck] = false;
     }
   }
 
@@ -291,6 +362,7 @@ export class LessonSession {
     this.settingUpWith(() => {
       this.cueDeck("A", decks.A);
       if (decks.B !== undefined && this.onDeck.B !== null) this.cueDeck("B", decks.B);
+      if (decks.crossfader !== undefined) this.send({ control: "crossfader", value: decks.crossfader });
     });
   }
 
@@ -306,8 +378,9 @@ export class LessonSession {
   /** Loops back: positions only (knobs and faders stay), or the whole set-up. */
   private loopBack(decks: DeckSetups, loop: LoopPlan): void {
     if (loop.reset === "setup") {
-      this.cueDecks(decks);
-      this.playDecks(decks);
+      const again = loop.decks ?? decks;
+      this.cueDecks(again);
+      this.playDecks(again);
       return;
     }
     this.settingUpWith(() => {
@@ -320,7 +393,7 @@ export class LessonSession {
 
   private watchLoop(decks: DeckSetups, loop: LoopPlan | null, alsoEvery?: () => void): void {
     this.watch = setInterval(() => {
-      const reading = this.engine.playhead("A");
+      const reading = this.engine.playhead(loop?.deck ?? "A");
       if (loop !== null && reading.ok && reading.positionSec >= loop.atPos) this.loopBack(decks, loop);
       alsoEvery?.();
     }, WATCH_MS);
@@ -351,6 +424,7 @@ export class LessonSession {
   /** Hook and practice: the Lesson's practice set-up, looping where the Lesson loops. */
   preparePractice(): void {
     this.abandonCheck();
+    this.stopClip();
     const generation = ++this.generation;
     void this.lessonTrackOnA().then((ready) => {
       if (!ready || generation !== this.generation || this.closed) return;
@@ -364,8 +438,10 @@ export class LessonSession {
   /** Starts (or restarts) the Check's audio part: auto-jump, record, and watch for its end. */
   startCheck(): void {
     this.abandonCheck();
+    this.stopClip();
     const generation = ++this.generation;
-    const plan = this.definition.planCheck(this.track);
+    this.checksStarted += 1;
+    const plan = this.definition.planCheck(this.track, this.checksStarted);
     void this.checkTracksReady(plan).then((ready) => {
       if (generation !== this.generation || this.closed) return;
       if (!ready) {
@@ -440,6 +516,8 @@ export class LessonSession {
           return at !== undefined && heard.ctx >= at + end.bars * barSec;
         });
       }
+      case "readies":
+        return check.readyCount >= end.count;
     }
   }
 
@@ -452,9 +530,16 @@ export class LessonSession {
     // No Check, or its audio part is over.
     if (check?.stopped !== null) {
       if (this.definition.practice.rep === "ready") this.observe({ kind: "ready", inZone: this.levelsInZone() });
+      if (this.definition.practice.rep === "tempo-set" && check === null) this.tempoSet();
       return;
     }
     const end = check.plan.endWhen;
+    if (end.kind === "readies") {
+      this.engine.command({ control: "ready", deck: end.deck }, DEVICE);
+      check.readyCount += 1;
+      if (check.readyCount >= end.count) this.endAudio();
+      return;
+    }
     if (end.kind === "ready-windows") {
       // Each deck is Ready once; a stray press after that must not restart a hold window.
       const deck = end.decks.find((candidate) => !check.readies.has(candidate));
@@ -482,6 +567,18 @@ export class LessonSession {
     }
   }
 
+  /** tempo-fader practice: is B on the target BPM? Then B's tempo goes back to centre for the next rep. */
+  private tempoSet(): void {
+    const target = this.definition.practiceTargetBpm?.(this.track);
+    const track = this.onDeck.B;
+    if (target === undefined || track === null) return;
+    const bpm = track.grid.bpm * this.engine.deckState("B").tempoRate;
+    this.observe({ kind: "tempo-set", onTarget: Math.abs(bpm - target) <= BPM_TOLERANCE + 1e-9 });
+    this.settingUpWith(() => {
+      if (!this.engine.deckState("B").syncOn) this.send({ control: "tempo", deck: "B", value: 0 });
+    });
+  }
+
   private levelsInZone(): boolean {
     const decks = DECKS.filter((deck) => this.onDeck[deck] !== null);
     const levels = decks.map((deck) => this.lastLevel[deck]);
@@ -506,10 +603,72 @@ export class LessonSession {
       learnerId: this.learnerId,
       endReason: timedOut ? "timeout" : "done",
       abandoned: false,
-      phraseMarkers: { [this.track.trackId]: this.track.phraseStarts },
+      phraseMarkers: Object.fromEntries(DECKS.flatMap((deck) => {
+        const track = this.onDeck[deck];
+        return track === null ? [] : [[track.trackId, track.phraseStarts] as const];
+      })),
       answers: {},
     });
     this.listener.audioEnded();
+  }
+
+  /**
+   * Plays a question's listening clip on a loop (tempo-fader's Master Tempo clips), after the audio
+   * part of the Check ended: the lead bars at the track's tempo, then the faster bars, then again. A
+   * question without a clip stops any clip playing.
+   */
+  playClip(questionId: string): void {
+    const clip = this.clipFor(questionId);
+    this.stopClip();
+    if (clip === null || this.onDeck[clip.deck] === null) return;
+    this.clip = clip;
+    const track = trackOnDeck(this.track, clip.deck);
+    const fastFrom = clip.pos + clip.leadBars * 4 * beatSecOf(track);
+    const end = fastFrom + clip.bars * 4 * beatSecOf(track);
+    let fast = false;
+    this.settingUpWith(() => {
+      for (const deck of DECKS) if (this.onDeck[deck] !== null) this.send({ control: "pause", deck });
+      this.setDeckControls(clip.deck, { sync: false, tempoRange: clip.rangePercent, tempoPercent: 0, masterTempo: clip.masterTempo });
+      this.send({ control: "seek", deck: clip.deck, value: clip.pos });
+      this.send({ control: "channel-fader", deck: clip.deck, value: 1 });
+      this.send({ control: "play", deck: clip.deck });
+    });
+    this.watch = setInterval(() => {
+      if (this.clip !== clip) return;
+      const reading = this.engine.playhead(clip.deck);
+      if (!reading.ok) return;
+      this.settingUpWith(() => {
+        if (reading.positionSec >= end) {
+          fast = false;
+          this.send({ control: "tempo", deck: clip.deck, value: 0 });
+          this.send({ control: "seek", deck: clip.deck, value: clip.pos });
+        } else if (!fast && reading.positionSec >= fastFrom) {
+          fast = true;
+          this.send({ control: "tempo", deck: clip.deck, value: clip.tempo });
+        }
+      });
+    }, WATCH_MS);
+  }
+
+  /** The listening clip a question plays, once the Check's audio part is over; null without one. */
+  clipFor(questionId: string): ListeningClip | null {
+    const check = this.check;
+    return check?.stopped == null ? null : (check.plan.clips?.[questionId] ?? null);
+  }
+
+  /** The clip playing now, if any (end-to-end tests read which Master Tempo it has). */
+  playingClip(): ListeningClip | null {
+    return this.clip;
+  }
+
+  private stopClip(): void {
+    const clip = this.clip;
+    if (clip === null) return;
+    this.clip = null;
+    this.stopWatching();
+    this.settingUpWith(() => {
+      if (this.onDeck[clip.deck] !== null) this.send({ control: "pause", deck: clip.deck });
+    });
   }
 
   /** The live caption for the stretch of the Check the deck is in now. */
@@ -550,6 +709,7 @@ export class LessonSession {
     const check = this.check;
     if (check === null) return { ok: false, message: "No Check was running to grade. Start it again with Enter." };
     if (check.stopped === null) this.endAudio();
+    this.stopClip();
     this.check = null;
     this.stopWatching();
     // endAudio has always set it by now.
@@ -593,11 +753,16 @@ export class LessonSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.stopClip();
     this.abandonCheck();
     clearInterval(this.levelTimer);
     this.unsubscribe();
     document.removeEventListener("visibilitychange", this.onVisibility);
   }
+}
+
+function beatSecOf(track: LessonTrack): number {
+  return 60 / track.grid.bpm;
 }
 
 /** A copy of `lengthSec` of the audio from `fromSec`, at the audio's own (the engine's) sample rate. */

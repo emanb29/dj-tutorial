@@ -24,6 +24,8 @@ export interface ControllerContextValue {
   readonly pulse: ControlId | null;
   readonly captions: ReadonlyMap<ControlId, string>;
   readonly unlocks: ReadonlySet<ControlId>;
+  /** Unlocked controls held locked and unlit for now: a question asks what they would show. */
+  readonly concealed: ReadonlySet<ControlId>;
   readonly legendOpen: boolean;
 }
 

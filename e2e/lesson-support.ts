@@ -15,13 +15,14 @@ export interface LessonWindow {
   learnToDjLesson?: {
     engine: {
       playhead(deck: DeckId): { ok: boolean; beat?: number | null; positionSec?: number };
-      deckState(deck: DeckId): { playing: boolean; cuePointSec: number };
+      deckState(deck: DeckId): { playing: boolean; cuePointSec: number; masterTempo?: boolean; syncOn?: boolean; tempoRate?: number };
       command(command: Record<string, unknown>, input: { device: string }): { ok: boolean };
       heardTime(): { ok: boolean; ctx?: number };
     };
     track: { grid: Grid };
     phase(): string;
     deckTrack(deck: DeckId): { trackId: string; grid: Grid } | null;
+    clip?(): { masterTempo: boolean } | null;
   };
 }
 
@@ -102,6 +103,36 @@ export async function keysAtBeats(page: Page, beats: readonly number[], options:
   );
 }
 
+/**
+ * Sends engine commands on beats of a deck's heard playhead (a knob turn or fader move a test cannot
+ * drag in time), timed in the page like `keysAtBeats`. Each command must be accepted.
+ */
+export async function commandsAtBeats(page: Page, timed: readonly { readonly beat: number; readonly command: Record<string, unknown> }[], options: { deck?: DeckId } = {}): Promise<void> {
+  const refused = await page.evaluate(
+    async ({ items, deck }) => {
+      const lesson = (window as LessonWindow).learnToDjLesson;
+      if (lesson === undefined) throw new Error("No Lesson is open.");
+      const grid = lesson.deckTrack(deck)?.grid ?? lesson.track.grid;
+      const beatMs = 60_000 / grid.bpm;
+      const heardBeat = () => {
+        const reading = lesson.engine.playhead(deck);
+        if (!reading.ok || reading.beat == null) throw new Error(`Deck ${deck} has no playhead reading.`);
+        return reading.beat;
+      };
+      const failures: string[] = [];
+      for (const { beat, command } of items) {
+        for (let remainingMs = (beat - heardBeat()) * beatMs; remainingMs > 0.5; remainingMs = (beat - heardBeat()) * beatMs) {
+          if (remainingMs > 12) await new Promise((resolve) => setTimeout(resolve, remainingMs - 8));
+        }
+        if (!lesson.engine.command(command, { device: "trackpad" }).ok) failures.push(JSON.stringify(command));
+      }
+      return failures;
+    },
+    { items: timed, deck: options.deck ?? "A" },
+  );
+  expect(refused, "commands the engine refused").toEqual([]);
+}
+
 /** Taps Space on each beat of deck A's grid. */
 export async function tapAtBeats(page: Page, beats: readonly number[]): Promise<void> {
   await keysAtBeats(page, beats);
@@ -119,7 +150,8 @@ export async function playingPast(page: Page, phase: string, beat: number, optio
     },
     // Infinity does not survive the trip into the page.
     { expected: phase, past: beat, until: Number.isFinite(before) ? before : Number.MAX_VALUE, on: options.deck ?? "A" },
-    { timeout: 60_000 },
+    // A fixed interval, not animation frames: those are throttled in a busy or hidden headless page.
+    { timeout: 60_000, polling: 20 },
   );
 }
 

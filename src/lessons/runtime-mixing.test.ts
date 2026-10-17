@@ -94,14 +94,14 @@ describe("cut-on-phrase", () => {
       seen({ kind: "headphone-cue", deck: "B", on: true }),
       seen({ kind: "fader", deck: "A", value: 1 }),
       seen({ kind: "fader", deck: "B", value: 1 }),
-      seen({ kind: "cut", offsetMs: 400, onPhrase: false }),
+      seen({ kind: "cut", offsetMs: 400, onPhrase: false, withinBeat: true }),
     ]);
     expect(state.phase).toMatchObject({ kind: "practice", named: "That's a cut: B in, A out, on the phrase." });
   });
 
   it("is ready after one cut on the phrase", () => {
     const practising = run(definition, [ready, { type: "skip-hook" }]);
-    expect(run(definition, [seen({ kind: "cut", offsetMs: 400, onPhrase: false })], practising).phase).toMatchObject({ ready: false });
-    expect(run(definition, [seen({ kind: "cut", offsetMs: 30, onPhrase: true })], practising).phase).toMatchObject({ ready: true });
+    expect(run(definition, [seen({ kind: "cut", offsetMs: 400, onPhrase: false, withinBeat: true })], practising).phase).toMatchObject({ ready: false });
+    expect(run(definition, [seen({ kind: "cut", offsetMs: 30, onPhrase: true, withinBeat: true })], practising).phase).toMatchObject({ ready: true });
   });
 });

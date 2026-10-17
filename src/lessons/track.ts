@@ -149,3 +149,8 @@ export function sliceTrack(track: LessonTrack, slice: { readonly fromSec: number
     sections: [],
   };
 }
+
+/** The track on a deck: on B the partner when the Lesson has one, else the Lesson track itself. */
+export function trackOnDeck(track: LessonTrack, deck: "A" | "B"): LessonTrack {
+  return deck === "B" ? (track.partner ?? track) : track;
+}

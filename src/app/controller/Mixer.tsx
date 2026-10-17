@@ -71,7 +71,7 @@ export function Mixer() {
         </div>
         <ChannelStrip deck="B" />
       </div>
-      <Fader id="crossfader" label="CROSSFADER" axis="horizontal" className="crossfader" captionSide="above" />
+      <Fader id="crossfader" label="CROSSFADER" axis="horizontal" className="crossfader" keyHint={keyHintFor("crossfader")} captionSide="above" />
     </section>
   );
 }

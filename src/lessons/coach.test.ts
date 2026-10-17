@@ -114,6 +114,22 @@ describe("describeCriterion", () => {
     expect(describeCriterion({ ...criterion("cut-on-phrase.cued-before", 6.1, "s", 2), threshold: { op: ">=", value: 2, unit: "s" } })).toBe("CUE B on 6.1 s before the cut (need 2)");
     expect(describeCriterion(criterion("cut-on-phrase.loud-jump", 0.31, "dB", 2))).toBe("Level jump at the cut: 0.3 dB (need 2 or less)");
   });
+
+  it("words the Lessons 8–11 criteria: BPMs, clips, the blend, the crossfader and the LOW", () => {
+    expect(describeCriterion(criterion("tempo-fader.set-bpm", 0.031, "BPM", 0.05, { targets: 3, confirmed: 3 }))).toBe("BPMs: worst 0.03 BPM off (need 0.05 or less)");
+    expect(describeCriterion(criterion("tempo-fader.set-bpm", null, "BPM", 0.05, { targets: 3, confirmed: 2 }))).toBe("BPMs set: 2 of 3 confirmed with Ready");
+    expect(describeCriterion({ ...criterion("tempo-fader.master-tempo-ear", 1, "count", 2), threshold: { op: ">=", value: 2, unit: "count" } })).toBe("Master Tempo clips: 1 of 2 right");
+    expect(describeCriterion(criterion("sync-blend.blend-start", 0.25, "beats", 1))).toBe("Blend start: 0.25 beats from the phrase start (need 1 or less)");
+    expect(describeCriterion({ ...criterion("sync-blend.blend-length", 9.4, "bars", 0), threshold: { op: "in", value: [7.75, 16.25], unit: "bars" } })).toBe("Blend: 9.4 bars (need 8–16)");
+    expect(describeCriterion(criterion("sync-blend.loud-steady", 1.24, "dB", 3))).toBe("Level through the blend: moved 1.2 dB (need 3 or less)");
+    expect(describeCriterion(criterion("crossfader.xf-blend", 0.2, "beats", 1))).toBe("Crossfader blend: on the phrase, 8–16 bars, level steady");
+    expect(describeCriterion({ ...criterion("crossfader.xf-cut", 150, "ms", 80), status: "notMet" })).toBe("Cut to A: 150 ms from the phrase start (need 80 or less)");
+    expect(describeCriterion({ ...criterion("crossfader.xf-blend", null, "beats", 1), status: "notMet" })).toBe("Blend start: B never came in");
+    expect(describeCriterion(criterion("crossfader.faders-up", 0.6, "position", 0.95))).toBe("Channel faders: lowest at 60% (keep both up)");
+    expect(describeCriterion({ ...criterion("eq-basics.low-kill", 7.9, "bars", 7), threshold: { op: ">=", value: 7, unit: "bars" } })).toBe("LOW cut: 7.9 bars at the bottom (need 7 or more)");
+    expect(describeCriterion(criterion("eq-basics.low-return", 0.3, "beats", 1))).toBe("LOW back 0.30 beats from the phrase start (need 1 or less)");
+    expect(describeCriterion(criterion("eq-basics.eq-centred", 0, "dB", 1))).toBe("EQs at the end: 0.0 dB from the middle at most (need 1 or less)");
+  });
 });
 
 describe("the Curriculum re-plan when a skip group is passed (coach-design §1 a)", () => {

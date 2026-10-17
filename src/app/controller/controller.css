@@ -961,7 +961,8 @@
     height: max(44px, clamp(30px, 5vh, 48px));
   }
   .range-readout {
-    min-height: 32px;
+    /* A finger-sized target: the tempo-fader Lesson asks for it. */
+    min-height: 44px;
   }
 }
 

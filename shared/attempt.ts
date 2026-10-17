@@ -61,7 +61,7 @@ export interface CtxSpan {
  *
  * Mixer (per channel unless noted):
  * - `channelFader`: position 0 (closed) … 1 (open). Gain comes from `channelFaderGainDb`.
- * - `crossfader`: position 0 (full A) … 1 (full B); 0.5 is centre; no deck. Gain from `crossfaderGainDb`.
+ * - `crossfader`: position 0 (full A) … 1 (full B); 0.5 is centre (both decks −3 dB); no deck. Gain from `crossfaderGainDb`.
  * - `trim`, `eqHigh`, `eqMid`, `eqLow`: dB, 0 = centre.
  * - `filter`: the CFX knob, −1 (full low-pass) … 0 (centre, off) … +1 (full high-pass).
  * - `cueMonitor`: the headphone CUE button state, 1 = on, 0 = off.
@@ -252,13 +252,15 @@ export function channelFaderGainDb(position: number): number {
 }
 
 /**
- * The crossfader's gain curve for one deck: full level from its own side to centre, then linear
- * amplitude down to silence at the far side.
+ * The crossfader's gain curve for one deck: constant power, as a DJ mixer's smooth (blend) curve.
+ * Amplitude is cos/sin of the travel: A = cos(position · π/2), B = sin(position · π/2), so the two
+ * decks' powers always sum to one and both sit at −3 dB at the centre (a slow blend holds its
+ * loudness). The ends still cut hard: fully to one side, the other deck is silent.
  */
 export function crossfaderGainDb(deck: DeckId, position: number): number {
-  const amplitude = Math.min(1, deck === "A" ? 2 * (1 - position) : 2 * position);
-  if (amplitude <= 0) return GAIN_FLOOR_DB;
-  return Math.max(GAIN_FLOOR_DB, 20 * Math.log10(amplitude));
+  const towardDeck = Math.min(1, Math.max(0, deck === "A" ? 1 - position : position));
+  if (towardDeck <= 0) return GAIN_FLOOR_DB;
+  return Math.max(GAIN_FLOOR_DB, 20 * Math.log10(Math.sin((towardDeck * Math.PI) / 2)));
 }
 
 // ---------------------------------------------------------------------------------------------

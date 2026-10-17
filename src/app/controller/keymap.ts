@@ -14,6 +14,8 @@ export type KeyAction =
   | { kind: "hot-cue"; deck: DeckId; slot: number; erase: boolean }
   /** Snap the channel fader fully open or fully closed. */
   | { kind: "cut"; deck: DeckId; open: boolean }
+  /** Snap the crossfader fully to one side (a crossfader cut). */
+  | { kind: "crossfader-cut"; side: DeckId }
   | { kind: "toggle-legend" };
 
 type BoundAction = Exclude<KeyAction, { kind: "hot-cue" }> | { kind: "hot-cue"; deck: DeckId; slot: number };
@@ -38,6 +40,8 @@ function controlOf(action: BoundAction): ControlId | null {
       return deckControl(action.deck, "hot-cue");
     case "cut":
       return deckControl(action.deck, "channel-fader");
+    case "crossfader-cut":
+      return "crossfader";
     case "tap":
       return "tap";
     case "toggle-legend":
@@ -63,6 +67,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   bind("KeyO", "O", { kind: "cut", deck: "B", open: true }, "Fader open"),
   bind("KeyL", "L", { kind: "cut", deck: "B", open: false }, "Fader closed"),
   ...hotCueKeys("B", ["7", "8", "9", "0"]),
+  bind("KeyC", "C", { kind: "crossfader-cut", side: "A" }, "Crossfader to A"),
+  bind("KeyN", "N", { kind: "crossfader-cut", side: "B" }, "Crossfader to B"),
   bind("Space", "Space", { kind: "tap" }, "Tap the beat"),
   bind("Slash", "?", { kind: "toggle-legend" }, "Show or hide keys"),
 ];

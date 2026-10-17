@@ -4,7 +4,8 @@
 // the Lesson session runs them; the attempt starts with the music (the first 8 bars are the hook).
 import type { Aids, LessonId, LessonTask } from "@shared/attempt.ts";
 import { lessonById } from "@shared/catalogue.ts";
-import { heardSpan, LESSONS, steadyPhrase, type Grading } from "./catalogue.ts";
+import { LESSONS, type Grading } from "./catalogue.ts";
+import { heardSpan, steadyPhrase } from "./plan.ts";
 import { ancestorsOf, type PlacementTaskId } from "./placement.ts";
 import { barStart, beatSec, heardTimeOf, cuedAt, phraseOf, phraseStart, trimKnobFor } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack } from "./types.ts";

@@ -56,8 +56,9 @@ describe("blend-by-ear", () => {
   });
 
   it("passes a 17-bar blend whose outgoing fader is dragged slowly: the blend lasts until A is not audible", () => {
-    // A's fader dragged down at 50 Hz from 60 s (14 bars in); it drops under −24 dB at about 66 s, 17 bars in.
-    const result = check(blend({ faderEvents: [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 60, to: 68 }, 1, 0)] }));
+    // A's fader dragged down at 50 Hz from 60 s (14 bars in); it drops under −24 dB at about 66 s, 17 bars in
+    // (at 0.3 on the fader: the crossfader's centre is −3 dB).
+    const result = check(blend({ faderEvents: [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 60, to: 68.55 }, 1, 0)] }));
     expect(byId(result, "blend-by-ear.blend-length")?.measured).toBeCloseTo(17, 1);
     expect(result.outcome).toEqual({ kind: "passed" });
   });

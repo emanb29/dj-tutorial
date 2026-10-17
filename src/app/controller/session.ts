@@ -232,10 +232,15 @@ export class ControllerSession {
         if (last !== null) this.sendValue(id, last, withTime({ device, gestureEnd: true }, eventTimeMs));
       },
     });
+    // Fine adjust can come and go mid-drag (Shift, or a finger slid off a tempo fader): each switch
+    // re-anchors at the value reached, so the control never jumps.
+    let anchor: { value: number; travelPx: number; fine: boolean } | null = null;
     return {
       move: (travelPx, options) => {
         if (!this.open.has(key)) return;
-        const value = dragValue(spec, startValue, travelPx, { fine: options.fine, fullTravelPx });
+        if (anchor === null) anchor = { value: startValue, travelPx: 0, fine: options.fine };
+        else if (anchor.fine !== options.fine) anchor = { value: last ?? startValue, travelPx, fine: options.fine };
+        const value = dragValue(spec, anchor.value, travelPx - anchor.travelPx, { fine: options.fine, fullTravelPx });
         if (value === last) return;
         last = value;
         this.sendValue(id, value, { device, eventTimeMs: options.eventTimeMs, gestureEnd: false });
@@ -406,6 +411,11 @@ export class ControllerSession {
     this.setValue(deckControl(deck, "channel-fader") as ContinuousControlId, open ? 1 : 0, { ...input, gestureEnd: true });
   }
 
+  /** Snaps the crossfader fully to one deck's side. */
+  crossfaderCut(side: DeckId, input: CommandInput): void {
+    this.setValue("crossfader", side === "A" ? 0 : 1, { ...input, gestureEnd: true });
+  }
+
   /**
    * A hot cue pad. Empty: store the heard playhead there. Set: jump there and play. With `erase`
    * (SHIFT + pad), empty it. The engine has no hot cue command yet, so a trigger is recorded as a seek.
@@ -460,6 +470,9 @@ export class ControllerSession {
         break;
       case "cut":
         this.cut(action.deck, action.open, input);
+        break;
+      case "crossfader-cut":
+        this.crossfaderCut(action.side, input);
         break;
       case "toggle-legend":
         this.legendToggle?.();
