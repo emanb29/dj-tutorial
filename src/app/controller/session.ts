@@ -5,7 +5,7 @@
 
 import { TEMPO_RANGES, type AudioEngine, type CommandInput, type DeckId, type EngineCommand, type EngineDeckSnapshot, type EngineMixerSnapshot, type InputDevice, type Result } from "@audio";
 import { deckControl, type ControlId, type ControllerUnlocks } from "./control-ids.ts";
-import { commandFor, continuousSpec, dragValue, nudgeValue, wheelTravelPx, wheelValue, type ContinuousControlId } from "./gestures.ts";
+import { commandFor, continuousSpec, dragValue, FULL_TRAVEL_PX, nudgeValue, wheelTravelPx, wheelValue, type ContinuousControlId } from "./gestures.ts";
 import { InputDeviceDetector, type WheelDeltas } from "./input-device.ts";
 import { bindingFor, type KeyAction, type KeyModifiers } from "./keymap.ts";
 
@@ -219,7 +219,8 @@ export class ControllerSession {
     if (command !== null) this.send(command, input);
   }
 
-  beginDrag(id: ContinuousControlId, device: InputDevice): DragGesture | null {
+  /** `fullTravelPx` is the drag travel that sweeps the whole range: a fader passes its track's length. */
+  beginDrag(id: ContinuousControlId, device: InputDevice, { fullTravelPx = FULL_TRAVEL_PX }: { readonly fullTravelPx?: number } = {}): DragGesture | null {
     if (!this.isUnlocked(id)) return null;
     const spec = continuousSpec(id);
     const startValue = this.valueOf(id);
@@ -234,7 +235,7 @@ export class ControllerSession {
     return {
       move: (travelPx, options) => {
         if (!this.open.has(key)) return;
-        const value = dragValue(spec, startValue, travelPx, options);
+        const value = dragValue(spec, startValue, travelPx, { fine: options.fine, fullTravelPx });
         if (value === last) return;
         last = value;
         this.sendValue(id, value, { device, eventTimeMs: options.eventTimeMs, gestureEnd: false });

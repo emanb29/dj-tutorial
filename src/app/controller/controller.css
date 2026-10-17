@@ -597,6 +597,15 @@
   width: 92px;
 }
 
+/* The column's buttons keep to its width (MASTER TEMPO wraps onto two lines) instead of spilling
+   into the hot cue pads beside it. */
+.tempo-column .hw-button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 4px;
+  white-space: normal;
+}
+
 .range-readout {
   min-width: 64px;
   padding: 3px 8px;
@@ -974,12 +983,6 @@
   }
   .tempo-column {
     width: 64px;
-  }
-  .tempo-column .hw-button {
-    width: 64px;
-    min-width: 0;
-    padding-inline: 4px;
-    white-space: normal;
   }
   .deck-main {
     container-type: inline-size;

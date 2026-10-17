@@ -3,11 +3,11 @@
 // focused with Tab takes Arrow/Page/Home/End nudges. A click does not take focus, so the deck keys keep
 // working after a drag.
 
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import type { InputDevice } from "@audio";
 import { keepFocusWhereItIs } from "./ControlButton.tsx";
 import { useController, useSessionValue } from "./context.tsx";
-import type { ContinuousControlId } from "./gestures.ts";
+import { faderTravelPx, type ContinuousControlId } from "./gestures.ts";
 import type { DragGesture } from "./session.ts";
 
 export type DragAxis = "vertical" | "horizontal";
@@ -19,7 +19,12 @@ interface ActiveDrag {
   readonly startY: number;
 }
 
-export function useContinuousControl(id: ContinuousControlId, axis: DragAxis) {
+/**
+ * `track`, for a fader, is the element its cap runs along: a drag over the track's rendered length
+ * sweeps the whole range, so the cap stays under the pointer at any size. Knobs leave it out and sweep
+ * over `FULL_TRAVEL_PX`.
+ */
+export function useContinuousControl(id: ContinuousControlId, axis: DragAxis, track?: RefObject<HTMLElement | null>) {
   const { session } = useController();
   const value = useSessionValue(() => session.valueOf(id));
   const target = useRef<HTMLDivElement>(null);
@@ -74,7 +79,13 @@ export function useContinuousControl(id: ContinuousControlId, axis: DragAxis) {
         if (event.button !== 0 || drag.current !== null) return;
         const device = session.devices.fromPointer(event.pointerType);
         lastPointerDevice.current = device;
-        const gesture = session.beginDrag(id, device);
+        // Measured at each press: the layout (phone or laptop, portrait or landscape) can change between drags.
+        const trackBox = track?.current?.getBoundingClientRect();
+        const gesture = session.beginDrag(
+          id,
+          device,
+          trackBox === undefined ? {} : { fullTravelPx: faderTravelPx(axis === "vertical" ? trackBox.height : trackBox.width) },
+        );
         if (gesture === null) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         drag.current = { gesture, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };

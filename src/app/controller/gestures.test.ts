@@ -3,6 +3,7 @@ import {
   commandFor,
   continuousSpec,
   dragValue,
+  faderTravelPx,
   FULL_TRAVEL_PX,
   nudgeValue,
   wheelTravelPx,
@@ -49,30 +50,69 @@ describe("continuousSpec", () => {
 });
 
 describe("dragValue", () => {
+  const knob = { fine: false, fullTravelPx: FULL_TRAVEL_PX };
+
   it("moves a full range over the full travel", () => {
-    expect(dragValue(channelFader, 0, FULL_TRAVEL_PX, { fine: false })).toBe(1);
-    expect(dragValue(channelFader, 1, -FULL_TRAVEL_PX / 2, { fine: false })).toBe(0.5);
+    expect(dragValue(channelFader, 0, FULL_TRAVEL_PX, knob)).toBe(1);
+    expect(dragValue(channelFader, 1, -FULL_TRAVEL_PX / 2, knob)).toBe(0.5);
   });
 
   it("clamps at the ends", () => {
-    expect(dragValue(channelFader, 0.9, FULL_TRAVEL_PX, { fine: false })).toBe(1);
-    expect(dragValue(trim, -0.9, -FULL_TRAVEL_PX, { fine: false })).toBe(-1);
+    expect(dragValue(channelFader, 0.9, FULL_TRAVEL_PX, knob)).toBe(1);
+    expect(dragValue(trim, -0.9, -FULL_TRAVEL_PX, knob)).toBe(-1);
   });
 
   it("moves five times less with fine adjust", () => {
-    expect(dragValue(channelFader, 0, FULL_TRAVEL_PX, { fine: true })).toBeCloseTo(0.2, 10);
+    expect(dragValue(channelFader, 0, FULL_TRAVEL_PX, { ...knob, fine: true })).toBeCloseTo(0.2, 10);
   });
 
   it("catches a centred knob at the centre when it passes close by", () => {
-    expect(dragValue(trim, 0.5, -FULL_TRAVEL_PX * 0.245, { fine: false })).toBe(0);
+    expect(dragValue(trim, 0.5, -FULL_TRAVEL_PX * 0.245, knob)).toBe(0);
   });
 
   it("does not catch at the centre with fine adjust, so tiny offsets stay reachable", () => {
-    expect(dragValue(trim, 0, FULL_TRAVEL_PX * 0.025, { fine: true })).toBeCloseTo(0.01, 10);
+    expect(dragValue(trim, 0, FULL_TRAVEL_PX * 0.025, { ...knob, fine: true })).toBeCloseTo(0.01, 10);
   });
 
   it("speeds up the tempo fader when dragged down", () => {
-    expect(dragValue(tempo, 0, -FULL_TRAVEL_PX / 4, { fine: false })).toBe(0.5);
+    expect(dragValue(tempo, 0, -FULL_TRAVEL_PX / 4, knob)).toBe(0.5);
+  });
+
+  describe("over a fader's own track, so the cap stays under the finger", () => {
+    // A phone's channel fader: the cap travels 120 px between the ends of its track.
+    const track = { fine: false, fullTravelPx: 120 };
+
+    it("sweeps the whole range over the track's length", () => {
+      expect(dragValue(channelFader, 0, 120, track)).toBe(1);
+      expect(dragValue(channelFader, 1, -120, track)).toBe(0);
+    });
+
+    it("moves the value by the fraction of the track the finger travelled", () => {
+      expect(dragValue(channelFader, 0, 30, track)).toBeCloseTo(0.25, 10);
+      expect(dragValue(continuousSpec("crossfader"), 0, 90, track)).toBeCloseTo(0.75, 10);
+    });
+
+    it("moves the tempo fader end to end over its track, faster towards you", () => {
+      expect(dragValue(tempo, -1, -120, track)).toBe(1);
+      expect(dragValue(tempo, 0, 60, track)).toBe(-1);
+    });
+
+    it("keeps Shift as fine adjust, five times slower than the cap", () => {
+      expect(dragValue(tempo, 0, -60, { ...track, fine: true })).toBeCloseTo(0.2, 10);
+    });
+  });
+});
+
+describe("faderTravelPx", () => {
+  it("is the length of the track the cap moves along", () => {
+    expect(faderTravelPx(120)).toBe(120);
+    expect(faderTravelPx(292)).toBe(292);
+  });
+
+  it("falls back to the knob travel when the track has no usable length (not laid out yet)", () => {
+    expect(faderTravelPx(0)).toBe(FULL_TRAVEL_PX);
+    expect(faderTravelPx(Number.NaN)).toBe(FULL_TRAVEL_PX);
+    expect(faderTravelPx(4)).toBe(FULL_TRAVEL_PX);
   });
 });
 

@@ -21,8 +21,10 @@ export interface ContinuousSpec {
   readonly inverted: boolean;
 }
 
-/** A drag of this many pixels sweeps the whole range: short enough for one trackpad stroke. */
+/** A knob drag (and a wheel turn) of this many pixels sweeps the whole range: one trackpad stroke. */
 export const FULL_TRAVEL_PX = 240;
+/** A fader track shorter than this has not been laid out; its drag falls back to the knob travel. */
+const SHORTEST_TRACK_PX = 24;
 const FINE_FACTOR = 0.2;
 const CENTRE_CATCH_FRACTION = 0.015;
 const LINE_PX = 16;
@@ -78,19 +80,26 @@ function span(spec: ContinuousSpec): number {
 }
 
 /** Moves a value by screen travel, honouring orientation, fine adjust and the centre catch. */
-function moveBy(spec: ContinuousSpec, value: number, travelPx: number, fine: boolean): number {
+function moveBy(spec: ContinuousSpec, value: number, travelPx: number, fine: boolean, fullTravelPx: number): number {
   const direction = spec.inverted ? -1 : 1;
-  const moved = clamp(spec, value + direction * (travelPx / FULL_TRAVEL_PX) * span(spec) * (fine ? FINE_FACTOR : 1));
+  const moved = clamp(spec, value + direction * (travelPx / fullTravelPx) * span(spec) * (fine ? FINE_FACTOR : 1));
   if (spec.centreDetent && !fine && Math.abs(moved - spec.resetValue) < CENTRE_CATCH_FRACTION * span(spec)) return spec.resetValue;
   return moved;
 }
 
 /**
- * The value during a drag that started at `startValue` and has travelled `travelPx` since. Drags are
- * relative: grabbing anywhere on a control never makes it jump, which gives a trackpad leeway.
+ * The value during a drag that started at `startValue` and has travelled `travelPx` since, where
+ * `fullTravelPx` sweeps the whole range. Drags are relative: grabbing anywhere on a control never makes
+ * it jump, which gives a trackpad leeway. A fader passes its track's length (`faderTravelPx`), so its
+ * cap moves exactly as far as the pointer and stays under a finger; a knob passes `FULL_TRAVEL_PX`.
  */
-export function dragValue(spec: ContinuousSpec, startValue: number, travelPx: number, options: { fine: boolean }): number {
-  return moveBy(spec, startValue, travelPx, options.fine);
+export function dragValue(spec: ContinuousSpec, startValue: number, travelPx: number, options: { fine: boolean; fullTravelPx: number }): number {
+  return moveBy(spec, startValue, travelPx, options.fine, options.fullTravelPx);
+}
+
+/** The drag travel that sweeps a fader end to end: the rendered length of the track its cap runs along. */
+export function faderTravelPx(trackLengthPx: number): number {
+  return Number.isFinite(trackLengthPx) && trackLengthPx >= SHORTEST_TRACK_PX ? trackLengthPx : FULL_TRAVEL_PX;
 }
 
 /**
@@ -107,7 +116,7 @@ export function wheelTravelPx(wheel: WheelDeltas, options: { natural: boolean })
 }
 
 export function wheelValue(spec: ContinuousSpec, value: number, travelPx: number, options: { fine: boolean }): number {
-  return moveBy(spec, value, travelPx, options.fine);
+  return moveBy(spec, value, travelPx, options.fine, FULL_TRAVEL_PX);
 }
 
 /**

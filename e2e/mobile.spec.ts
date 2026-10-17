@@ -167,9 +167,10 @@ for (const [orientation, width, height] of [
       // touches go through the DevTools protocol.
       const touchscreen = await page.context().newCDPSession(page);
       const touch = async (type: "touchStart" | "touchMove", x: number, y: number) => touchscreen.send("Input.dispatchTouchEvent", { type, touchPoints: [{ x, y }] });
-      // A drag moves the fader 240 px end to end (gestures.ts), more than a phone's fader is long:
-      // stroke along it a few times, as a finger would. Measured each time: the caption line above
-      // changes height between steps.
+      // One stroke along the fader moves it end to end (the cap follows the finger). Measured each
+      // time: the caption line above changes height between steps. A stroke that lands while the
+      // page is still scrolling the next control into view can miss the fader, so a finger goes
+      // again, as a person would, until the fader is at the end (at most three strokes).
       const stroke = async (direction: "up" | "down") => {
         const box = await settledBox(page, fader);
         const x = box.x + box.width / 2;
@@ -178,9 +179,14 @@ for (const [orientation, width, height] of [
         for (let step = 1; step <= 8; step += 1) await touch("touchMove", x, fromY + ((toY - fromY) * step) / 8);
         await touchscreen.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       };
-      for (let count = 0; count < 3; count += 1) await stroke("up");
+      const strokeToEnd = async (direction: "up" | "down") => {
+        const end = direction === "up" ? "1" : "0";
+        for (let count = 0; count < 3 && (await fader.getAttribute("aria-valuenow")) !== end; count += 1) await stroke(direction);
+        await expect(fader).toHaveAttribute("aria-valuenow", end);
+      };
+      await strokeToEnd("up");
       await expect(caption).toContainText("pull it down");
-      for (let count = 0; count < 3; count += 1) await stroke("down");
+      await strokeToEnd("down");
       await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
       const go = page.getByRole("button", { name: "Start the Check" });
       await expect(go).toBeInViewport();
@@ -193,9 +199,9 @@ for (const [orientation, width, height] of [
       // The Check by touch: PLAY, fader up, a moment heard, fader down. The result shows on screen
       // wherever the page is scrolled.
       await play.tap();
-      for (let count = 0; count < 3; count += 1) await stroke("up");
+      await strokeToEnd("up");
       await page.waitForTimeout(1500);
-      for (let count = 0; count < 3; count += 1) await stroke("down");
+      await strokeToEnd("down");
       const card = page.getByRole("region", { name: "Result" });
       await expect(card).toHaveAttribute("data-outcome", "passed", { timeout: 10_000 });
       await expect(card).toBeInViewport({ ratio: 1 });
@@ -314,3 +320,84 @@ test.describe("the laptop layout (1280×800, trackpad)", () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe("faders on a phone (412×915, touch)", () => {
+  test.use(phone(412, 915));
+
+  /** The centre of a slider's cap, in the viewport. */
+  async function capCentre(slider: Locator): Promise<{ x: number; y: number }> {
+    const cap = await slider.locator(".fader-thumb").boundingBox();
+    if (cap === null) throw new Error("The fader cap is not on the page.");
+    return { x: cap.x + cap.width / 2, y: cap.y + cap.height / 2 };
+  }
+
+  // A finger put on the cap and swiped to the track's far end takes the fader end to end, with the
+  // cap under the finger all the way (drag travel = the fader's rendered track length).
+  for (const [name, axis] of [
+    ["CH A", "vertical"],
+    ["TEMPO", "vertical"],
+    ["CROSSFADER", "horizontal"],
+  ] as const) {
+    test(`${name}: a full-length swipe moves it end to end with the cap under the finger`, async ({ page }) => {
+      await page.goto("/playground?playground");
+      const slider = page.getByRole("slider", { name, exact: true }).first();
+      await slider.scrollIntoViewIfNeeded();
+      const min = Number(await slider.getAttribute("aria-valuemin"));
+      const max = Number(await slider.getAttribute("aria-valuemax"));
+      const track = await settledBox(page, slider.locator(".fader-track"));
+      // The ends of the track along the fader's axis: bottom and top, or left and right.
+      const ends = axis === "vertical" ? { low: track.y + track.height, high: track.y } : { low: track.x, high: track.x + track.width };
+      // The tempo fader's top is its minimum (faster is towards you); the others' bottom or left is.
+      const [lowValue, highValue] = name === "TEMPO" ? [max, min] : [min, max];
+
+      const touchscreen = await page.context().newCDPSession(page);
+      const swipeTo = async (target: number) => {
+        const from = await capCentre(slider);
+        const start = axis === "vertical" ? from.y : from.x;
+        const point = (along: number) => (axis === "vertical" ? { x: from.x, y: along } : { x: along, y: from.y });
+        await touchscreen.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(start)] });
+        const steps = 10;
+        for (let step = 1; step <= steps; step += 1) {
+          const finger = start + ((target - start) * step) / steps;
+          await touchscreen.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(finger)] });
+          await expect
+            .poll(
+              async () => {
+                const cap = await capCentre(slider);
+                return Math.abs((axis === "vertical" ? cap.y : cap.x) - finger);
+              },
+              { message: `the cap is under the finger at step ${String(step)}` },
+            )
+            .toBeLessThanOrEqual(2);
+        }
+        await touchscreen.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      };
+
+      await swipeTo(ends.low);
+      await expect(slider).toHaveAttribute("aria-valuenow", String(lowValue));
+      await swipeTo(ends.high);
+      await expect(slider).toHaveAttribute("aria-valuenow", String(highValue));
+    });
+  }
+});
+
+// Laptop widths around 1280: every control and region keeps to its own space (MASTER TEMPO once
+// spilled into the hot cue pads at 1280×800).
+for (const [width, height] of [
+  [1180, 800],
+  [1280, 800],
+  [1440, 900],
+] as const) {
+  test.describe(`the playground on a laptop (${String(width)}×${String(height)})`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("no control or region sits on another", async ({ page }) => {
+      await page.goto("/playground?playground");
+      await expect(page.locator(".controller")).toBeVisible();
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+      expect(overlaps(await controlBoxes(page))).toEqual([]);
+      expect(overlaps(await regionBoxes(page, [".controller-display", "section.deck-A", "section.mixer", "section.deck-B"]))).toEqual([]);
+      expect(overlaps(await regionBoxes(page, [".deck-A .tempo-column", ".deck-A .deck-main", ".deck-B .tempo-column", ".deck-B .deck-main"]))).toEqual([]);
+    });
+  });
+}

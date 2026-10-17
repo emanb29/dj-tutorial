@@ -187,6 +187,20 @@ describe("drag gestures", () => {
     ]);
   });
 
+  it("sweeps a fader end to end over the track length it is given", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine);
+    const drag = controller.beginDrag("A.channel-fader", "touch", { fullTravelPx: 120 });
+    drag?.move(-60, { fine: false, eventTimeMs: 1 });
+    drag?.move(-120, { fine: false, eventTimeMs: 2 });
+    drag?.end({ eventTimeMs: 3 });
+    expect(sent.map((entry) => entry.command)).toEqual([
+      { control: "channel-fader", deck: "A", value: 0.5 },
+      { control: "channel-fader", deck: "A", value: 0 },
+      { control: "channel-fader", deck: "A", value: 0 },
+    ]);
+  });
+
   it("sends nothing for a click that never moved", () => {
     const { engine, sent } = fakeEngine();
     const { session: controller } = session(engine);

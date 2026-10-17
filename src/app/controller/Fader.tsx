@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useRef, type CSSProperties, type ReactNode } from "react";
 import { continuousSpec, type ContinuousControlId } from "./gestures.ts";
 import { ControlFrame, type CaptionSide } from "./ControlFrame.tsx";
 import { useContinuousControl, type DragAxis } from "./use-continuous.ts";
@@ -21,7 +21,10 @@ export function Fader({
   readonly captionSide?: CaptionSide;
   readonly marks?: ReactNode;
 }) {
-  const { value, target, handlers } = useContinuousControl(id, axis);
+  // The cap's centre runs exactly from one end of the track to the other (controller.css), so a drag
+  // over the track's length moves the cap with the pointer.
+  const track = useRef<HTMLDivElement>(null);
+  const { value, target, handlers } = useContinuousControl(id, axis, track);
   const spec = continuousSpec(id);
   const fraction = (value - spec.min) / (spec.max - spec.min);
   // Position along the track from the bottom (vertical) or left (horizontal), 0…1.
@@ -48,7 +51,9 @@ export function Fader({
         title={`${label}: drag, scroll, or use arrow keys. Shift for fine. Double-click resets.`}
         {...handlers}
       >
-        <div className="fader-track">{marks}</div>
+        <div ref={track} className="fader-track">
+          {marks}
+        </div>
         <div className="fader-thumb" style={thumbStyle} />
       </div>
     </ControlFrame>
