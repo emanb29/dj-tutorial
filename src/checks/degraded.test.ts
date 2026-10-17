@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type { RecordedAttempt } from "@audio";
 import type { MeterFrame } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
-import type { GradedAttempt } from "./deck-commands.ts";
+import type { GradedAttempt } from "./deck-controls.ts";
 import { runCheck } from "./run-check.ts";
 import { BLEND_WINDOW, LESSON_AIDS, attempt, blendScenario, event, spec, type BlendScenario } from "./testing/synthetic.ts";
 

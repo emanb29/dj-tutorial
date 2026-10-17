@@ -1,10 +1,10 @@
 // Records an attempt in the canonical shape the Checks read (`Attempt` in shared/attempt.ts):
-// control events at heard time in the Checks' units, the playhead model of each deck, grids, cue points,
-// 50 Hz meters per bus, the mixer at the start and interruptions.
+// control events at heard time in the Checks' units, each with the time it took effect (`appliedCtx`), the
+// playhead model of each deck, grids, cue points, 50 Hz meters per bus, the mixer and the decks' controls
+// at the start, and interruptions. The engine-to-contract mapping is CONTRACT_CONTROLS and contractValue.
 //
-// Extras the Checks ignore: each event's `appliedCtx` (when it took effect in the audio and the playhead
-// model) and `inputDevice`, plus `engineEvents`, every command the engine saw (including ones the
-// contract has no control id for, refused ones and the engine's own, such as SYNC dropped).
+// Extras the Checks ignore: each event's `inputDevice`, and `engineEvents`, every command the engine saw
+// (including ones the contract has no control id for and refused ones), for debugging.
 //
 // Pointer-rate moves of continuous controls are coalesced to `coalesceHz` per control: the first move is
 // kept at once, later moves within the interval are held and only the newest is kept, and a gesture's
@@ -22,31 +22,35 @@ import type {
   ControlId,
   CuePointSet,
   DeckRecording,
+  DeckStateSnapshot,
   BeatGrid,
   Interruption,
   MeterFrame,
   MixerSnapshot,
 } from "@shared/attempt.ts";
-import { CONTINUOUS_CONTROLS, type EngineCommand } from "./commands.ts";
+import { CONTINUOUS_CONTROLS, type Control, type EngineCommand } from "./commands.ts";
 import { eqKnobToDecibels, toTimelineDecibels, trimKnobToDecibels } from "./curves.ts";
 import type { TrackRecord } from "./deck.ts";
-import type { AudioEngine, CommandEvent, EngineMixerSnapshot } from "./engine.ts";
+import type { AudioEngine, CommandEvent, EngineDeckSnapshot, EngineMixerSnapshot } from "./engine.ts";
 import { Emitter, type Unsubscribe } from "./events.ts";
 import { METER_FRAMES_PER_SECOND } from "./loudness.ts";
 import type { BusMeterFrame, MeterBus } from "./meter.ts";
 import { fail, OK, type Result } from "./result.ts";
 import { DECK_IDS, type CtxTime, type DeckId, type InputDevice } from "./types.ts";
 
-/** A contract control event plus extras the Checks ignore. */
+/** A contract control event, always with its applied time, plus the input device (an extra the Checks ignore). */
 export interface RecordedControlEvent extends ControlEvent {
-  /** When the change took effect in the audio and the playhead model (`ctx` is when it was heard/made). */
   readonly appliedCtx: CtxTime;
-  readonly inputDevice: InputDevice;
+  /** `"engine"` for a change the engine made itself (`byEngine`). */
+  readonly inputDevice: InputDevice | "engine";
 }
 
 export interface RecordedAttempt extends Attempt {
   readonly events: readonly RecordedControlEvent[];
-  /** Every command the engine saw during the attempt, in order. */
+  /**
+   * Every command the engine saw during the attempt, in order, for debugging: refused ones too, and controls
+   * the contract has no id for. The Checks never read it; everything they grade is in the contract fields.
+   */
   readonly engineEvents: readonly CommandEvent[];
   readonly startedCtx: CtxTime;
   readonly endedCtx: CtxTime;
@@ -143,22 +147,46 @@ const DEFAULT_OPTIONS: RecorderOptions = {
   wallClock: () => new Date(),
 };
 
-const CONTRACT_CONTROLS: Partial<Record<EngineCommand["control"], ControlId>> = {
+/**
+ * The contract control each engine command is recorded as (units in shared/attempt.ts `ControlId`), or
+ * null with the reason it is not one. Every engine control is listed, so a new one needs a decision here.
+ */
+const CONTRACT_CONTROLS: Readonly<Record<Control, ControlId | null>> = {
   "channel-fader": "channelFader",
   crossfader: "crossfader",
   trim: "trim",
   "eq-high": "eqHigh",
   "eq-mid": "eqMid",
   "eq-low": "eqLow",
+  filter: "filter",
   "headphone-cue": "cueMonitor",
+  play: "play",
   "deck-cue": "deckCue",
+  tempo: "tempo",
+  // A range switch changes the rate the fader gives, so it is recorded as the new tempo.
+  "tempo-range": "tempo",
+  "jog-bend": "jogBend",
+  sync: "sync",
+  "master-tempo": "masterTempo",
   tap: "tap",
   ready: "ready",
   done: "done",
+  // Pausing, seeking and jog search (the jog on a paused deck) move the playhead: the playhead model holds them.
+  pause: null,
+  seek: null,
+  "jog-search": null,
+  // These shape only what the Learner monitors (master knob, headphone mix and level); no criterion grades them.
+  "master-level": null,
+  "cue-mix": null,
+  "headphone-level": null,
 };
 
-/** The command's value in the Checks' units: positions as they are, trim and EQ in dB, buttons as 1/0. */
-function contractValue(command: EngineCommand): number {
+/**
+ * The command's value in the Checks' units: positions as they are, trim and EQ in dB, buttons and
+ * switches as 1/0, tempo as the deck's rate ratio after the command (read from the engine, since the
+ * fader's rate depends on its range).
+ */
+function contractValue(command: EngineCommand, engine: AudioEngine): number {
   switch (command.control) {
     case "trim":
       return toTimelineDecibels(trimKnobToDecibels(command.value));
@@ -166,9 +194,13 @@ function contractValue(command: EngineCommand): number {
     case "eq-mid":
     case "eq-low":
       return toTimelineDecibels(eqKnobToDecibels(command.value));
+    case "tempo":
+    case "tempo-range":
+      return engine.deckState(command.deck).tempoRate;
     case "tap":
     case "done":
     case "ready":
+    case "play":
       return 1;
     default:
       return "value" in command ? Number(command.value) : 1;
@@ -184,10 +216,15 @@ function contractMixer(state: EngineMixerSnapshot): MixerSnapshot {
       eqHighDb: toTimelineDecibels(eqKnobToDecibels(knobs["eq-high"])),
       eqMidDb: toTimelineDecibels(eqKnobToDecibels(knobs["eq-mid"])),
       eqLowDb: toTimelineDecibels(eqKnobToDecibels(knobs["eq-low"])),
+      filter: knobs.filter,
       cueMonitor: knobs.cue,
     };
   };
   return { A: channel("A"), B: channel("B"), crossfader: state.crossfader };
+}
+
+function contractDeck(state: EngineDeckSnapshot): DeckStateSnapshot {
+  return { tempo: state.tempoRate, jogBend: state.jogBend, sync: state.syncOn, masterTempo: state.masterTempo };
 }
 
 interface Recorded {
@@ -200,6 +237,7 @@ interface Recording {
   readonly startedCtx: CtxTime;
   readonly startedAt: string;
   readonly initialMixer: MixerSnapshot;
+  readonly initialDecks: Record<DeckId, DeckStateSnapshot>;
   readonly initialTracks: Readonly<Record<DeckId, TrackRecord | null>>;
   readonly loadedDuring: Record<DeckId, TrackRecord[]>;
   readonly allowTrackChanges: boolean;
@@ -266,6 +304,7 @@ export class AttemptRecorder {
       startedCtx: started.ctx,
       startedAt: this.options.wallClock().toISOString(),
       initialMixer: contractMixer(this.engine.mixerState()),
+      initialDecks: { A: contractDeck(this.engine.deckState("A")), B: contractDeck(this.engine.deckState("B")) },
       initialTracks: { A: this.engine.trackHistory("A").at(-1) ?? null, B: this.engine.trackHistory("B").at(-1) ?? null },
       loadedDuring: { A: [], B: [] },
       allowTrackChanges: options.allowTrackChanges ?? false,
@@ -359,6 +398,7 @@ export class AttemptRecorder {
         cuePoints: recording.cuePoints,
         meters: { master: framesUntilEnd("master"), A: framesUntilEnd("A"), B: framesUntilEnd("B") },
         initialMixer: recording.initialMixer,
+        initialDecks: recording.initialDecks,
         answers: details.answers,
         engineEvents: recorded.map(({ engine }) => engine),
         startedCtx: recording.startedCtx,
@@ -477,10 +517,22 @@ export class AttemptRecorder {
     return recording.recorded.length < ceiling + Math.max(ceiling, DISCRETE_RESERVE_MIN);
   }
 
+  /**
+   * The command as a contract event, or null when the Checks do not read it: refused commands, controls
+   * the contract has no id for, and input heard while the output was down (the attempt is then void).
+   * A change the engine made itself has no heard time: it is placed when it took effect.
+   */
   private contractEvent(event: CommandEvent): RecordedControlEvent | null {
     const control = CONTRACT_CONTROLS[event.command.control];
-    if (control === undefined || event.rejected !== null || event.heardCtx === null || event.device === "engine") return null;
-    const base = { ctx: event.heardCtx, control, value: contractValue(event.command), appliedCtx: event.appliedCtx, inputDevice: event.device };
+    if (control === null || event.rejected !== null) return null;
+    const value = contractValue(event.command, this.engine);
+    const base =
+      event.device === "engine"
+        ? { ctx: event.appliedCtx, control, value, appliedCtx: event.appliedCtx, inputDevice: "engine" as const, byEngine: true }
+        : event.heardCtx === null
+          ? null
+          : { ctx: event.heardCtx, control, value, appliedCtx: event.appliedCtx, inputDevice: event.device };
+    if (base === null) return null;
     return "deck" in event.command ? { ...base, deck: event.command.deck } : base;
   }
 

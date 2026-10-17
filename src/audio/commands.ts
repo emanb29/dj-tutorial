@@ -31,7 +31,7 @@ export type EngineCommand =
    * back), stopping at the start and end of the track; refused on a playing deck, where the jog bends
    * instead. The attempt contract has no control id for it: like `seek`, it shows in the deck's playhead
    * model (a segment at the new position, rate 0), which is what the Checks read (e.g. a cue point set
-   * after searching). The recorder keeps the command itself in `engineEvents`.
+   * after searching). The recorder keeps the command itself only in its debugging `engineEvents`.
    */
   | { control: "jog-search"; deck: DeckId; value: number }
   | { control: ChannelControl; deck: DeckId; value: number }

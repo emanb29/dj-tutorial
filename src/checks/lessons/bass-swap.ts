@@ -5,7 +5,7 @@ import type { CriterionResult } from "@shared/check-result.ts";
 import { blendLength, blendStart, clashShort, handover, loudSteady, lowDbAt, swapOnPhrase, type Handover } from "../blend.ts";
 import type { CheckContext, LessonCheck, TaskOf } from "../context.ts";
 import { judge, notApplicable } from "../criterion.ts";
-import { deckCommands, isSyncedAt } from "../deck-commands.ts";
+import { deckControlChanges, isSyncedAt } from "../deck-controls.ts";
 import { TIME_EPSILON } from "../measures.ts";
 import { overlapSpans } from "../mix.ts";
 import { phasePair, sampleTimes, tempoBpmAt } from "../phase.ts";
@@ -24,7 +24,7 @@ const TEMPO_MATCH_BPM = 0.05;
  * must not credit `tempo-fader`, which stays unpassed for its own Lesson.
  */
 function tempoMatched(context: CheckContext): CriterionResult {
-  const { attempt, window, spec } = context;
+  const { attempt, window } = context;
   const pair = phasePair(context);
   const overlap = overlapSpans(attempt, window);
   const threshold = { op: "<=", value: TEMPO_MATCH_BPM, unit: "BPM" } as const;
@@ -38,11 +38,10 @@ function tempoMatched(context: CheckContext): CriterionResult {
   const starts = pair === null ? [] : [pair.master, pair.other].map((deck) => firstPlayStart(deck.playhead, window.from));
   const bothPlaying = starts.some((start) => start === null) ? null : Math.max(...starts.map((start) => start ?? 0));
   const startGap = bothPlaying === null ? null : bpmGap(bothPlaying + TIME_EPSILON * 10);
-  const syncedAtStart = spec.syncedAtStart ?? [];
   const syncUsed = overlap.some((span) =>
     (["A", "B"] as const).some((deck) =>
-      [span.from, ...deckCommands(attempt, "sync", deck).map((command) => command.ctx).filter((t) => t > span.from && t < span.to)].some((t) =>
-        isSyncedAt(attempt, syncedAtStart, deck, t),
+      [span.from, ...deckControlChanges(attempt, "sync", deck).map((command) => command.ctx).filter((t) => t > span.from && t < span.to)].some((t) =>
+        isSyncedAt(attempt, deck, t),
       ),
     ),
   );

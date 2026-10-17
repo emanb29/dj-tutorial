@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ControlEvent, PlayheadSegment } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
-import type { EngineCommandRecord } from "../deck-commands.ts";
 import { runCheck } from "../run-check.ts";
-import { BPM, attempt, engineCommand, event, spec } from "../testing/synthetic.ts";
+import { BPM, attempt, event, spec } from "../testing/synthetic.ts";
 
 const TARGETS = [122, 118, 125];
 const CLIPS = [
@@ -28,21 +27,19 @@ function check(
   options: {
     answers?: Record<string, number>;
     events?: readonly ControlEvent[];
-    engineEvents?: readonly EngineCommandRecord[];
+    /** Jog bends, merged with `events`. */
+    bends?: readonly ControlEvent[];
     targets?: readonly number[];
     clips?: typeof CLIPS;
   } = {},
 ): CheckResult {
   const result = runCheck(
     spec({ lessonId: "tempo-fader", targetsBpm: options.targets ?? TARGETS, masterTempoClips: options.clips ?? CLIPS }, { from: 0, to: 30 }),
-    {
-      ...attempt({
-        decks: { B: { trackId: "track-b", playhead: { segments } } },
-        events: options.events ?? confirms,
-        answers: options.answers ?? { clip1: 1, clip2: 0 },
-      }),
-      engineEvents: options.engineEvents ?? [],
-    },
+    attempt({
+      decks: { B: { trackId: "track-b", playhead: { segments } } },
+      events: [...(options.events ?? confirms), ...(options.bends ?? [])].sort((a, b) => a.ctx - b.ctx),
+      answers: options.answers ?? { clip1: 1, clip2: 0 },
+    }),
   );
   if (!("criteria" in result)) throw new Error("expected a graded result");
   return result;
@@ -69,7 +66,7 @@ describe("tempo-fader", () => {
     const bent = [...setTo(TARGETS).slice(0, 2), { fromCtx: 18.5, pos: 0, rate: (118 / BPM) * 1.05 }];
     // Re-anchor the bent segment's position; only rate matters for BPM.
     const result = check([...bent, ...setTo(TARGETS).slice(2)], {
-      engineEvents: [engineCommand(18.5, "jog-bend", "B", 0.05), engineCommand(19.5, "jog-bend", "B", 0)],
+      bends: [event(18.5, "jogBend", 0.05, "B"), event(19.5, "jogBend", 0, "B")],
     });
 
     expect(byId(result, "tempo-fader.set-bpm")?.status).toBe("met");

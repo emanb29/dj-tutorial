@@ -9,9 +9,9 @@ import {
   CUT_WINDOW,
   MUSIC,
   SILENT,
+  applied,
   attempt,
   cutScenario,
-  engineCommand,
   event,
   frames,
   passedBefore,
@@ -43,7 +43,7 @@ const standingIds = (result: CheckResult) =>
 describe("standing criteria timed from a Play press", () => {
   it("on-phrase and cued-first read B's Play at the press, B's position where it starts, whatever the output latency", () => {
     const scenario = cutScenario({ playB: 32.25, closeA: [event(32, "channelFader", 0, "A")], extraEvents: [event(20, "channelFader", 1, "B")] });
-    const recorded = { ...scenario, engineEvents: [{ ...engineCommand(32.25, "play", "B", true), heardCtx: 32 }] };
+    const recorded = { ...scenario, events: [...scenario.events, applied(32, "play", 1, "B", 0.25)].sort((a, b) => a.ctx - b.ctx) };
     const result = graded(
       runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { mode: "cold", passedLessons: passedBefore(LESSON_IDS, "tempo-fader") }), recorded),
     );

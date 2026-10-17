@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { LESSON_IDS, type LessonId, type PlayheadSegment, type TaskSpec } from "@shared/attempt.ts";
+import { LESSON_IDS, type ControlEvent, type LessonId, type PlayheadSegment, type TaskSpec } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import type { CheckContext } from "./context.ts";
-import type { EngineCommandRecord } from "./deck-commands.ts";
 import { runCheck } from "./run-check.ts";
 import { standingSeverity } from "./standing.ts";
 import { drift } from "./standing-mixing.ts";
@@ -12,7 +11,7 @@ import {
   BLEND_WINDOW,
   LESSON_AIDS,
   blendScenario,
-  engineCommand,
+  byEngine,
   event,
   passedBefore,
   spec,
@@ -21,9 +20,13 @@ import {
 
 const SYNC_AIDS = { ...LESSON_AIDS, sync: true };
 
-/** B in at 32 s with its lows cut, the lows swapped at 48 s, A out at 56 s. */
-function swapped(overrides: BlendScenario = {}): BlendScenario {
-  return { initialB: { eqLowDb: -120 }, extraEvents: [event(48, "eqLow", 0, "B"), event(48, "eqLow", -120, "A"), event(57, "eqLow", 0, "A")], ...overrides };
+/** B in at 32 s with its lows cut, the lows swapped at 48 s, A out at 56 s; `moves` are merged in. */
+function swapped(overrides: BlendScenario = {}, moves: readonly ControlEvent[] = []): BlendScenario {
+  return {
+    initialB: { eqLowDb: -120 },
+    extraEvents: [event(48, "eqLow", 0, "B"), event(48, "eqLow", -120, "A"), event(57, "eqLow", 0, "A"), ...moves],
+    ...overrides,
+  };
 }
 
 function cold(
@@ -48,37 +51,36 @@ function cold(
 const byId = (result: CheckResult, id: string) => result.criteria.find((criterion) => criterion.id === id);
 
 describe("standing.sync-kept", () => {
-  const jog = (ctx: number): EngineCommandRecord[] => [engineCommand(ctx, "jog-bend", "B", 0.02), engineCommand(ctx + 0.3, "jog-bend", "B", 0)];
+  const jog = (ctx: number): ControlEvent[] => [event(ctx, "jogBend", 0.02, "B"), event(ctx + 0.3, "jogBend", 0, "B")];
 
   it("warns on a jog bend on a deck synced from the start, without blocking the pass", () => {
-    const result = cold("bass-swap", swapped({ engineEvents: jog(40) }), { spec: { syncedAtStart: ["B"] } });
+    const result = cold("bass-swap", swapped({ syncedAtStart: ["B"] }, jog(40)));
 
     expect(byId(result, "standing.sync-kept")).toMatchObject({ severity: "warn", status: "notMet", measured: 1 });
     expect(result.outcome).toEqual({ kind: "passed" });
   });
 
-  it("follows SYNC on and off, including the engine dropping it and refused presses", () => {
-    const engineEvents = [
-      engineCommand(30, "sync", "B", true),
+  it("follows SYNC on and off, including the engine dropping it", () => {
+    const moves = [
+      event(30, "sync", 1, "B"),
       ...jog(35), // synced: counted
-      engineCommand(38, "sync", "B", false),
+      event(38, "sync", 0, "B"),
       ...jog(45), // off: not counted
-      engineCommand(50, "sync", "B", true),
-      engineCommand(52, "sync", "B", false, { byEngine: true }),
+      event(50, "sync", 1, "B"),
+      byEngine(52, "sync", 0, "B"),
       ...jog(55), // the engine dropped sync: not counted
-      engineCommand(60, "sync", "A", true, { rejected: true }),
-      engineCommand(61, "jog-bend", "A", 0.02), // A's SYNC press was refused: not counted
+      event(61, "jogBend", 0.02, "A"), // A never had SYNC on (a refused press is not in the timeline): not counted
     ];
-    expect(byId(cold("bass-swap", swapped({ engineEvents })), "standing.sync-kept")?.measured).toBe(1);
+    expect(byId(cold("bass-swap", swapped({}, moves)), "standing.sync-kept")?.measured).toBe(1);
   });
 
   it("counts one bend per jog turn, not per coalesced move", () => {
-    const turn = [0.01, 0.02, 0.03, 0].map((value, index) => engineCommand(40 + index * 0.05, "jog-bend", "B", value));
-    expect(byId(cold("bass-swap", swapped({ engineEvents: turn }), { spec: { syncedAtStart: ["B"] } }), "standing.sync-kept")?.measured).toBe(1);
+    const turn = [0.01, 0.02, 0.03, 0].map((value, index) => event(40 + index * 0.05, "jogBend", value, "B"));
+    expect(byId(cold("bass-swap", swapped({ syncedAtStart: ["B"] }, turn)), "standing.sync-kept")?.measured).toBe(1);
   });
 
   it("applies only where the task offers sync, and never in final-mix", () => {
-    const noSync = cold("bass-swap", swapped({ engineEvents: jog(40) }), { spec: { syncedAtStart: ["B"], aids: LESSON_AIDS } });
+    const noSync = cold("bass-swap", swapped({ syncedAtStart: ["B"] }, jog(40)), { spec: { aids: LESSON_AIDS } });
     expect(byId(noSync, "standing.sync-kept")).toBeUndefined();
     expect(standingSeverity("sync-kept", "final-mix")).toBeNull();
     expect(byId(cold("bass-swap", swapped(), { passedUpTo: "sync-blend" }), "standing.sync-kept")).toBeUndefined();
@@ -98,10 +100,10 @@ describe("standing.controls-reset", () => {
   });
 
   it("adds the CFX part only once filter-transition is passed", () => {
-    const filterLeftOn = { engineEvents: [engineCommand(50, "filter", "A", 0.8)] };
+    const filterLeftOn = { extraEvents: [event(50, "filter", 0.8, "A")] };
     expect(byId(cold("sync-blend", filterLeftOn), "standing.controls-reset")?.status).toBe("met");
     expect(byId(cold("sync-blend", filterLeftOn, { passedUpTo: "nudge-phase" }), "standing.controls-reset")?.status).toBe("notMet");
-    const filterBack = { engineEvents: [engineCommand(50, "filter", "A", 0.8), engineCommand(57, "filter", "A", 0.04)] };
+    const filterBack = { extraEvents: [event(50, "filter", 0.8, "A"), event(57, "filter", 0.04, "A")] };
     expect(byId(cold("sync-blend", filterBack, { passedUpTo: "nudge-phase" }), "standing.controls-reset")?.status).toBe("met");
   });
 });
@@ -167,9 +169,8 @@ describe("standing.overcorrect", () => {
         passedLessons: passedBefore(LESSON_IDS, "blend-by-ear"),
       }),
       {
-        ...blendScenario(),
+        ...blendScenario({ extraEvents: [event(8, "tempo", 0.995, "B"), event(12, "tempo", 1, "B"), event(30, "jogBend", 0.03, "B"), event(30.02, "jogBend", 0, "B")] }),
         decks: { A: { trackId: "track-a", playhead: { segments: [{ fromCtx: 0, pos: 0, rate: 1 }] } }, B: { trackId: "track-b", playhead: { segments } } },
-        engineEvents: [engineCommand(8, "tempo", "B", -0.05), engineCommand(12, "tempo", "B", 0), engineCommand(30, "jog-bend", "B", 0.03), engineCommand(30.02, "jog-bend", "B", 0)],
       },
     );
     if (!("criteria" in result)) throw new Error("expected a graded result");

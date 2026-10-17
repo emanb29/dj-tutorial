@@ -57,15 +57,43 @@ export interface CtxSpan {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Controls whose events a Check reads. Values:
+ * Controls whose events a Check reads, with their values.
+ *
+ * Mixer (per channel unless noted):
  * - `channelFader`: position 0 (closed) … 1 (open). Gain comes from `channelFaderGainDb`.
- * - `crossfader`: position 0 (full A) … 1 (full B); 0.5 is centre. Gain from `crossfaderGainDb`.
+ * - `crossfader`: position 0 (full A) … 1 (full B); 0.5 is centre; no deck. Gain from `crossfaderGainDb`.
  * - `trim`, `eqHigh`, `eqMid`, `eqLow`: dB, 0 = centre.
+ * - `filter`: the CFX knob, −1 (full low-pass) … 0 (centre, off) … +1 (full high-pass).
  * - `cueMonitor`: the headphone CUE button state, 1 = on, 0 = off.
+ *
+ * Deck:
+ * - `play`: the Play button, value 1 per accepted press. A point action: `ctx` is the press,
+ *   `appliedCtx` is where the play run it started begins in the playhead model. (Pausing shows in
+ *   the playhead model.)
  * - `deckCue`: the deck CUE button, 1 = pressed, 0 = released.
+ * - `tempo`: the tempo fader as a playback-rate ratio: 1 = the track's own tempo, 1.06 = 6% faster.
+ *   The fader's BPM is `grid.bpm × tempo` (the same ratio as `PlayheadSegment.rate`, before any jog
+ *   bend). Recorded on tempo-fader moves and on tempo-range switches (which change the rate). The
+ *   rate SYNC gives a follower is not a tempo event: it shows in the playhead model.
+ * - `jogBend`: the jog wheel's temporary bend on a playing deck, as a fraction of the rate (0.05 =
+ *   5% faster); 0 = released. The playhead rate is `tempo × (1 + jogBend)`.
+ * - `sync`: SYNC, 1 = on (the deck follows the other deck's tempo), 0 = off. Includes SYNC dropped
+ *   by the engine itself (`byEngine`).
+ * - `masterTempo`: Master Tempo (key lock), 1 = on, 0 = off.
+ *
+ * Lesson buttons (no audio effect):
  * - `tap`: the Lesson tap key, value 1 per press, no deck.
  * - `ready`: the Learner pressed "Ready" (e.g. trim set, `gain-staging`); `deck` says which deck.
  * - `done`: the Learner pressed "Done"; no deck.
+ *
+ * Not controls here, on purpose: seeking and jog search (the jog on a paused deck) move the
+ * playhead, so the playhead model holds them; master level, cue mix and headphone level only shape
+ * what the Learner monitors, and no criterion grades them.
+ *
+ * Extension point: a new graded control (Beat FX for `echo-out`: on/off, level, beat length) gets an
+ * id and a unit here, its starting state in `ChannelSnapshot` or `DeckStateSnapshot`, and its
+ * engine-to-contract mapping in the recorder (src/audio/recorder.ts: `CONTRACT_CONTROLS`,
+ * `contractValue` and the snapshot functions).
  */
 export type ControlId =
   | "channelFader"
@@ -74,8 +102,14 @@ export type ControlId =
   | "eqHigh"
   | "eqMid"
   | "eqLow"
+  | "filter"
   | "cueMonitor"
+  | "play"
   | "deckCue"
+  | "tempo"
+  | "jogBend"
+  | "sync"
+  | "masterTempo"
   | "tap"
   | "ready"
   | "done";
@@ -83,12 +117,22 @@ export type ControlId =
 export interface ControlEvent {
   /**
    * Heard time of the input: `ts.contextTime + (event.timeStamp − ts.performanceTime) / 1000`,
-   * with `ts = audioContext.getOutputTimestamp()`.
+   * with `ts = audioContext.getOutputTimestamp()`. A change the engine made itself (`byEngine`) has
+   * no input, so its `ctx` is its `appliedCtx`.
    */
   readonly ctx: CtxTime;
   readonly control: ControlId;
   readonly deck?: DeckId;
   readonly value: number;
+  /**
+   * When the change took effect in the audio and the playhead model: later than `ctx` by the output
+   * latency and the engine's lookahead. Point actions are graded at `ctx` (the action). A Check that
+   * lines a deck control up with the playhead model (tempo, jog bend, SYNC, Master Tempo, the run a
+   * Play started) reads this. Absent = `ctx` (attempts built by hand).
+   */
+  readonly appliedCtx?: CtxTime;
+  /** The engine made this change itself, with no input (e.g. SYNC dropped). Absent = false. */
+  readonly byEngine?: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -170,6 +214,8 @@ export interface ChannelSnapshot {
   readonly eqHighDb: number;
   readonly eqMidDb: number;
   readonly eqLowDb: number;
+  /** The CFX knob, as the `filter` control. */
+  readonly filter: number;
   readonly cueMonitor: boolean;
 }
 
@@ -178,6 +224,19 @@ export interface MixerSnapshot {
   readonly A: ChannelSnapshot;
   readonly B: ChannelSnapshot;
   readonly crossfader: number;
+}
+
+/**
+ * One deck's controls at the start of the attempt, in the units of their control events. Later
+ * state is derived from the event timeline.
+ */
+export interface DeckStateSnapshot {
+  /** As the `tempo` control: a playback-rate ratio, 1 = the track's own tempo. */
+  readonly tempo: number;
+  /** As the `jogBend` control; 0 unless the jog is turning as the attempt starts. */
+  readonly jogBend: number;
+  readonly sync: boolean;
+  readonly masterTempo: boolean;
 }
 
 /** Below this, a gain counts as silence (keeps margins finite). */
@@ -235,6 +294,8 @@ export interface Attempt {
   readonly cuePoints: readonly CuePointSet[];
   readonly meters: MeterRecording;
   readonly initialMixer: MixerSnapshot;
+  /** Each deck's controls at the start: tempo, jog bend, SYNC (the Lesson's setup), Master Tempo. */
+  readonly initialDecks: Readonly<Record<DeckId, DeckStateSnapshot>>;
   /** Answers the Learner picked, by question id (e.g. `{ breakdown: 2, drop: 3 }`). */
   readonly answers: Readonly<Record<string, number>>;
 }
@@ -329,9 +390,4 @@ export interface TaskSpec {
    * standing criteria apply.
    */
   readonly passedLessons: readonly LessonId[];
-  /**
-   * Decks with SYNC on when the attempt starts (the Lesson's setup). Later changes come from the
-   * recorded SYNC commands. Absent = none.
-   */
-  readonly syncedAtStart?: readonly DeckId[];
 }

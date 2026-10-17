@@ -3,7 +3,7 @@ import type { CtxTime } from "@shared/attempt.ts";
 import { handover } from "../blend.ts";
 import type { LessonCheck, TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
-import { deckCommands, filterAt, type DeckCommand } from "../deck-commands.ts";
+import { deckControlChanges, filterAt, type DeckControlChange } from "../deck-controls.ts";
 import { TIME_EPSILON } from "../measures.ts";
 
 const HPF_DEPTH = 0.7;
@@ -17,7 +17,7 @@ const FILTER_BARS = { full: [8 - 0.25, 16 + 0.25], short: [8, 9] } as const;
  * silent. Excursions that come back to centre earlier (a nudge) are not it; a dip to centre shorter
  * than 1 beat inside the sweep does not restart it. `null` when no sweep reaches `t_out` (within 1 beat).
  */
-function sustainedSweepStart(moves: readonly DeckCommand[], outAt: CtxTime, beat: number): CtxTime | null {
+function sustainedSweepStart(moves: readonly DeckControlChange[], outAt: CtxTime, beat: number): CtxTime | null {
   const spans: { from: CtxTime; to: CtxTime }[] = [];
   moves.forEach((move, index) => {
     if (move.value <= CFX_CENTRE_BAND) return;
@@ -37,7 +37,7 @@ export const filterTransition: LessonCheck<TaskOf<"filter-transition">> = {
     const { attempt, window, spec } = context;
     const move = handover(context, "A", "B");
     const { outAt, bar } = move;
-    const filterMoves = deckCommands(attempt, "filter", "A").filter((change) => change.ctx >= window.from - TIME_EPSILON);
+    const filterMoves = deckControlChanges(attempt, "filter", "A").filter((change) => change.ctx >= window.from - TIME_EPSILON);
     const beforeOut = outAt === null ? [] : filterMoves.filter((change) => change.ctx < outAt);
     const depth = outAt === null ? null : beforeOut.reduce((most, change) => Math.max(most, change.value), 0);
     const filterOn = outAt === null || bar === null ? null : sustainedSweepStart(beforeOut, outAt, bar / 4);

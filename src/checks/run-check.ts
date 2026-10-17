@@ -4,7 +4,7 @@ import type { Aids, CtxSpan, LessonId, LessonTask, TaskSpec } from "@shared/atte
 import type { CheckOutcome, CheckResult, VoidAttempt, VoidReason } from "@shared/check-result.ts";
 import type { CheckContext, LessonCheck, OwnCriteria, TaskOf } from "./context.ts";
 import { gradeDegraded } from "./degraded.ts";
-import type { GradedAttempt } from "./deck-commands.ts";
+import type { GradedAttempt } from "./deck-controls.ts";
 import { bassSwap } from "./lessons/bass-swap.ts";
 import { beatsAndBars } from "./lessons/beats-and-bars.ts";
 import { blendByEar } from "./lessons/blend-by-ear.ts";

@@ -5,7 +5,7 @@ import type { CriterionResult, Severity } from "@shared/check-result.ts";
 import { blendPhaseHold, clashSpans, spansSeconds } from "./blend.ts";
 import { barSeconds, loadedDeck, type CheckContext } from "./context.ts";
 import { judge, notApplicable } from "./criterion.ts";
-import { deckCommands, filterAt, isSyncedAt } from "./deck-commands.ts";
+import { deckControlChanges, filterAt, isSyncedAt } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { audibleSpans, overlapSpans } from "./mix.ts";
 import { overcorrection } from "./overcorrect.ts";
@@ -43,7 +43,7 @@ export function controlsReset(context: CheckContext, severity: Severity, parts: 
     const knobMoves = (from: CtxTime) =>
       [
         ...EQ_BANDS.flatMap(([control]) => controlEvents(attempt.events, control, deck, { from, to: window.to })),
-        ...deckCommands(attempt, "filter", deck).filter((move) => move.ctx > from && move.ctx < window.to),
+        ...deckControlChanges(attempt, "filter", deck).filter((move) => move.ctx > from && move.ctx < window.to),
       ]
         .map((move) => move.ctx)
         .sort((a, b) => a - b);
@@ -71,16 +71,15 @@ export function controlsReset(context: CheckContext, severity: Severity, parts: 
 
 /**
  * `sync-kept`: no jog bend on a deck while its SYNC is on. A bend is counted once per turn (a
- * non-zero bend after a release). SYNC state comes from `spec.syncedAtStart` and the recorded SYNC
+ * non-zero bend after a release). SYNC state comes from the attempt's initial deck state and the recorded SYNC
  * commands, including the engine dropping it.
  */
 export function syncKept(context: CheckContext, severity: Severity): CriterionResult {
-  const { attempt, window, spec } = context;
-  const syncedAtStart = spec.syncedAtStart ?? [];
+  const { attempt, window } = context;
   const bends = DECKS.flatMap((deck) =>
-    deckCommands(attempt, "jog-bend", deck)
+    deckControlChanges(attempt, "jogBend", deck)
       .filter((bend, index, all) => bend.value !== 0 && (all[index - 1]?.value ?? 0) === 0)
-      .filter((bend) => bend.ctx >= window.from && bend.ctx < window.to && isSyncedAt(attempt, syncedAtStart, deck, bend.ctx))
+      .filter((bend) => bend.ctx >= window.from && bend.ctx < window.to && isSyncedAt(attempt, deck, bend.ctx))
       .map((bend) => ({ deck, ctx: bend.ctx })),
   );
   return judge({

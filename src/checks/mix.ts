@@ -9,7 +9,7 @@ import {
   type DeckId,
   type MeterFrame,
 } from "@shared/attempt.ts";
-import { playPressTime, type GradedAttempt } from "./deck-commands.ts";
+import { playPressTime, type GradedAttempt } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { controlValueAt, faderGesture, isPlaying, playRunStartAt } from "./timeline.ts";
 

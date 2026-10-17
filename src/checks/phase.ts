@@ -4,7 +4,7 @@
 import type { CtxSpan, CtxTime } from "@shared/attempt.ts";
 import type { CheckContext, LoadedDeck } from "./context.ts";
 import { loadedDeck } from "./context.ts";
-import { jogBendAt, type GradedAttempt } from "./deck-commands.ts";
+import { jogBendAt, type GradedAttempt } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { beatPhase, beatSeconds, isPlaying, rateAt } from "./timeline.ts";
 

@@ -6,10 +6,10 @@ import {
   BAR,
   BEAT,
   CUT_WINDOW,
+  applied,
   attempt,
   channel,
   cutScenario,
-  engineCommand,
   event,
   frames,
   playing,
@@ -51,10 +51,12 @@ describe("cut-on-phrase", () => {
 
   it("times B's Play from the press, so output latency and the engine's lookahead never count against the Learner", () => {
     // Bluetooth headphones and the lookahead: B's audio starts 250 ms after the press heard on the 1.
-    const lateAudio = (pressedAt: number) => ({
-      ...cutScenario({ playB: pressedAt + 0.25, closeA: [event(pressedAt, "channelFader", 0, "A")], extraEvents: [event(20, "channelFader", 1, "B")] }),
-      engineEvents: [{ ...engineCommand(pressedAt + 0.25, "play", "B", true), heardCtx: pressedAt }],
-    });
+    const lateAudio = (pressedAt: number) =>
+      cutScenario({
+        playB: pressedAt + 0.25,
+        closeA: [event(pressedAt, "channelFader", 0, "A")],
+        extraEvents: [event(20, "channelFader", 1, "B"), applied(pressedAt, "play", 1, "B", 0.25)],
+      });
     const graded = (recorded: ReturnType<typeof lateAudio>) =>
       runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { passedLessons: ["deck-basics", "gain-staging"] }), recorded);
 
@@ -71,15 +73,8 @@ describe("cut-on-phrase", () => {
     expect(byId(late, "cut-on-phrase.cut-start")?.measured).toBeCloseTo(130);
   });
 
-  it("ignores a Play that did not start B's run (refused, or on deck A): then B's audio start is all there is", () => {
-    const scenario = cutScenario({ playB: 32.25 });
-    const recorded = {
-      ...scenario,
-      engineEvents: [
-        { ...engineCommand(32.25, "play", "B", true, { rejected: true }), heardCtx: 32 },
-        { ...engineCommand(32.25, "play", "A", true), heardCtx: 32 },
-      ],
-    };
+  it("ignores a Play that did not start B's run (on deck A, or applied elsewhere): then B's audio start is all there is", () => {
+    const recorded = cutScenario({ playB: 32.25, extraEvents: [applied(32, "play", 1, "A", 0.25), applied(31, "play", 1, "B", 0.25)] });
     const result = runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { passedLessons: ["gain-staging"] }), recorded);
     if (!("criteria" in result)) throw new Error("expected a graded result");
     expect(byId(result, "cut-on-phrase.cut-start")?.measured).toBeCloseTo(250);

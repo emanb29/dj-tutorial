@@ -15,9 +15,9 @@
 //   the Skill profile and do not count toward a Review. If one is fail-severity, the attempt cannot
 //   pass either: the outcome is `failed` with no failed criteria (a void needs a VoidReason the app
 //   shows, and the attempt did measure everything else).
-import type { CtxSpan, CtxTime } from "@shared/attempt.ts";
+import type { ControlId, CtxSpan, CtxTime } from "@shared/attempt.ts";
 import type { CriterionId, CriterionResult } from "@shared/check-result.ts";
-import type { GradedAttempt } from "./deck-commands.ts";
+import type { GradedAttempt } from "./deck-controls.ts";
 import { MAX_FRAME_AGE_S } from "./mix.ts";
 
 /** Criteria computed only from data the recorder always keeps. Every other criterion reads continuous data. */
@@ -57,32 +57,27 @@ export function readsContinuousData(id: CriterionId): boolean {
   return !DISCRETE_ONLY.has(id);
 }
 
-/** Engine command names of the continuous controls (src/audio CONTINUOUS_CONTROLS) and their contract ids. */
-const CONTINUOUS = new Set([
+/**
+ * The contract controls the recorder coalesces and may drop (src/audio CONTINUOUS_CONTROLS). The
+ * recorder also keeps moves the contract leaves out (refused ones, master level, cue mix, headphone
+ * level), so the last contract move can be before the last kept move: the estimate is then earlier
+ * than the true drop, which is the safe side.
+ */
+const CONTINUOUS: ReadonlySet<ControlId> = new Set<ControlId>([
   "tempo",
-  "jog-bend",
+  "jogBend",
   "trim",
-  "eq-low",
-  "eq-mid",
-  "eq-high",
-  "filter",
-  "channel-fader",
-  "crossfader",
-  "master-level",
-  "cue-mix",
-  "channelFader",
   "eqLow",
   "eqMid",
   "eqHigh",
+  "filter",
+  "channelFader",
+  "crossfader",
 ]);
 
 /** The earliest moment the recorder may have started dropping data. */
 export function estimateDropPoint(attempt: GradedAttempt, window: CtxSpan): CtxTime {
-  // Every kept move is in `engineEvents`; contract events are read too, for attempts without them.
-  const moves = [
-    ...(attempt.engineEvents ?? []).filter((record) => CONTINUOUS.has(record.command.control)).map((record) => record.heardCtx ?? record.appliedCtx),
-    ...attempt.events.filter((event) => CONTINUOUS.has(event.control)).map((event) => event.ctx),
-  ];
+  const moves = attempt.events.filter((event) => CONTINUOUS.has(event.control)).map((event) => event.ctx);
   const lastMove = moves.length === 0 ? null : Math.max(...moves);
   const lastFrames = [attempt.meters.master, attempt.meters.A, attempt.meters.B].flatMap((frames) => {
     const last = frames?.at(-1);

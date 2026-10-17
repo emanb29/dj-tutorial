@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CheckMode, TaskSpec } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { runCheck } from "../run-check.ts";
-import { BAR, BEAT, BLEND_WINDOW, LESSON_AIDS, blendScenario, engineCommand, event, spec, type BlendScenario } from "../testing/synthetic.ts";
+import { BAR, BEAT, BLEND_WINDOW, LESSON_AIDS, blendScenario, event, spec, type BlendScenario } from "../testing/synthetic.ts";
 
 /** Swap at A's phrase start 48 s (B in at 32 s, A out at 56 s). */
 function swap(bUp = 48, aDown = 48): BlendScenario {
@@ -102,9 +102,9 @@ describe("bass-swap", () => {
       detail: { tempoGapAtStartBpm: 0, syncUsed: 0 },
     });
     // SYNC did the matching: not a tempo-fader skill either.
-    const synced = { ...matchedByHand, engineEvents: [engineCommand(27, "sync", "B", true)] };
+    const synced = { ...matchedByHand, extraEvents: [...(matchedByHand.extraEvents ?? []), event(27, "sync", 1, "B")] };
     expect(byId(check(synced, "placement"), "tempo-fader.tempo-matched")).toMatchObject({ status: "notApplicable", detail: { syncUsed: 1 } });
-    const syncedFromStart = check(matchedByHand, "placement", { syncedAtStart: ["B"] });
+    const syncedFromStart = check({ ...matchedByHand, syncedAtStart: ["B"] }, "placement");
     expect(byId(syncedFromStart, "tempo-fader.tempo-matched")?.status).toBe("notApplicable");
   });
 });

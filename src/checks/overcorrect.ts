@@ -2,7 +2,7 @@
 // and the largest jog bend. Report-only: a metric for the Coach, never pass/fail.
 import type { DeckId } from "@shared/attempt.ts";
 import { loadedDeck, type CheckContext } from "./context.ts";
-import { deckCommands } from "./deck-commands.ts";
+import { deckControlChanges } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { tempoBpmAt } from "./phase.ts";
 
@@ -40,7 +40,7 @@ export function countReversals(bpms: readonly number[]): number {
 function tempoSequence(context: CheckContext, deck: DeckId): number[] {
   const loaded = loadedDeck(context, deck);
   if (loaded === null) return [];
-  const moves = deckCommands(context.attempt, "tempo", deck).filter(
+  const moves = deckControlChanges(context.attempt, "tempo", deck).filter(
     (move) => !move.byEngine && move.ctx >= context.window.from && move.ctx < context.window.to,
   );
   const first = moves[0];
@@ -57,7 +57,7 @@ export interface Overcorrection {
 export function overcorrection(context: CheckContext): Overcorrection {
   const decks: readonly DeckId[] = ["A", "B"];
   const bends = decks.flatMap((deck) =>
-    deckCommands(context.attempt, "jog-bend", deck).filter((bend) => bend.ctx >= context.window.from && bend.ctx < context.window.to),
+    deckControlChanges(context.attempt, "jogBend", deck).filter((bend) => bend.ctx >= context.window.from && bend.ctx < context.window.to),
   );
   return {
     tempoReversals: decks.reduce((total, deck) => total + countReversals(tempoSequence(context, deck)), 0),

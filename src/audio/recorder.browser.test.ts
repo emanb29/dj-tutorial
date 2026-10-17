@@ -21,10 +21,12 @@ const details: AttemptDetails = {
 };
 const wallClock = () => new Date("2026-10-17T10:00:00.000Z");
 
-async function engineWithTrack(options: { seconds: number; clock?: OutputClock }) {
+async function engineWithTrack(options: { seconds: number; clock?: OutputClock; deckB?: boolean }) {
   const context = offlineContext(options.seconds);
   const engine = await createAudioEngine(options.clock === undefined ? { context } : { context, clock: options.clock });
-  await engine.load("A", toneBuffer(context, { frequency: 1000, peak: 0.5, seconds: options.seconds + 1 }), { trackId: "track-a", grid });
+  const tone = () => toneBuffer(context, { frequency: 1000, peak: 0.5, seconds: options.seconds + 1 });
+  await engine.load("A", tone(), { trackId: "track-a", grid });
+  if (options.deckB === true) await engine.load("B", tone(), { trackId: "track-b", grid });
   return { context, engine };
 }
 
@@ -53,6 +55,7 @@ describe("AttemptRecorder", () => {
     const attempt = await stopped(recorder);
 
     expect(attempt.events).toEqual([
+      { ctx: 1.25, control: "play", deck: "A", value: 1, appliedCtx: 0, inputDevice: "keyboard" },
       { ctx: 1.5, control: "channelFader", deck: "A", value: 0.4, appliedCtx: 0, inputDevice: "trackpad" },
       { ctx: expect.closeTo(1.6, 9) as number, control: "crossfader", value: 0.6, appliedCtx: 0, inputDevice: "trackpad" },
       { ctx: expect.closeTo(1.7, 9) as number, control: "eqLow", deck: "B", value: -120, appliedCtx: 0, inputDevice: "trackpad" },
@@ -64,7 +67,6 @@ describe("AttemptRecorder", () => {
     ]);
     expect(attempt.inputDevice).toBe("trackpad");
     // Every command, including ones the Checks do not read and ones the engine refused, is kept as an extra.
-    expect(attempt.engineEvents.map((event) => [event.command.control, event.rejected?.kind ?? null])).toContainEqual(["play", null]);
     expect(attempt.engineEvents.map((event) => [event.command.control, event.rejected?.kind ?? null])).toContainEqual(["eq-low", "value-out-of-range"]);
   });
 
@@ -96,10 +98,79 @@ describe("AttemptRecorder", () => {
     expect(attempt.meters.B).toHaveLength(50);
     expect(Object.keys(attempt.meters.master[0] ?? {}).sort()).toEqual(["ctx", "momentaryLufs", "samplePeakDb", "shortTermLufs"]);
     expect(attempt.initialMixer).toEqual({
-      A: { channelFader: 1, trimDb: 0, eqHighDb: 0, eqMidDb: 0, eqLowDb: 0, cueMonitor: false },
-      B: { channelFader: 0, trimDb: 0, eqHighDb: 0, eqMidDb: 0, eqLowDb: 0, cueMonitor: false },
+      A: { channelFader: 1, trimDb: 0, eqHighDb: 0, eqMidDb: 0, eqLowDb: 0, filter: 0, cueMonitor: false },
+      B: { channelFader: 0, trimDb: 0, eqHighDb: 0, eqMidDb: 0, eqLowDb: 0, filter: 0, cueMonitor: false },
       crossfader: 0.5,
     });
+    expect(attempt.initialDecks).toEqual({
+      A: { tempo: 1, jogBend: 0, sync: false, masterTempo: false },
+      B: { tempo: 1, jogBend: 0, sync: false, masterTempo: false },
+    });
+  });
+
+  it("records tempo as a rate ratio, jog bends, SYNC (with the engine's own drop), Master Tempo and the CFX filter", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock, deckB: true });
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    recorder.start();
+    const at = (eventTimeMs: number) => ({ device: "trackpad", eventTimeMs }) as const;
+    engine.command({ control: "play", deck: "A" }, at(5_000));
+    engine.command({ control: "tempo", deck: "A", value: 0.5 }, at(5_100));
+    engine.command({ control: "tempo-range", deck: "A", value: 6 }, at(5_200));
+    engine.command({ control: "jog-bend", deck: "A", value: 0.05 }, at(5_300));
+    engine.command({ control: "jog-bend", deck: "A", value: 0 }, at(5_350));
+    engine.command({ control: "filter", deck: "A", value: 0.8 }, at(5_400));
+    engine.command({ control: "filter", deck: "A", value: 3 }, at(5_450)); // out of range: refused
+    engine.command({ control: "sync", deck: "B", value: true }, at(5_500));
+    engine.command({ control: "tempo", deck: "B", value: 0 }, at(5_550)); // locked by SYNC: refused
+    engine.command({ control: "sync", deck: "A", value: true }, at(5_600)); // A follows now: the engine drops B's SYNC
+    engine.command({ control: "master-tempo", deck: "A", value: true }, at(5_700));
+    engine.command({ control: "jog-search", deck: "B", value: 1 }, at(5_800)); // in the playhead model only
+    engine.command({ control: "headphone-level", value: 0.7 }, at(5_900)); // monitoring only
+    const attempt = await stopped(recorder);
+    const appliedOf = (control: string, deck: string, value?: unknown) =>
+      attempt.engineEvents.find((event) => event.command.control === control && "deck" in event.command && event.command.deck === deck && (value === undefined || ("value" in event.command && event.command.value === value)))?.appliedCtx;
+
+    const deckEvents = attempt.events.filter((event) => ["tempo", "jogBend", "filter", "sync", "masterTempo"].includes(event.control));
+    expect(deckEvents).toEqual([
+      // The engine's own change has no heard time: it sits where it took effect, which sorts it first on this shifted clock.
+      { ctx: appliedOf("sync", "B", false), control: "sync", deck: "B", value: 0, appliedCtx: appliedOf("sync", "B", false), byEngine: true, inputDevice: "engine" },
+      { ctx: expect.closeTo(1.1, 9) as number, control: "tempo", deck: "A", value: expect.closeTo(1.05, 12) as number, appliedCtx: appliedOf("tempo", "A"), inputDevice: "trackpad" },
+      // A 6% range at the same fader position: the rate drops to 1.03.
+      { ctx: expect.closeTo(1.2, 9) as number, control: "tempo", deck: "A", value: expect.closeTo(1.03, 12) as number, appliedCtx: appliedOf("tempo-range", "A"), inputDevice: "trackpad" },
+      { ctx: expect.closeTo(1.3, 9) as number, control: "jogBend", deck: "A", value: 0.05, appliedCtx: appliedOf("jog-bend", "A", 0.05), inputDevice: "trackpad" },
+      { ctx: expect.closeTo(1.35, 9) as number, control: "jogBend", deck: "A", value: 0, appliedCtx: appliedOf("jog-bend", "A", 0), inputDevice: "trackpad" },
+      { ctx: expect.closeTo(1.4, 9) as number, control: "filter", deck: "A", value: 0.8, appliedCtx: appliedOf("filter", "A", 0.8), inputDevice: "trackpad" },
+      { ctx: expect.closeTo(1.5, 9) as number, control: "sync", deck: "B", value: 1, appliedCtx: appliedOf("sync", "B", true), inputDevice: "trackpad" },
+      { ctx: expect.closeTo(1.6, 9) as number, control: "sync", deck: "A", value: 1, appliedCtx: appliedOf("sync", "A", true), inputDevice: "trackpad" },
+      { ctx: expect.closeTo(1.7, 9) as number, control: "masterTempo", deck: "A", value: 1, appliedCtx: appliedOf("master-tempo", "A"), inputDevice: "trackpad" },
+    ]);
+    // Jog search and headphone level have no contract id; the engine's own event never counts toward the input device.
+    expect(attempt.events.map((event) => event.control)).not.toContain("jogSearch");
+    expect(attempt.events).toHaveLength(deckEvents.length + 1);
+    expect(attempt.inputDevice).toBe("trackpad");
+  });
+
+  it("puts the filter and each deck's tempo, jog bend, SYNC and Master Tempo at the start into the initial snapshot", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1, deckB: true });
+    for (const command of [
+      { control: "tempo", deck: "A", value: 0.5 },
+      { control: "master-tempo", deck: "A", value: true },
+      { control: "filter", deck: "B", value: -0.3 },
+      { control: "sync", deck: "B", value: true },
+    ] as const) {
+      expect(engine.command(command, KEYBOARD)).toEqual({ ok: true });
+    }
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    recorder.start();
+    engine.command({ control: "done" }, KEYBOARD);
+    const attempt = await stopped(recorder);
+
+    expect(attempt.initialMixer.A.filter).toBe(0);
+    expect(attempt.initialMixer.B.filter).toBe(-0.3);
+    expect(attempt.initialDecks.A).toEqual({ tempo: expect.closeTo(1.05, 12) as number, jogBend: 0, sync: false, masterTempo: true });
+    // B follows A at the same grid BPM, so it plays at A's rate.
+    expect(attempt.initialDecks.B).toEqual({ tempo: expect.closeTo(1.05, 12) as number, jogBend: 0, sync: true, masterTempo: false });
+    expect(attempt.events.map((event) => event.control)).toEqual(["done"]);
   });
 
   it("records cue points the Learner sets with deck CUE", async () => {

@@ -11,7 +11,7 @@ import type {
   TaskSpec,
 } from "@shared/attempt.ts";
 import type { CriterionResult, Evidence } from "@shared/check-result.ts";
-import type { GradedAttempt } from "./deck-commands.ts";
+import type { GradedAttempt } from "./deck-controls.ts";
 import { framesIn } from "./mix.ts";
 import { beatSeconds } from "./timeline.ts";
 

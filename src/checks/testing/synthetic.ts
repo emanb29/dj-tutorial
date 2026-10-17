@@ -7,13 +7,13 @@ import type {
   ControlEvent,
   CtxSpan,
   DeckId,
+  DeckStateSnapshot,
   LessonId,
   LessonTask,
   MeterFrame,
   PlayheadSegment,
   TaskSpec,
 } from "@shared/attempt.ts";
-import type { EngineCommandRecord } from "../deck-commands.ts";
 
 export const BPM = 120;
 export const BEAT = 60 / BPM;
@@ -68,9 +68,15 @@ export function channel(overrides: Partial<ChannelSnapshot> = {}): ChannelSnapsh
     eqHighDb: 0,
     eqMidDb: 0,
     eqLowDb: 0,
+    filter: 0,
     cueMonitor: false,
     ...overrides,
   };
+}
+
+/** A deck's starting controls: own tempo, no bend, SYNC and Master Tempo off. */
+export function deckState(overrides: Partial<DeckStateSnapshot> = {}): DeckStateSnapshot {
+  return { tempo: 1, jogBend: 0, sync: false, masterTempo: false, ...overrides };
 }
 
 export function attempt(overrides: Partial<Attempt> = {}): Attempt {
@@ -90,6 +96,7 @@ export function attempt(overrides: Partial<Attempt> = {}): Attempt {
     cuePoints: [],
     meters: { master: [] },
     initialMixer: { A: channel(), B: channel(), crossfader: 0.5 },
+    initialDecks: { A: deckState(), B: deckState() },
     answers: {},
     ...overrides,
   };
@@ -123,21 +130,14 @@ export function event(ctx: number, control: ControlEvent["control"], value: numb
   return deck === undefined ? { ctx, control, value } : { ctx, control, value, deck };
 }
 
-/** An accepted engine command, as the recorder's `engineEvents` holds it (heard = applied here). */
-export function engineCommand(
-  ctx: number,
-  control: string,
-  deck: DeckId,
-  value: number | boolean,
-  options: { readonly byEngine?: boolean; readonly rejected?: boolean } = {},
-): EngineCommandRecord {
-  return {
-    command: { control, deck, value },
-    device: options.byEngine === true ? "engine" : "keyboard",
-    heardCtx: options.byEngine === true ? null : ctx,
-    appliedCtx: ctx,
-    rejected: options.rejected === true ? { kind: "refused" } : null,
-  };
+/** A deck control the engine applied `latencySec` after it was heard (`appliedCtx` = `ctx` + latency). */
+export function applied(ctx: number, control: ControlEvent["control"], value: number, deck: DeckId, latencySec: number): ControlEvent {
+  return { ctx, control, value, deck, appliedCtx: ctx + latencySec };
+}
+
+/** A change the engine made itself (e.g. SYNC dropped): no input, so heard = applied. */
+export function byEngine(ctx: number, control: ControlEvent["control"], value: number, deck: DeckId): ControlEvent {
+  return { ctx, control, value, deck, appliedCtx: ctx, byEngine: true };
 }
 
 /** A continuous move at 50 Hz (a trackpad drag as the recorder keeps it): linear from `fromValue` to `toValue`. */
@@ -232,7 +232,8 @@ export interface BlendScenario {
   readonly initialB?: Partial<ChannelSnapshot>;
   /** More events (trim, EQ, crossfader …), merged in time order. */
   readonly extraEvents?: readonly ControlEvent[];
-  readonly engineEvents?: readonly EngineCommandRecord[];
+  /** Decks with SYNC on at the start (the Lesson's setup). */
+  readonly syncedAtStart?: readonly DeckId[];
   /** Master momentary loudness at `t` (default −14). */
   readonly masterLufs?: (t: number) => number;
   /** Replaces the default channel-fader events entirely (crossfader blends). */
@@ -243,33 +244,31 @@ export interface BlendScenario {
 export const BLEND_WINDOW: CtxSpan = { from: 0, to: 96 };
 
 /** A plays from 0 with its fader up; B (cued at 2 s) starts at `playB`, fades in at `inB`; A closes at `outA`. */
-export function blendScenario(options: BlendScenario = {}): Attempt & { readonly engineEvents: readonly EngineCommandRecord[] } {
-  const { playB = 2 * PHRASE, bStartPos = 0, bRate = 1, extraEvents = [], engineEvents = [], masterLufs = () => -14 } = options;
+export function blendScenario(options: BlendScenario = {}): Attempt {
+  const { playB = 2 * PHRASE, bStartPos = 0, bRate = 1, extraEvents = [], syncedAtStart = [], masterLufs = () => -14 } = options;
   const inB = options.inB ?? playB;
   const outA = options.outA ?? inB + 12 * BAR;
   const end = BLEND_WINDOW.to;
   const faders = options.faderEvents ?? [event(inB, "channelFader", 1, "B"), event(outA, "channelFader", 0, "A")];
   const bSegments = options.bSegments ?? playing(playB, bStartPos, undefined, bRate);
   const bStart = bSegments[0]?.fromCtx ?? playB;
-  return {
-    ...attempt({
-      decks: {
-        A: { trackId: "track-a", playhead: { segments: playing(0) } },
-        B: { trackId: "track-b", playhead: { segments: bSegments } },
-      },
-      initialMixer: {
-        A: channel({ channelFader: 1, ...options.initialA }),
-        B: channel(options.initialB),
-        crossfader: options.crossfader ?? 0.5,
-      },
-      events: [event(2, "cueMonitor", 1, "B"), ...faders, ...extraEvents].sort((a, b) => a.ctx - b.ctx),
-      cuePoints: [{ ctx: 1, deck: "B", trackId: "track-b", pos: bStartPos }],
-      meters: {
-        master: frames(0, end, (t) => ({ peak: -3, momentary: masterLufs(t) })),
-        A: frames(0, end, () => ({ peak: -3, momentary: -14 })),
-        B: frames(0, end, (t) => (t >= bStart ? { peak: -3, momentary: -14 } : SILENT)),
-      },
-    }),
-    engineEvents,
-  };
+  return attempt({
+    decks: {
+      A: { trackId: "track-a", playhead: { segments: playing(0) } },
+      B: { trackId: "track-b", playhead: { segments: bSegments } },
+    },
+    initialMixer: {
+      A: channel({ channelFader: 1, ...options.initialA }),
+      B: channel(options.initialB),
+      crossfader: options.crossfader ?? 0.5,
+    },
+    events: [event(2, "cueMonitor", 1, "B"), ...faders, ...extraEvents].sort((a, b) => a.ctx - b.ctx),
+    cuePoints: [{ ctx: 1, deck: "B", trackId: "track-b", pos: bStartPos }],
+    meters: {
+      master: frames(0, end, (t) => ({ peak: -3, momentary: masterLufs(t) })),
+      A: frames(0, end, () => ({ peak: -3, momentary: -14 })),
+      B: frames(0, end, (t) => (t >= bStart ? { peak: -3, momentary: -14 } : SILENT)),
+    },
+    initialDecks: { A: deckState({ sync: syncedAtStart.includes("A") }), B: deckState({ sync: syncedAtStart.includes("B") }) },
+  });
 }

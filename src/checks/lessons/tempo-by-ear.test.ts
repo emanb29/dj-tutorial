@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { CheckVariant, PlayheadSegment } from "@shared/attempt.ts";
+import type { CheckVariant, ControlEvent, PlayheadSegment } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
-import type { EngineCommandRecord } from "../deck-commands.ts";
 import { runCheck } from "../run-check.ts";
-import { BAR, BPM, LESSON_AIDS, attempt, engineCommand, spec } from "../testing/synthetic.ts";
+import { BAR, BPM, LESSON_AIDS, attempt, event, spec } from "../testing/synthetic.ts";
 
 const MATCH_FROM = 4;
 const WINDOW = { from: 0, to: 80 };
@@ -22,25 +21,23 @@ function hunting({ landAt = 16, offsetS = 0, gapBpm = 0 } = {}): PlayheadSegment
   ];
 }
 
-const TEMPO_MOVES: EngineCommandRecord[] = [
-  engineCommand(8, "tempo", "B", -0.05),
-  engineCommand(12, "tempo", "B", 0.02),
-  engineCommand(16, "tempo", "B", 0),
-];
+/** The tempo-fader moves behind `hunting`, as rate ratios. */
+const TEMPO_MOVES: ControlEvent[] = [event(8, "tempo", 0.995, "B"), event(12, "tempo", 1.002, "B"), event(16, "tempo", 1, "B")];
 
 function check(
   segments: readonly PlayheadSegment[],
-  options: { variant?: CheckVariant; engineEvents?: readonly EngineCommandRecord[] } = {},
+  options: { variant?: CheckVariant; events?: readonly ControlEvent[] } = {},
 ): CheckResult {
-  const result = runCheck(spec({ lessonId: "tempo-by-ear", matchFrom: MATCH_FROM }, WINDOW, { variant: options.variant ?? "full", aids: BY_EAR_AIDS }), {
-    ...attempt({
+  const result = runCheck(
+    spec({ lessonId: "tempo-by-ear", matchFrom: MATCH_FROM }, WINDOW, { variant: options.variant ?? "full", aids: BY_EAR_AIDS }),
+    attempt({
       decks: {
         A: { trackId: "track-a", playhead: { segments: [{ fromCtx: 0, pos: 0, rate: 1 }] } },
         B: { trackId: "track-b", playhead: { segments } },
       },
+      events: options.events ?? TEMPO_MOVES,
     }),
-    engineEvents: options.engineEvents ?? TEMPO_MOVES,
-  });
+  );
   if (!("criteria" in result)) throw new Error("expected a graded result");
   return result;
 }
@@ -76,7 +73,7 @@ describe("tempo-by-ear", () => {
 
   it("reports the largest jog bend as a percentage", () => {
     const result = check(hunting(), {
-      engineEvents: [...TEMPO_MOVES, engineCommand(17, "jog-bend", "B", -0.04), engineCommand(17.2, "jog-bend", "B", 0)],
+      events: [...TEMPO_MOVES, event(17, "jogBend", -0.04, "B"), event(17.2, "jogBend", 0, "B")],
     });
     expect(result.metrics["maxBendPercent"]).toBeCloseTo(4);
   });
@@ -87,7 +84,7 @@ describe("tempo-by-ear", () => {
       { fromCtx: 8, pos: 8, rate: (BPM + 0.015) / BPM },
       { fromCtx: 12, pos: 12, rate: 1 },
     ];
-    const result = check(steady, { engineEvents: [engineCommand(8, "tempo", "B", 0.001), engineCommand(12, "tempo", "B", 0)] });
+    const result = check(steady, { events: [event(8, "tempo", (BPM + 0.015) / BPM, "B"), event(12, "tempo", 1, "B")] });
     expect(result.metrics["tempoReversals"]).toBe(0);
   });
 });

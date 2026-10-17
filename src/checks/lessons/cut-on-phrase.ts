@@ -2,7 +2,7 @@
 import type { CriterionResult } from "@shared/check-result.ts";
 import { loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
-import { playPressTime } from "../deck-commands.ts";
+import { playPressTime } from "../deck-controls.ts";
 import { cueOnSeconds, entryActionTime, entryTime, exitActionTime } from "../mix.ts";
 import { loudJump, phraseOffsetSeconds } from "../phrasing.ts";
 import { beatSeconds, firstPlayStart, playRunStartAt } from "../timeline.ts";
