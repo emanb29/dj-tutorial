@@ -32,6 +32,34 @@ _Avoid_: Test, quiz, grade
 The running record of what a Learner has demonstrated, updated by every Check.
 _Avoid_: Level, score, progress
 
+**Passed**:
+A skill whose Check the Learner has met at least once. Passing unlocks the Lessons that depend on it.
+_Avoid_: Completed, learned, mastered
+
+**Retained**:
+A passed skill the Learner met again cold, at least a day later, without the Lesson's explanation. The course is done only when the final mix's skills are retained.
+_Avoid_: Mastered, locked in
+
+**Warm-up**:
+A short drill at the start of a session on skills that are due for a retention re-pass, drawn from the Lesson catalogue.
+_Avoid_: Review, revision, quiz
+
+**Bonus exercise**:
+An optional drill the Coach offers while a skill isn't due yet, such as interleaved practice or extra work on a weak criterion. It never gates progress.
+_Avoid_: Homework, extra credit
+
+**Review**:
+An earlier Lesson the Coach suggests repeating after repeated failures. The Learner may decline it.
+_Avoid_: Remedial lesson, retry
+
+**Mission**:
+The Learner's own statement of why they want to DJ. The Coach uses it to choose tracks and order optional Lessons.
+_Avoid_: Goal, motivation
+
+**Reference card**:
+A printable one-page summary unlocked by passing a Lesson, e.g. the controller map or a transition recipe.
+_Avoid_: Cheat sheet, handout
+
 **Coach**:
 The runtime language model that reads Skill profiles and Check measurements to build the Curriculum and give personalised feedback. It never grades and never hears audio.
 _Avoid_: AI, tutor, assistant
