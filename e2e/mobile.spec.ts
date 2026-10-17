@@ -242,6 +242,55 @@ async function expectFingerSized(page: Page, locator: Locator): Promise<void> {
   expect(box.height).toBeGreaterThanOrEqual(TOUCH_TARGET_PX);
 }
 
+const BY_EAR_BEFORE = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase", "tempo-fader", "sync-blend", "crossfader", "eq-basics"];
+
+test.describe("the by-ear Lessons on a phone (412×915, touch)", () => {
+  test.use(phone(412, 915));
+
+  test("nudge-phase: the jog names no key, is finger-sized, and a finger turning it nudges B", async ({ page }) => {
+    await openLesson(page, "nudge-phase", { touch: true, passed: BY_EAR_BEFORE });
+    const caption = page.getByRole("status", { name: "Lesson caption" });
+    await expect(caption).toHaveText("Two kicks? Turn jog B");
+    await expect(page.locator('[data-control="B.jog"] .caption')).toHaveText("Two kicks? Turn jog B");
+    const jog = page.locator('[data-control="B.jog"] .jog-surface');
+    await expectFingerSized(page, jog);
+
+    // A finger round the platter, clockwise, a frame at a time: B bends faster while it turns, and
+    // the nudge moves the hook on. Measured each stroke (the page may still be scrolling the jog into
+    // view); a finger goes again, as a person would, at most three times.
+    const touchscreen = await page.context().newCDPSession(page);
+    const stroke = async () => {
+      const box = await settledBox(page, jog);
+      const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      const radius = box.width * 0.35;
+      const at = (angle: number) => ({ x: centre.x + radius * Math.cos(angle), y: centre.y + radius * Math.sin(angle) });
+      await touchscreen.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [at(0)] });
+      for (let step = 1; step <= 12; step += 1) {
+        await touchscreen.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [at(step * 0.15)] });
+        await page.waitForTimeout(25);
+      }
+      await touchscreen.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    for (let count = 0; count < 3 && !((await caption.textContent()) ?? "").includes("PHASE dot"); count += 1) await stroke();
+    await expect(caption).toContainText("PHASE dot");
+  });
+
+  test("tempo-by-ear: the BPM is covered; a tempo move is the guess; Ready is a finger-sized button", async ({ page }) => {
+    await openLesson(page, "tempo-by-ear", { touch: true, passed: [...BY_EAR_BEFORE, "nudge-phase"] });
+    const caption = page.getByRole("status", { name: "Lesson caption" });
+    await expect(page.locator('[data-control="B.bpm"] .readout-number')).toHaveText("–");
+    await expect(caption).toContainText("Slide TEMPO B");
+    // The tempo fader from the test (the fader swipe has its own test above): the round's first move is the guess.
+    await command(page, { control: "tempo", deck: "B", value: 0 });
+    await expect(caption.locator(".lesson-do")).toHaveText("Closer and closer: when the drift stops, Ready");
+    const ready = page.getByRole("button", { name: "Ready", exact: true });
+    await expectFingerSized(page, ready);
+    await ready.tap();
+    await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
+    await expect(page.getByRole("status", { name: "Practice feedback" })).toContainText("BPM apart");
+  });
+});
+
 test.describe("Ready (R) on a phone", () => {
   test.use(phone(412, 915));
   const phase = (page: Page) => page.locator("main.lesson");

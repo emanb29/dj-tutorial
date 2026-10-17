@@ -1,7 +1,8 @@
 // The jog wheel (research §3). On a paused deck, turning it searches: the playhead moves with the
 // platter, to find a cue point. On a playing deck it bends pitch: the deck speeds up (clockwise) or slows
-// down, by how fast it turns (once the nudge-phase Lesson unlocks it). Dragging round the platter or
-// scrolling over it both work. The platter's marker turns with the playhead at 33⅓ rpm.
+// down, by how fast it turns (once the nudge-phase Lesson unlocks it). Dragging round the platter (a
+// finger on a phone), scrolling over it (a trackpad) and holding the nudge keys (keymap.ts) all work.
+// The platter's marker turns with the playhead at 33⅓ rpm.
 
 import { useEffect, useRef, type PointerEvent } from "react";
 import type { DeckId } from "@audio";
@@ -10,6 +11,7 @@ import { useController } from "./context.tsx";
 import { ControlFrame, type CaptionSide } from "./ControlFrame.tsx";
 import { useFrame } from "./frame-loop.ts";
 import { wheelTravelPx } from "./gestures.ts";
+import { keyHintFor } from "./keymap.ts";
 import type { JogGesture } from "./session.ts";
 
 const REVOLUTIONS_PER_SEC = 100 / 3 / 60;
@@ -105,7 +107,7 @@ export function JogWheel({ deck, captionSide }: { readonly deck: DeckId; readonl
   };
 
   return (
-    <ControlFrame id={deckControl(deck, "jog")} className="jog" {...(captionSide === undefined ? {} : { captionSide })}>
+    <ControlFrame id={deckControl(deck, "jog")} className="jog" keyHint={keyHintFor(deckControl(deck, "jog-bend"))} {...(captionSide === undefined ? {} : { captionSide })}>
       <div
         ref={surface}
         className="jog-surface"

@@ -15,6 +15,7 @@ import {
 } from "@shared/coach-contract.ts";
 import { criterionPlainName, focusCriteria } from "@shared/coach-deterministic.ts";
 import type { LearnerRecord } from "@shared/learner.ts";
+import { describeByEar } from "./catalogue-by-ear.ts";
 import type { MissionTag } from "@shared/mission.ts";
 import type { SkillProfile } from "@shared/skill-profile.ts";
 import type { CheckResult, CriterionResult, Threshold, Unit } from "@shared/check-result.ts";
@@ -348,7 +349,7 @@ export function describeCriterion(criterion: CriterionResult): string {
       return `Sections named: ${String(questions - (measured ?? questions))} of ${String(questions)} right`;
     }
     default: {
-      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion) ?? describeEqFilter(criterion);
+      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion) ?? describeEqFilter(criterion) ?? describeByEar(criterion);
       if (mixing !== null) return mixing;
       const name = criterionPlainName(criterion.id);
       const label = name.charAt(0).toUpperCase() + name.slice(1);

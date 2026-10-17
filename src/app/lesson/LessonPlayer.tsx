@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Ref
 import { createAudioEngine, describeError, MasterOnlyMonitor, SplitCueMonitor, type AudioEngine } from "@audio";
 import { applyCheckResult, CUE_PLACEMENT_TOLERANCE_MS } from "@checks";
 import {
+  COVERED_DISPLAYS,
   initialLessonState,
   lessonDefinition,
   lineFacts,
@@ -34,6 +35,7 @@ import { needsHeadphonesCheck } from "./headphones-check.ts";
 import { HeadphonesGate } from "./HeadphonesGate.tsx";
 import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
+import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
 import { ResultCard } from "./ResultCard.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
 import "./lesson.css";
@@ -113,6 +115,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   const [setup, setSetup] = useState<Setup>({ kind: "loading", status: "Getting the deck ready…" });
   const [audioRunning, setAudioRunning] = useState(true);
   const [taps, setTaps] = useState<readonly TapMark[]>([]);
+  const [drill, setDrill] = useState<DrillStatus>(NO_DRILL_STATUS);
   const learnerRef = useRef(learner);
   const phaseRef = useRef(state.phase);
   const cueLine = useRef<HTMLSpanElement>(null);
@@ -185,6 +188,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             audioEnded: () => {
               dispatch({ type: "audio-ended" });
             },
+            drillStatus: setDrill,
             checkFailed: (message) => {
               dispatch({ type: "check-failed", message });
             },
@@ -328,8 +332,15 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   // press to compare) would give the answer away.
   const clipDeck = session === null || asking === null ? null : (session.clipFor(asking)?.deck ?? null);
   const concealed = useMemo<ReadonlySet<ControlId>>(
-    () => (clipDeck === null ? NOTHING_CONCEALED : new Set(CLIP_CONCEALED.map((part) => `${clipDeck}.${part}` as const))),
-    [clipDeck],
+    () => {
+      const clip = clipDeck === null ? [] : CLIP_CONCEALED.map((part) => `${clipDeck}.${part}` as const);
+      // SYNC locked off, the BPM display and phase meter covered (by-ear Lessons); a drill shows the
+      // displays between its rounds.
+      const locked = (definition.locks ?? []).filter((control) => !(drill.reveal && COVERED_DISPLAYS.includes(control)));
+      const all = [...clip, ...locked];
+      return all.length === 0 ? NOTHING_CONCEALED : new Set<ControlId>(all);
+    },
+    [clipDeck, definition, drill.reveal],
   );
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -399,7 +410,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         </p>
         {wording === "touch" ? <TouchGo phase={phase} dispatch={dispatch} /> : null}
         {wording === "touch" && session !== null ? <TouchReady phase={phase} session={session} definition={definition} /> : null}
-        {session === null ? null : <FeedbackStrip session={session} taps={taps} showBeat={phase.kind !== "check"} practice={phase.kind === "practice" ? phase : null} />}
+        {session === null ? null : <FeedbackStrip session={session} taps={taps} showBeat={phase.kind !== "check"} practice={phase.kind === "practice" ? phase : null} line={inPractice ? drill.line : null} />}
       </div>
 
       <div className="lesson-board">
@@ -567,7 +578,8 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine }: C
 /** R without a keyboard: Ready, while practice or the Check uses it (gain-staging, cue-point). */
 function TouchReady({ phase, session, definition }: { readonly phase: LessonPhase; readonly session: LessonSession; readonly definition: ReturnType<typeof lessonDefinition> }) {
   const used = useMemo(() => readyUsedIn(definition, session.track), [definition, session]);
-  if (!(phase.kind === "practice" ? used.practice : phase.kind === "check" && used.check)) return null;
+  // The hook may ask for Ready too (tempo-by-ear's second step), where practice uses it.
+  if (!(phase.kind === "practice" || phase.kind === "hook" ? used.practice : phase.kind === "check" && used.check)) return null;
   return (
     <button
       type="button"

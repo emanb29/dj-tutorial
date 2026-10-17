@@ -55,9 +55,16 @@ function formatTime(seconds: number): string {
   return `${String(minutes)}:${(whole - minutes * 60).toFixed(1).padStart(4, "0")}`;
 }
 
+/** Whether a display is covered: locked, or concealed for now. A covered display shows no reading. */
+function useCovered(id: ControlId): boolean {
+  const { unlocks, concealed } = useController();
+  return !unlocks.has(id) || concealed.has(id);
+}
+
 /** Track name, BPM, bar.beat and time for one deck. BPM is a lockable display (Lessons cover it). */
 export function DeckReadout({ deck }: { readonly deck: DeckId }) {
   const { frames, engine } = useController();
+  const bpmCovered = useCovered(`${deck}.bpm`);
   const trackId = useSessionValue((snapshot) => snapshot.decks[deck].trackId);
   const bpm = useSessionValue((snapshot) => snapshot.bpm[deck]);
   const rangePercent = useSessionValue((snapshot) => snapshot.decks[deck].tempoRangePercent);
@@ -81,7 +88,7 @@ export function DeckReadout({ deck }: { readonly deck: DeckId }) {
       <span className="deck-letter">{deck}</span>
       <span className="readout-track">{trackId ?? "No track"}</span>
       <ControlFrame id={`${deck}.bpm`} className="readout-bpm">
-        <span className="readout-number">{bpm === null ? "–" : bpm.toFixed(1)}</span>
+        <span className="readout-number">{bpm === null || bpmCovered ? "–" : bpm.toFixed(1)}</span>
         <span className="readout-unit">BPM ±{rangePercent}%</span>
       </ControlFrame>
       <span className="readout-position" title="Bar.beat">
@@ -104,12 +111,14 @@ export function DeckReadout({ deck }: { readonly deck: DeckId }) {
  */
 export function PhaseStrip() {
   const { frames, engine } = useController();
+  // Covered (by-ear Lessons): the beats and the offset stay still, so the eyes cannot do the ears' work.
+  const covered = useCovered("phase-meter");
   const marker = useRef<HTMLDivElement>(null);
   const rows = useRef<Record<DeckId, HTMLDivElement | null>>({ A: null, B: null });
   const last = useRef({ A: -1, B: -1, offset: Number.NaN });
   useFrame(frames, () => {
-    const a = engine.playhead("A");
-    const b = engine.playhead("B");
+    const a = covered ? NO_READING : engine.playhead("A");
+    const b = covered ? NO_READING : engine.playhead("B");
     const seen = last.current;
     for (const [deck, reading] of [["A", a], ["B", b]] as const) {
       const beat = reading.ok && reading.beatInBar !== null ? reading.beatInBar : 0;
@@ -151,6 +160,8 @@ export function PhaseStrip() {
     </ControlFrame>
   );
 }
+
+const NO_READING = { ok: false } as const;
 
 /** Wraps a beat difference into [-0.5, 0.5): how far B is ahead (+) or behind (−) A, in beats. */
 export function wrapHalf(beats: number): number {

@@ -86,7 +86,13 @@ export type Observation =
    * A's channel fader closed while A played: `depth` is the most high-pass the sweep on CFX A reached
    * (0 without one), `bars` how long the sweep was on when the fader closed (null without one).
    */
-  | { readonly kind: "filter-out"; readonly depth: number; readonly bars: number | null };
+  | { readonly kind: "filter-out"; readonly depth: number; readonly bars: number | null }
+  /** A by-ear practice round (`PracticeDrill`): B held in phase long enough (`held`), or the round ran out. */
+  | { readonly kind: "phase-rep"; readonly held: boolean }
+  /** tempo-by-ear practice: the first tempo move of a round went the way that brings the decks together. */
+  | { readonly kind: "tempo-guess"; readonly right: boolean }
+  /** tempo-by-ear practice: Ready (R) with the tempos `offBpm` apart; `good` within the Check's 0.1 BPM. */
+  | { readonly kind: "tempo-match"; readonly offBpm: number; readonly good: boolean };
 
 export type EqBand = "low" | "mid" | "high";
 
@@ -115,7 +121,13 @@ export type HookTrigger =
   /** The CFX knob at least halfway to high-pass or low-pass, or back within 5% of centre. */
   | { readonly kind: "filter-to"; readonly deck: DeckId; readonly side: "high-pass" | "low-pass" | "centre" }
   /** A bass swap (LOW A down, LOW B up), on the phrase or not. */
-  | { readonly kind: "swap" };
+  | { readonly kind: "swap" }
+  /** A practice drill round held B in phase (`phase-rep` held). */
+  | { readonly kind: "phase-held" }
+  /** A tempo-by-ear round's first tempo move (right or wrong). */
+  | { readonly kind: "tempo-guess" }
+  /** A tempo-by-ear round's Ready (matched or not). */
+  | { readonly kind: "tempo-match" };
 
 export interface HookStep {
   /** What to do, a few words with the key: "Press X". */
@@ -137,9 +149,10 @@ export interface PracticeConfig {
    * (good on a downbeat within 20 ms), a cut (good on A's phrase start within 120 ms), a blend start
    * (B's Play within 1 beat of A's phrase start), a Ready with B on the target BPM, a LOW brought back
    * on a phrase start (within 1 beat), a bass swap (good within 1 beat of A's phrase start), A's fader
-   * closed after a high-pass sweep on CFX A (good at 70% or more, on for 8–16 bars).
+   * closed after a high-pass sweep on CFX A (good at 70% or more, on for 8–16 bars), a drill round
+   * held in phase (`phase-hold`), or a tempo-by-ear round's guess and its Ready (`tempo-ear`: each is a rep).
    */
-  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out";
+  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out" | "phase-hold" | "tempo-ear";
   readonly window: number;
   readonly needed: number;
 }
@@ -169,6 +182,8 @@ export interface DeckSetup {
   readonly eqCentred?: true;
   /** The CFX knob back to centre (no filter). */
   readonly filterCentred?: true;
+  /** LOW all the way down, after `eqCentred` (blend-by-ear brings B in with no bass, for the swap). */
+  readonly lowCut?: true;
 }
 
 export interface DeckSetups {
@@ -208,7 +223,48 @@ export type CheckEnd =
   /** `bars` after the Learner closed this deck's channel fader: a blend's end, plus the bars loud-steady reads. */
   | { readonly kind: "faded-out-then"; readonly deck: DeckId; readonly bars: number }
   /** `count` Ready presses for `deck` (tempo-fader: one per target BPM). */
-  | { readonly kind: "readies"; readonly deck: DeckId; readonly count: number };
+  | { readonly kind: "readies"; readonly deck: DeckId; readonly count: number }
+  /**
+   * B held with A for `bars` (phase under `phaseMs` and, when given, tempos within `tempoBpm`), read
+   * live with limits a little tighter than the Check's, once deck A is past `notBeforePos` (so the
+   * Check's own hold window is recorded); else deck A reaching `orPos`. The by-ear Lessons end as
+   * soon as the Learner has done it, instead of making them hold on to a fixed length.
+   */
+  | {
+      readonly kind: "held";
+      readonly phaseMs: number;
+      readonly tempoBpm: number | null;
+      readonly bars: number;
+      readonly notBeforePos: number;
+      readonly orPos: number;
+    };
+
+/**
+ * A by-ear practice drill (Lessons 14–16): short rounds, one rep each, run live by the app. A round
+ * starts both decks again from their practice set-up with B `offsetsBeats[i]` out of phase and
+ * `apartPercents[i]` off A's tempo (rotating through the lists); between rounds, `revealMs` of feedback
+ * (and the covered displays shown, `LessonDefinition.locks`).
+ * - `hold`: the rep is B held under `holdMs` for `holdBars`; after `giveUpBars` the round is a miss.
+ * - `tempo-ear`: the rep is the round's first tempo move (the right way?), then its Ready (R): tempos
+ *   within `matchBpm`? After `giveUpBars` the round starts again.
+ */
+export type PracticeDrill =
+  | {
+      readonly kind: "hold";
+      readonly offsetsBeats: readonly number[];
+      readonly apartPercents: readonly number[];
+      readonly holdMs: number;
+      readonly holdBars: number;
+      readonly giveUpBars: number;
+      readonly revealMs: number;
+    }
+  | {
+      readonly kind: "tempo-ear";
+      readonly apartPercents: readonly number[];
+      readonly matchBpm: number;
+      readonly giveUpBars: number;
+      readonly revealMs: number;
+    };
 
 /** How the app sets the deck up for the Check and when the audio part ends. */
 export interface CheckPlan {
@@ -292,6 +348,13 @@ export interface LessonDefinition {
   readonly masterTempo?: true;
   /** Aids this Lesson's Check offers, over `LESSON_AIDS` (sync, the BPM display). */
   readonly aids?: Partial<Aids>;
+  /**
+   * Controls drawn but locked in this Lesson whatever earlier Lessons unlocked: SYNC locked off, the BPM
+   * display and phase meter covered (catalogue §1, Q5). A drill shows them between rounds.
+   */
+  readonly locks?: readonly ControlId[];
+  /** By-ear practice (Lessons 14–16): rounds run live by the app; see `PracticeDrill`. */
+  readonly drill?: PracticeDrill;
   /**
    * Grade from the Check's own cue on every deck it sets up, not from the recorder's start: for the
    * output latency after the attempt starts, the practice is still heard (and metered).

@@ -16,6 +16,8 @@ export type KeyAction =
   | { kind: "cut"; deck: DeckId; open: boolean }
   /** Snap the crossfader fully to one side (a crossfader cut). */
   | { kind: "crossfader-cut"; side: DeckId }
+  /** Held: bends the playing deck slower or faster, as a jog wheel nudge (Shift for a smaller bend). */
+  | { kind: "jog-nudge"; deck: DeckId; faster: boolean }
   | { kind: "toggle-legend" };
 
 type BoundAction = Exclude<KeyAction, { kind: "hot-cue" }> | { kind: "hot-cue"; deck: DeckId; slot: number };
@@ -42,6 +44,8 @@ function controlOf(action: BoundAction): ControlId | null {
       return deckControl(action.deck, "channel-fader");
     case "crossfader-cut":
       return "crossfader";
+    case "jog-nudge":
+      return deckControl(action.deck, "jog-bend");
     case "tap":
       return "tap";
     case "toggle-legend":
@@ -62,11 +66,15 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   bind("KeyW", "W", { kind: "cut", deck: "A", open: true }, "Fader open"),
   bind("KeyS", "S", { kind: "cut", deck: "A", open: false }, "Fader closed"),
   ...hotCueKeys("A", ["1", "2", "3", "4"]),
+  bind("KeyQ", "Q", { kind: "jog-nudge", deck: "A", faster: false }, "Nudge slower (hold)"),
+  bind("KeyE", "E", { kind: "jog-nudge", deck: "A", faster: true }, "Nudge faster (hold)"),
   bind("KeyM", "M", { kind: "deck-cue", deck: "B" }, "CUE (hold)"),
   bind("Comma", ",", { kind: "play-pause", deck: "B" }, "PLAY/PAUSE"),
   bind("KeyO", "O", { kind: "cut", deck: "B", open: true }, "Fader open"),
   bind("KeyL", "L", { kind: "cut", deck: "B", open: false }, "Fader closed"),
   ...hotCueKeys("B", ["7", "8", "9", "0"]),
+  bind("ArrowLeft", "←", { kind: "jog-nudge", deck: "B", faster: false }, "Nudge slower (hold)"),
+  bind("ArrowRight", "→", { kind: "jog-nudge", deck: "B", faster: true }, "Nudge faster (hold)"),
   bind("KeyC", "C", { kind: "crossfader-cut", side: "A" }, "Crossfader to A"),
   bind("KeyN", "N", { kind: "crossfader-cut", side: "B" }, "Crossfader to B"),
   bind("Space", "Space", { kind: "tap" }, "Tap the beat"),

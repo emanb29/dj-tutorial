@@ -150,6 +150,12 @@ function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "r
     }
     case "swap":
       return observation.kind === "swap" ? 1 : 0;
+    case "phase-held":
+      return observation.kind === "phase-rep" && observation.held ? 1 : 0;
+    case "tempo-guess":
+      return observation.kind === "tempo-guess" ? 1 : 0;
+    case "tempo-match":
+      return observation.kind === "tempo-match" ? 1 : 0;
     case "beat-taps":
       return observation.kind === "tap" && observation.onBeat ? 1 : 0;
     case "downbeat-taps":
@@ -205,6 +211,11 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
       const { bars } = observation;
       return withRep(config, phase, observation.depth >= FILTER_OUT_DEPTH && bars !== null && bars >= shortest && bars <= longest);
     }
+    case "phase-hold":
+      return observation.kind === "phase-rep" ? withRep(config, phase, observation.held) : phase;
+    case "tempo-ear":
+      if (observation.kind === "tempo-guess") return withRep(config, phase, observation.right);
+      return observation.kind === "tempo-match" ? withRep(config, phase, observation.good) : phase;
   }
 }
 

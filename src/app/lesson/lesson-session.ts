@@ -18,6 +18,7 @@ import {
   practiceDecksFor,
   practiceLoopFor,
   sliceTrack,
+  tempoPercentApart,
   trackOnDeck,
   withPlannedGrids,
   type CheckPlan,
@@ -34,6 +35,7 @@ import {
 } from "@lessons";
 import type { DeckId, LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
+import { DrillRunner, liveReading, type DrillStatus } from "./practice-drill.ts";
 
 /** How often the session looks at the playhead to end the audio part or loop practice. */
 const WATCH_MS = 25;
@@ -55,6 +57,8 @@ const LEVEL_EVERY_MS = 500;
 const LEVEL_MATCH_DB = 1.5;
 /** A cut on the phrase in practice: Play B within this of A's phrase start (the Lesson's ±120 ms). */
 const CUT_TOLERANCE_MS = 120;
+/** A "held" Check end trusts the decks between two live looks at most this far apart. */
+const HELD_GAP_MS = 150;
 /** tempo-fader practice: B's BPM this close to the target is on it (the Check's set-bpm limit). */
 const BPM_TOLERANCE = 0.05;
 const EQ_BANDS: Readonly<Record<"eq-low" | "eq-mid" | "eq-high", EqBand>> = { "eq-low": "low", "eq-mid": "mid", "eq-high": "high" };
@@ -88,6 +92,10 @@ interface RunningCheck {
   sliceCued: boolean;
   /** Set once the audio part ended: the recorder's stop, with the end reason. */
   stopped: Promise<Result<{ attempt: RecordedAttempt }>> | null;
+  /** A "held" end: performance.now() since B has stayed with A, while it does. */
+  heldFromMs: number | null;
+  /** A "held" end: performance.now() of the last live look at the decks. */
+  heldSeenMs: number | null;
   /** performance.now() when the Learner last closed each channel fader, while it stays closed. */
   readonly closedAtMs: Map<DeckId, number>;
 }
@@ -117,6 +125,8 @@ export class LessonSession {
   private readonly faderOpen: Record<DeckId, boolean> = { A: true, B: true };
   /** The listening clip playing now (tempo-fader questions), if any. */
   private clip: ListeningClip | null = null;
+  /** The by-ear practice drill running now (Lessons 14–16), if any. */
+  private drill: DrillRunner | null = null;
   /**
    * Check attempts started, for the plan's per-attempt variation (which clip has Master Tempo on). It
    * starts at a random count, so a Lesson opened again does not replay the same answers in order.
@@ -139,6 +149,8 @@ export class LessonSession {
       readonly audioEnded: () => void;
       /** The Check could not start recording; it will not end or grade by itself. */
       readonly checkFailed: (message: string) => void;
+      /** A by-ear practice drill's feedback line, and whether the covered displays show now. */
+      readonly drillStatus?: (status: DrillStatus) => void;
     },
     hasDeckB: boolean,
     /** How attempts are graded: a Lesson Check, or (Placement) a short-form task. */
@@ -210,6 +222,7 @@ export class LessonSession {
       case "tempo-range":
       case "master-tempo":
         this.observe({ kind: "touch", control: `${command.deck}.${command.control}` });
+        if (command.control === "tempo") this.drill?.tempoMoved(command.deck);
         return;
       case "eq-low":
       case "eq-mid":
@@ -223,8 +236,12 @@ export class LessonSession {
         this.observe({ kind: "touch", control: `${command.deck}.trim` });
         return;
       case "jog-search":
-      case "jog-bend":
         this.observe({ kind: "touch", control: `${command.deck}.jog` });
+        return;
+      case "jog-bend":
+        // A nudge is the jog too (the cue-point hook counts any turn), and its own part (nudge-phase).
+        this.observe({ kind: "touch", control: `${command.deck}.jog` });
+        if (command.value !== 0) this.observe({ kind: "touch", control: `${command.deck}.jog-bend` });
         return;
       case "cue-mix":
       case "headphone-level":
@@ -434,6 +451,10 @@ export class LessonSession {
       this.send({ control: "filter", deck, value: 0 });
       if (deck === "A") this.sweep = null;
     }
+    if (setup.lowCut === true) {
+      this.send({ control: "eq-low", deck, value: -1 });
+      this.lowCut[deck] = true;
+    }
   }
 
   private cueDecks(decks: DeckSetups): void {
@@ -509,13 +530,59 @@ export class LessonSession {
       const decks = practiceDecksFor(this.definition, this.track);
       this.cueDecks(decks);
       this.playDecks(decks);
-      this.watchLoop(decks, practiceLoopFor(this.definition, this.track));
+      const drill = this.startDrill(decks);
+      this.watchLoop(decks, practiceLoopFor(this.definition, this.track), drill === null ? undefined : () => {
+        drill.tick();
+      });
+    });
+  }
+
+  /** A by-ear drill (Lessons 14–16) over the practice set-up, or null for a Lesson without one. */
+  private startDrill(decks: DeckSetups): DrillRunner | null {
+    this.stopDrill();
+    const drill = this.definition.drill;
+    if (drill === undefined) return null;
+    this.drill = new DrillRunner(drill, () => liveReading(this.engine, this.onDeck), {
+      observe: (observation) => {
+        this.observe(observation);
+      },
+      status: (status) => this.listener.drillStatus?.(status),
+      startRound: (round) => {
+        this.startRound(decks, round.offsetBeats, round.apartPercent);
+      },
+    });
+    return this.drill;
+  }
+
+  private stopDrill(): void {
+    this.drill?.stop();
+    this.drill = null;
+  }
+
+  /**
+   * A new drill round: both decks back to their practice positions, playing on, with B `offsetBeats`
+   * out of phase and its tempo `apartPercent` off A's (as A plays now).
+   */
+  private startRound(decks: DeckSetups, offsetBeats: number, apartPercent: number): void {
+    const trackB = this.onDeck.B;
+    const setupB = decks.B;
+    if (trackB === null || setupB === undefined) return;
+    this.settingUpWith(() => {
+      this.send({ control: "seek", deck: "A", value: decks.A.pos });
+      this.send({ control: "seek", deck: "B", value: setupB.pos + offsetBeats * beatSecOf(trackB) });
+      const stateB = this.engine.deckState("B");
+      if (!stateB.syncOn) {
+        const bpmA = this.track.grid.bpm * this.engine.deckState("A").tempoRate;
+        const percent = tempoPercentApart(bpmA, trackB.grid.bpm, apartPercent);
+        this.send({ control: "tempo", deck: "B", value: Math.max(-1, Math.min(1, percent / stateB.tempoRangePercent)) });
+      }
     });
   }
 
   /** Starts (or restarts) the Check's audio part: auto-jump, record, and watch for its end. */
   startCheck(): void {
     this.abandonCheck();
+    this.stopDrill();
     this.stopClip();
     const generation = ++this.generation;
     this.checksStarted += 1;
@@ -557,7 +624,7 @@ export class LessonSession {
       this.listener.checkFailed(`The attempt could not be recorded (${started.error.kind}). Try again with Enter.`);
       return;
     }
-    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map() };
+    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null };
     this.check = check;
     this.faderWasUp = false;
     this.playDecks(decks);
@@ -596,7 +663,23 @@ export class LessonSession {
       }
       case "readies":
         return check.readyCount >= end.count;
+      case "held":
+        return this.heldLongEnough(check, end);
     }
+  }
+
+  /** A "held" end: B with A (phase, and tempo when asked) for `bars`, A past `notBeforePos`; or A at `orPos`. */
+  private heldLongEnough(check: RunningCheck, end: Extract<CheckPlan["endWhen"], { kind: "held" }>): boolean {
+    const position = this.engine.playhead("A");
+    if (position.ok && position.positionSec >= end.orPos) return true;
+    const live = liveReading(this.engine, this.onDeck);
+    const tempoOk = end.tempoBpm === null || (live.bpmA !== null && live.bpmB !== null && Math.abs(live.bpmA - live.bpmB) <= end.tempoBpm);
+    const together = live.phaseMs !== null && Math.abs(live.phaseMs) < end.phaseMs && tempoOk;
+    // A busy page that looked away for a while cannot vouch for the gap: the hold starts again.
+    const looked = check.heldSeenMs !== null && live.nowMs - check.heldSeenMs <= HELD_GAP_MS;
+    check.heldSeenMs = live.nowMs;
+    check.heldFromMs = together ? (looked ? (check.heldFromMs ?? live.nowMs) : live.nowMs) : null;
+    return check.heldFromMs !== null && position.ok && position.positionSec >= end.notBeforePos && live.nowMs - check.heldFromMs >= end.bars * live.barMs;
   }
 
   /**
@@ -609,6 +692,7 @@ export class LessonSession {
     if (check?.stopped !== null) {
       if (this.definition.practice.rep === "ready") this.observe({ kind: "ready", inZone: this.levelsInZone() });
       if (this.definition.practice.rep === "tempo-set" && check === null) this.tempoSet();
+      if (check === null) this.drill?.ready();
       return;
     }
     const end = check.plan.endWhen;
@@ -831,6 +915,7 @@ export class LessonSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.stopDrill();
     this.stopClip();
     this.abandonCheck();
     clearInterval(this.levelTimer);

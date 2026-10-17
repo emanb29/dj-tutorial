@@ -2,6 +2,7 @@
 // plan on the chosen track, and authored tips. Captions, not prose: a few words, the key in brackets.
 import type { Aids, Attempt, CheckMode, CheckVariant, CtxSpan, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
 import { EQ_FILTER_LESSONS, type EqFilterLessonId } from "./catalogue-eq-filter.ts";
+import { BY_EAR_LESSONS, type ByEarLessonId } from "./catalogue-by-ear.ts";
 import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
 import { barsSec, fromOwnCue, heardSpan, steadyPhrase } from "./plan.ts";
 import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor } from "./track.ts";
@@ -379,10 +380,10 @@ const cutOnPhrase: LessonDefinition = {
   },
 };
 
-export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase" | SyncLessonId | EqFilterLessonId;
+export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase" | SyncLessonId | EqFilterLessonId | ByEarLessonId;
 export type BuiltLesson = LessonDefinition & { readonly id: BuiltLessonId };
 
-/** Lessons 1–13, in catalogue order (8–11 in catalogue-sync.ts, 12–13 in catalogue-eq-filter.ts). */
+/** The built Lessons, in catalogue order (8–11 in catalogue-sync.ts, 12–13 in catalogue-eq-filter.ts, 14–16 in catalogue-by-ear.ts). */
 export const LESSONS: readonly BuiltLesson[] = [
   { ...deckBasics, id: "deck-basics" },
   { ...beatsAndBars, id: "beats-and-bars" },
@@ -393,6 +394,7 @@ export const LESSONS: readonly BuiltLesson[] = [
   { ...cutOnPhrase, id: "cut-on-phrase" },
   ...SYNC_LESSONS,
   ...EQ_FILTER_LESSONS,
+  ...BY_EAR_LESSONS,
 ];
 
 /** Practice loops for Lessons that do not set their own: tap Lessons loop deck A from the practice start. */
@@ -438,7 +440,7 @@ export function withPlannedGrids<Recorded extends Attempt>(attempt: Recorded, tr
 export function readyUsedIn(definition: LessonDefinition, track: LessonTrack): { readonly practice: boolean; readonly check: boolean } {
   const end = definition.planCheck(track).endWhen.kind;
   const rep = definition.practice.rep;
-  return { practice: rep === "ready" || rep === "tempo-set", check: end === "ready-windows" || end === "slices-done" || end === "readies" };
+  return { practice: rep === "ready" || rep === "tempo-set" || rep === "tempo-ear", check: end === "ready-windows" || end === "slices-done" || end === "readies" };
 }
 
 export function isBuiltLesson(id: string): id is BuiltLessonId {

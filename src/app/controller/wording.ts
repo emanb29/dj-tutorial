@@ -48,10 +48,21 @@ function touchWords(binding: KeyBinding): TouchWords | null {
       const deed = `snap the crossfader to ${action.side}`;
       return { press: deed.charAt(0).toUpperCase() + deed.slice(1), aside: null, bare: deed };
     }
+    case "jog-nudge": {
+      const jog = `jog ${action.deck}`;
+      return { press: `Turn ${jog} ${action.faster ? "forward" : "back"}`, aside: null, bare: jog };
+    }
     case "toggle-legend":
       return null;
   }
 }
+
+/**
+ * B's two nudge keys named together, as captions give them: "Turn jog B (← →)". On a touchscreen the
+ * jog wheel is the way to nudge, and the caption already names it.
+ */
+const NUDGE_KEYS_B = "← →";
+const NUDGE_WORDS_B: TouchWords = { press: "Turn jog B", aside: null, bare: "jog B" };
 
 /** The Lesson's own Ready key (lesson-keys.ts, not a controller key): the Ready button on a touchscreen. */
 const READY_WORDS: TouchWords = { press: "Tap Ready", aside: null, bare: "Ready" };
@@ -62,6 +73,7 @@ const WORDS_BY_LABEL: ReadonlyMap<string, TouchWords> = new Map([
     return words === null ? [] : [[binding.label, words] as const];
   }),
   ["R", READY_WORDS] as const,
+  [NUDGE_KEYS_B, NUDGE_WORDS_B] as const,
 ]);
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

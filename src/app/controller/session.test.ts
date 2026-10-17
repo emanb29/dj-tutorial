@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandInput, DeckId, EngineCommand, EngineDeckSnapshot, EngineMixerSnapshot, Result } from "@audio";
 import { ALL_CONTROL_IDS, type ControlId } from "./control-ids.ts";
-import { ControllerSession, JOG_SEARCH_SEC_PER_RADIAN, WHEEL_GESTURE_END_MS, type ControllerEngine } from "./session.ts";
+import { ControllerSession, JOG_SEARCH_SEC_PER_RADIAN, KEY_BEND, KEY_BEND_FINE, WHEEL_GESTURE_END_MS, type ControllerEngine } from "./session.ts";
 
 interface Sent {
   readonly command: EngineCommand;
@@ -133,7 +133,7 @@ describe("keyboard", () => {
     const { engine } = fakeEngine();
     const { session: controller } = session(engine);
     expect(controller.keyDown(key("Space"))).toBe(true);
-    expect(controller.keyDown(key("KeyQ"))).toBe(false);
+    expect(controller.keyDown(key("KeyJ"))).toBe(false);
   });
 
   it("ignores keys for locked controls", () => {
@@ -362,6 +362,58 @@ describe("review fixes: jog wheel (M4, M2)", () => {
     expect(sent.at(-1)).toMatchObject({ command: { control: "jog-bend", deck: "B", value: 0 }, input: { gestureEnd: true } });
     jog?.end({ eventTimeMs: 40 });
     expect(sent).toHaveLength(2);
+  });
+});
+
+describe("nudge keys: a held arrow (B) or Q/E (A) bends a playing deck, like a jog nudge", () => {
+  const bends = (sent: readonly Sent[]) => sent.map((entry) => [entry.command, entry.input.gestureEnd, entry.input.eventTimeMs]);
+
+  it("bends B faster while → is held and releases the bend with the key", () => {
+    const { engine, sent } = fakeEngine({ playing: { B: true } });
+    const { session: controller } = session(engine);
+    expect(controller.keyDown(key("ArrowRight", { timeStamp: 10 }))).toBe(true);
+    controller.keyDown(key("ArrowRight", { timeStamp: 40, repeat: true }));
+    expect(controller.keyUp(key("ArrowRight", { timeStamp: 300 }))).toBe(true);
+    expect(bends(sent)).toEqual([
+      [{ control: "jog-bend", deck: "B", value: KEY_BEND }, false, 10],
+      [{ control: "jog-bend", deck: "B", value: 0 }, true, 300],
+    ]);
+  });
+
+  it("bends slower with ←, and A with Q and E; Shift is the fine bend", () => {
+    const { engine, sent } = fakeEngine({ playing: { A: true, B: true } });
+    const { session: controller } = session(engine);
+    controller.keyDown(key("ArrowLeft", { shiftKey: true }));
+    controller.keyUp(key("ArrowLeft"));
+    controller.keyDown(key("KeyQ"));
+    controller.keyUp(key("KeyQ"));
+    controller.keyDown(key("KeyE"));
+    expect(sent.filter((entry) => entry.input.gestureEnd === false).map((entry) => entry.command)).toEqual([
+      { control: "jog-bend", deck: "B", value: -KEY_BEND_FINE },
+      { control: "jog-bend", deck: "A", value: -KEY_BEND },
+      { control: "jog-bend", deck: "A", value: KEY_BEND },
+    ]);
+  });
+
+  it("does nothing on a paused deck or before the nudge-phase Lesson unlocks the bend", () => {
+    const paused = fakeEngine();
+    const { session: idle } = session(paused.engine);
+    idle.keyDown(key("ArrowRight"));
+    idle.keyUp(key("ArrowRight"));
+    expect(paused.sent).toEqual([]);
+
+    const playing = fakeEngine({ playing: { B: true } });
+    const { session: locked } = session(playing.engine, new Set<ControlId>(["B.jog"]));
+    expect(locked.keyDown(key("ArrowRight"))).toBe(false);
+    expect(playing.sent).toEqual([]);
+  });
+
+  it("lets go of a held nudge when the page loses focus", () => {
+    const { engine, sent } = fakeEngine({ playing: { B: true } });
+    const { session: controller } = session(engine);
+    controller.keyDown(key("ArrowLeft"));
+    controller.releaseAll();
+    expect(sent.at(-1)).toMatchObject({ command: { control: "jog-bend", deck: "B", value: 0 }, input: { gestureEnd: true } });
   });
 });
 

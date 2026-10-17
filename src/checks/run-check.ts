@@ -65,8 +65,13 @@ function runOwn(context: CheckContext, task: LessonTask): OwnCriteria {
 }
 
 /** The heard spans a task grades in. The Lesson content finds them in the attempt's playhead. */
-function taskSections(task: LessonTask): CtxSpan[] {
+function taskSections(task: LessonTask, window: CtxSpan): CtxSpan[] {
   switch (task.lessonId) {
+    // Graded from a heard moment on to the end: a start the deck never reached voids the attempt.
+    case "nudge-phase":
+      return [{ from: task.phaseFrom, to: window.to }];
+    case "tempo-by-ear":
+      return [{ from: task.matchFrom, to: window.to }];
     case "beats-and-bars":
       return [task.beatSection, task.downbeatSection];
     case "phrases":
@@ -96,7 +101,7 @@ function voidReason(spec: TaskSpec, attempt: GradedAttempt): VoidReason | null {
     return residual === undefined || !(residual <= MAX_GRID_RESIDUAL_MS);
   });
   if (untrusted) return "gridUntrusted";
-  return taskSections(spec.task).every(isHeard) ? null : "sectionNotHeard";
+  return taskSections(spec.task, spec.window).every(isHeard) ? null : "sectionNotHeard";
 }
 
 /** An aid left on where the Lesson locks it off would grade a different skill: a content bug. */

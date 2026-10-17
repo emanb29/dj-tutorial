@@ -91,8 +91,15 @@ describe("resolveKey", () => {
   });
 
   it("ignores unbound keys", () => {
-    expect(resolveKey("KeyQ", plain)).toBeNull();
+    expect(resolveKey("KeyJ", plain)).toBeNull();
     expect(resolveKey("ArrowUp", plain)).toBeNull();
+  });
+
+  it("holds a nudge on B with the arrows and on A with Q and E", () => {
+    expect(resolveKey("ArrowRight", plain)).toEqual({ kind: "jog-nudge", deck: "B", faster: true });
+    expect(resolveKey("ArrowLeft", plain)).toEqual({ kind: "jog-nudge", deck: "B", faster: false });
+    expect(resolveKey("KeyQ", plain)).toEqual({ kind: "jog-nudge", deck: "A", faster: false });
+    expect(resolveKey("KeyE", plain)).toEqual({ kind: "jog-nudge", deck: "A", faster: true });
   });
 });
 

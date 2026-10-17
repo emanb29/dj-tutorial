@@ -27,6 +27,12 @@ export const JOG_SEARCH_SEC_PER_RADIAN = 0.15;
 const JOG_MIN_STEP = 0.005;
 /** At most one jog bend per frame (about 60 Hz). */
 const JOG_MIN_INTERVAL_MS = 16;
+/**
+ * A held nudge key bends the deck by this much (Shift: the fine bend). At 4% a ¼-beat error at 124 BPM
+ * closes in about 3 s, and a quick tap moves the phase a few ms: fine enough to land under 15 ms.
+ */
+export const KEY_BEND = 0.04;
+export const KEY_BEND_FINE = 0.01;
 const NO_MODIFIERS: KeyModifiers = { shiftKey: false, ctrlKey: false, metaKey: false, altKey: false };
 
 export interface ControllerSnapshot {
@@ -92,6 +98,8 @@ const browserSchedule: Schedule = (run, delayMs) => {
     clearTimeout(handle);
   };
 };
+
+const keyNudgeGesture = (code: string) => `key-nudge:${code}`;
 
 const emptySlots = (): (number | null)[] => Array.from({ length: HOT_CUE_SLOTS }, () => null);
 
@@ -474,6 +482,9 @@ export class ControllerSession {
       case "crossfader-cut":
         this.crossfaderCut(action.side, input);
         break;
+      case "jog-nudge":
+        this.keyNudge(action.deck, action.faster, event.shiftKey, event.code, input);
+        break;
       case "toggle-legend":
         this.legendToggle?.();
         break;
@@ -487,7 +498,25 @@ export class ControllerSession {
     // Only a key whose press was accepted is released.
     if (binding === null || !this.heldKeys.delete(event.code)) return false;
     if (binding.action.kind === "deck-cue") this.deckCue(binding.action.deck, false, { device: "keyboard", eventTimeMs: event.timeStamp });
+    if (binding.action.kind === "jog-nudge") this.close(keyNudgeGesture(event.code), event.timeStamp);
     return true;
+  }
+
+  /**
+   * A held nudge key: the playing deck bends while it is down (a jog nudge from the keyboard), and the
+   * bend is released with the key. On a paused deck it does nothing: there the jog searches instead.
+   */
+  private keyNudge(deck: DeckId, faster: boolean, fine: boolean, code: string, input: CommandInput): void {
+    const key = keyNudgeGesture(code);
+    if (this.open.has(key) || !this.current.decks[deck].playing) return;
+    const bend = (faster ? 1 : -1) * (fine ? KEY_BEND_FINE : KEY_BEND);
+    this.open.set(key, {
+      control: deckControl(deck, "jog-bend"),
+      finish: (eventTimeMs) => {
+        this.send({ control: "jog-bend", deck, value: 0 }, withTime({ device: "keyboard", gestureEnd: true }, eventTimeMs));
+      },
+    });
+    this.send({ control: "jog-bend", deck, value: bend }, { ...input, gestureEnd: false });
   }
 
   // ---- internals -----------------------------------------------------------------------------

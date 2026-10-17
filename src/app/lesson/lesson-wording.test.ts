@@ -19,11 +19,26 @@ const captions = LESSONS.flatMap((lesson) => {
     .filter((caption) => caption !== undefined)
     .map((caption) => ({ lesson: lesson.id, caption }));
 });
-/** A key label standing on its own: a deck key, the comma (PLAY B), the crossfader's C and N, Space, or R (Ready). */
-const KEY_LEFT = /(?:^|[\s(:;,])(?:[ZXWSMOLRCN,]|Space)(?=$|[\s.,;:!?)])/;
+/**
+ * A key label standing on its own: a deck key, the comma (PLAY B), the crossfader's C and N, the nudge
+ * keys (Q, E, ← and →), Space, or R (Ready).
+ */
+const KEY_LEFT = /(?:^|[\s(:;,])(?:[ZXWSMOLRCNQE,←→]|Space)(?=$|[\s.,;:!?)])/;
+/** The by-ear drills' lines are captions too. */
+const DRILL_LINES = [
+  "✓ Held in line",
+  "Missed it: listen for two kicks, then nudge",
+  "In line: hold it there",
+  "Two kicks? Nudge B",
+  "Right way. Match it by ear, then R",
+  "Other way: B was faster",
+  "✓ 0.04 BPM apart",
+  "0.60 BPM apart: B is slower",
+  "New round: which is faster?",
+].map((caption) => ({ lesson: "drill", caption }));
 
 describe("Lesson captions on a touchscreen", () => {
-  it.each(captions)("$lesson: $caption", ({ caption }) => {
+  it.each([...captions, ...DRILL_LINES])("$lesson: $caption", ({ caption }) => {
     const touch = inputWording(caption, "touch");
     expect(touch).not.toMatch(KEY_LEFT);
     expect(touch).not.toMatch(/\b(?:Click|Scroll|press)\b/);
@@ -46,6 +61,12 @@ describe("Lesson captions on a touchscreen", () => {
     expect(cues).toContain("Next 1: Tap PLAY on deck B and slide B up");
     expect(cues).toContain("Next 1: A out");
     expect(inputWording(filter.practice.caption, "keys")).toContain("(S)");
+  });
+
+  it("names the jog wheel for the nudge keys", () => {
+    expect(inputWording("Two kicks? Turn jog B (← →)", "touch")).toBe("Two kicks? Turn jog B");
+    expect(inputWording("Two kicks? Turn jog B (← →)", "keys")).toBe("Two kicks? Turn jog B (← →)");
+    expect(inputWording("Press →", "touch")).toBe("Turn jog B forward");
   });
 
   it("names Ready for the Lesson's R key", () => {
