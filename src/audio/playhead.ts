@@ -51,6 +51,11 @@ export class PlayheadTracker {
     return OK;
   }
 
+  /** Context time of the latest change, or null before any. O(1), unlike segments(). */
+  lastCtx(): CtxTime | null {
+    return this.history.at(-1)?.fromCtx ?? null;
+  }
+
   segments(): readonly PlayheadSegment[] {
     return [...this.history];
   }

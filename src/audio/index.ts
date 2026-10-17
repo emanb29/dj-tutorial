@@ -17,8 +17,18 @@ export type {
 export { CONTINUOUS_CONTROLS, CONTROL_RANGES, JOG_BEND_LIMIT } from "./commands.ts";
 export type { ChannelControl, CommandInput, Control, EngineCommand, EqControl } from "./commands.ts";
 
-export { AttemptRecorder, DEFAULT_RECORDER_CAPACITY } from "./recorder.ts";
-export type { AttemptDetails, RecordedAttempt, RecordedControlEvent, RecorderCapacity, RecorderOptions } from "./recorder.ts";
+export { AttemptRecorder, DEFAULT_RECORDER_CAPACITY, NEAR_CAPACITY_FRACTION } from "./recorder.ts";
+export type {
+  AttemptDetails,
+  RecordedAttempt,
+  RecordedControlEvent,
+  RecorderCapacity,
+  RecorderEvents,
+  RecorderNearCapacity,
+  RecorderOptions,
+  RecorderStartOptions,
+  RecorderUsage,
+} from "./recorder.ts";
 
 export { MasterOnlyMonitor, SplitCueMonitor } from "./monitor.ts";
 export type { MonitorBuses, MonitorOutput } from "./monitor.ts";

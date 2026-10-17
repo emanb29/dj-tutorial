@@ -8,7 +8,13 @@
 //
 // Pointer-rate moves of continuous controls are coalesced to `coalesceHz` per control: the first move is
 // kept at once, later moves within the interval are held and only the newest is kept, and a gesture's
-// last event (CommandInput.gestureEnd) and the held move at stop are always recorded.
+// last event (CommandInput.gestureEnd) and the held move at stop are always recorded. Refused moves and
+// the engine's own are coalesced the same way, each on their own so they never displace accepted moves.
+//
+// Capacity: an attempt is never lost to its size. Its control-event budget comes from its expected
+// duration (start({ expectedDurationSec })) or `capacity`. Past NEAR_CAPACITY_FRACTION of it the recorder
+// emits `recorder-near-capacity` and coalesces continuous moves at a quarter of `coalesceHz`; at the
+// budget it stops adding continuous moves but keeps every discrete event, and marks the attempt `degraded`.
 
 import type {
   Attempt,
@@ -25,7 +31,7 @@ import { CONTINUOUS_CONTROLS, type EngineCommand } from "./commands.ts";
 import { eqKnobToDecibels, toTimelineDecibels, trimKnobToDecibels } from "./curves.ts";
 import type { TrackRecord } from "./deck.ts";
 import type { AudioEngine, CommandEvent, EngineMixerSnapshot } from "./engine.ts";
-import type { Unsubscribe } from "./events.ts";
+import { Emitter, type Unsubscribe } from "./events.ts";
 import { METER_FRAMES_PER_SECOND } from "./loudness.ts";
 import type { BusMeterFrame, MeterBus } from "./meter.ts";
 import { fail, OK, type Result } from "./result.ts";
@@ -44,6 +50,11 @@ export interface RecordedAttempt extends Attempt {
   readonly engineEvents: readonly CommandEvent[];
   readonly startedCtx: CtxTime;
   readonly endedCtx: CtxTime;
+  /**
+   * True when the recorder ran out of room and kept less than usual: continuous moves past the ceiling or
+   * meter frames past their capacity were left out. Discrete (button) events are always all kept.
+   */
+  readonly degraded: boolean;
 }
 
 /** What only the app knows about an attempt, given at stop. */
@@ -63,7 +74,40 @@ export interface RecorderCapacity {
   readonly meterFrames: number;
 }
 
+export interface RecorderStartOptions {
+  /**
+   * How long the attempt is expected to last. Sizes its control-event budget (duration × an estimate of
+   * controls in motion at once × coalesceHz × headroom) and its meter capacity, in place of `capacity`.
+   */
+  readonly expectedDurationSec?: number;
+}
+
+/** How full the current attempt is. */
+export interface RecorderUsage {
+  readonly controlEvents: number;
+  readonly controlEventBudget: number;
+  readonly meterFrames: number;
+  readonly meterFrameCapacity: number;
+  /** Past NEAR_CAPACITY_FRACTION of the control-event budget: continuous moves are coalesced harder. */
+  readonly nearCapacity: boolean;
+  readonly degraded: boolean;
+}
+
+/** Emitted once per attempt when it passes NEAR_CAPACITY_FRACTION of its control-event budget. */
+export interface RecorderNearCapacity {
+  readonly kind: "recorder-near-capacity";
+  readonly controlEvents: number;
+  readonly controlEventBudget: number;
+  /** The coalescing rate continuous controls are recorded at from now on. */
+  readonly coalesceHz: number;
+}
+
+export interface RecorderEvents {
+  "recorder-near-capacity": RecorderNearCapacity;
+}
+
 export interface RecorderOptions {
+  /** Used when start() is given no expected duration. */
   readonly capacity: RecorderCapacity;
   readonly coalesceHz: number;
   /** How long stop() waits for meter frames up to the end of the attempt. */
@@ -71,8 +115,20 @@ export interface RecorderOptions {
   readonly wallClock: () => Date;
 }
 
-/** Enough for a 30-minute attempt: 3 buses × 50 frames/s, and about 5 recorded commands a second. */
+/** For an attempt started without an expected duration: meters for 30 minutes, about 5 recorded commands a second. */
 export const DEFAULT_RECORDER_CAPACITY: RecorderCapacity = { controlEvents: 10_000, meterFrames: 3 * 50 * 60 * 30 };
+/** Share of the budget past which continuous moves are coalesced harder, and the app is told. */
+export const NEAR_CAPACITY_FRACTION = 0.8;
+/** Near capacity, continuous controls are coalesced to this fraction of coalesceHz. */
+const NEAR_CAPACITY_COALESCE_FACTOR = 0.25;
+/** Continuous controls assumed in motion at once, on average, when sizing a budget from a duration. */
+const ESTIMATED_ACTIVE_CONTROLS = 2;
+/** Headroom over the estimate, for busy passages and attempts that run long. */
+const BUDGET_HEADROOM = 2;
+const METERED_BUSES = 3;
+
+/** Discrete events kept past the ceiling, at least: a press a second for almost three hours. */
+const DISCRETE_RESERVE_MIN = 10_000;
 const DEFAULT_OPTIONS: RecorderOptions = {
   capacity: DEFAULT_RECORDER_CAPACITY,
   coalesceHz: 30,
@@ -133,6 +189,7 @@ interface Recorded {
 }
 
 interface Recording {
+  readonly capacity: RecorderCapacity;
   readonly startedCtx: CtxTime;
   readonly startedAt: string;
   readonly initialMixer: MixerSnapshot;
@@ -142,17 +199,21 @@ interface Recording {
   readonly held: Map<string, Recorded>;
   readonly lastKeptCtx: Map<string, CtxTime>;
   readonly meters: Record<MeterBus, BusMeterFrame[]>;
+  /** The latest frame each bus delivered, kept or not: how far its meter has got. */
+  readonly lastFrameCtx: Record<MeterBus, CtxTime>;
   readonly cuePoints: CuePointSet[];
   readonly interruptions: Interruption[];
   readonly deviceCounts: Map<InputDevice, number>;
   readonly unsubscribe: Unsubscribe;
   meterFrameCount: number;
+  nearCapacity: boolean;
   outputDown: boolean;
-  overflowed: number | null;
+  degraded: boolean;
 }
 
 export class AttemptRecorder {
   private readonly options: RecorderOptions;
+  private readonly emitter = new Emitter<RecorderEvents>();
   private recording: Recording | null = null;
   /** A stopped recording still collecting its last meter frames. */
   private draining: Recording | null = null;
@@ -164,12 +225,20 @@ export class AttemptRecorder {
     this.options = { ...DEFAULT_OPTIONS, ...options };
   }
 
+  on<Name extends keyof RecorderEvents>(name: Name, listener: (payload: RecorderEvents[Name]) => void): Unsubscribe {
+    return this.emitter.on(name, listener);
+  }
+
   isRecording(): boolean {
     return this.recording !== null;
   }
 
-  start(): Result {
+  start(options: RecorderStartOptions = {}): Result {
     if (this.recording !== null) return fail({ kind: "recorder-already-recording" });
+    const { expectedDurationSec } = options;
+    if (expectedDurationSec !== undefined && !(Number.isFinite(expectedDurationSec) && expectedDurationSec > 0)) {
+      return fail({ kind: "value-out-of-range", control: "expectedDurationSec", value: expectedDurationSec, min: 0, max: Number.MAX_VALUE });
+    }
     const started = this.engine.heardTime();
     if (!started.ok) return started;
 
@@ -185,6 +254,7 @@ export class AttemptRecorder {
       this.engine.on("track-loaded", ({ deck, record }) => this.recording?.loadedDuring[deck].push(record)),
     ];
     this.recording = {
+      capacity: expectedDurationSec === undefined ? this.options.capacity : this.capacityFor(expectedDurationSec),
       startedCtx: started.ctx,
       startedAt: this.options.wallClock().toISOString(),
       initialMixer: contractMixer(this.engine.mixerState()),
@@ -194,6 +264,7 @@ export class AttemptRecorder {
       held: new Map(),
       lastKeptCtx: new Map(),
       meters: { master: [], A: [], B: [] },
+      lastFrameCtx: { master: Number.NEGATIVE_INFINITY, A: Number.NEGATIVE_INFINITY, B: Number.NEGATIVE_INFINITY },
       cuePoints: [],
       interruptions: [],
       deviceCounts: new Map(),
@@ -201,10 +272,25 @@ export class AttemptRecorder {
         for (const unsubscribe of subscriptions) unsubscribe();
       },
       meterFrameCount: 0,
+      nearCapacity: false,
       outputDown: false,
-      overflowed: null,
+      degraded: false,
     };
     return OK;
+  }
+
+  /** How full the current attempt is, or null when not recording. */
+  usage(): RecorderUsage | null {
+    const recording = this.recording;
+    if (recording === null) return null;
+    return {
+      controlEvents: recording.recorded.length,
+      controlEventBudget: recording.capacity.controlEvents,
+      meterFrames: recording.meterFrameCount,
+      meterFrameCapacity: recording.capacity.meterFrames,
+      nearCapacity: recording.nearCapacity,
+      degraded: recording.degraded,
+    };
   }
 
   /** The app reports that the tab was hidden (at `performanceTimeMs`, or now). */
@@ -230,7 +316,6 @@ export class AttemptRecorder {
     this.draining = null;
     recording.unsubscribe();
     if (!drained.ok) return drained;
-    if (recording.overflowed !== null) return fail({ kind: "recorder-full", capacity: recording.overflowed });
 
     const decks = this.deckRecordings(recording);
     if (!decks.ok) return decks;
@@ -269,7 +354,15 @@ export class AttemptRecorder {
         engineEvents: recorded.map(({ engine }) => engine),
         startedCtx: recording.startedCtx,
         endedCtx,
+        degraded: recording.degraded,
       },
+    };
+  }
+
+  private capacityFor(durationSec: number): RecorderCapacity {
+    return {
+      controlEvents: Math.ceil(durationSec * ESTIMATED_ACTIVE_CONTROLS * this.options.coalesceHz * BUDGET_HEADROOM),
+      meterFrames: Math.ceil(durationSec * METERED_BUSES * METER_FRAMES_PER_SECOND * BUDGET_HEADROOM),
     };
   }
 
@@ -299,7 +392,7 @@ export class AttemptRecorder {
     const target = Math.floor(until / frameSec + 1e-9) * frameSec;
     const drained = () =>
       target <= recording.startedCtx ||
-      (["master", "A", "B"] as const).every((bus) => (recording.meters[bus].at(-1)?.ctx ?? Number.NEGATIVE_INFINITY) >= target - 1e-9);
+      (["master", "A", "B"] as const).every((bus) => recording.lastFrameCtx[bus] >= target - 1e-9);
     const startedAt = performance.now();
     while (!drained()) {
       if (performance.now() - startedAt > this.options.drainTimeoutMs) {
@@ -324,27 +417,55 @@ export class AttemptRecorder {
     if (event.device !== "engine") recording.deviceCounts.set(event.device, (recording.deviceCounts.get(event.device) ?? 0) + 1);
 
     const entry: Recorded = { engine: event, contract: this.contractEvent(event) };
-    const key = `${"deck" in event.command ? event.command.deck : "-"}:${event.command.control}`;
+    // Refused and engine-made moves are coalesced on their own, so they never replace an accepted move.
+    const origin = event.rejected !== null ? "refused" : event.device === "engine" ? "engine" : "input";
+    const key = `${"deck" in event.command ? event.command.deck : "-"}:${event.command.control}:${origin}`;
     const time = timeOf(event);
     const lastKept = recording.lastKeptCtx.get(key);
     const coalesce =
       CONTINUOUS_CONTROLS.has(event.command.control) &&
       !event.gestureEnd &&
-      event.rejected === null &&
-      event.device !== "engine" &&
       lastKept !== undefined &&
-      time - lastKept < 1 / this.options.coalesceHz;
+      time - lastKept < 1 / this.coalesceHz(recording);
     if (coalesce) {
       recording.held.set(key, entry);
       return;
     }
     recording.held.delete(key);
-    if (recording.recorded.length >= this.options.capacity.controlEvents) {
-      recording.overflowed ??= this.options.capacity.controlEvents;
+    if (!this.hasRoomFor(recording, event)) {
+      recording.degraded = true;
       return;
     }
     recording.recorded.push(entry);
     recording.lastKeptCtx.set(key, time);
+    this.checkNearCapacity(recording);
+  }
+
+  private coalesceHz(recording: Recording): number {
+    return this.options.coalesceHz * (recording.nearCapacity ? NEAR_CAPACITY_COALESCE_FACTOR : 1);
+  }
+
+  private checkNearCapacity(recording: Recording): void {
+    const budget = recording.capacity.controlEvents;
+    if (recording.nearCapacity || recording.recorded.length < NEAR_CAPACITY_FRACTION * budget) return;
+    recording.nearCapacity = true;
+    this.emitter.emit("recorder-near-capacity", {
+      kind: "recorder-near-capacity",
+      controlEvents: recording.recorded.length,
+      controlEventBudget: budget,
+      coalesceHz: this.coalesceHz(recording),
+    });
+  }
+
+  /**
+   * Continuous moves fill the budget up to its ceiling. Discrete events go on past it into a reserve at
+   * least as large again (and never under DISCRETE_RESERVE_MIN presses), which no Learner reaches; past
+   * that, even they stop, so memory stays bounded.
+   */
+  private hasRoomFor(recording: Recording, event: CommandEvent): boolean {
+    const ceiling = recording.capacity.controlEvents;
+    if (CONTINUOUS_CONTROLS.has(event.command.control)) return recording.recorded.length < ceiling;
+    return recording.recorded.length < ceiling + Math.max(ceiling, DISCRETE_RESERVE_MIN);
   }
 
   private contractEvent(event: CommandEvent): RecordedControlEvent | null {
@@ -357,8 +478,9 @@ export class AttemptRecorder {
   private onMeterFrame(frame: BusMeterFrame): void {
     const recording = this.recording ?? this.draining;
     if (recording === null || frame.ctx < recording.startedCtx) return;
-    if (recording.meterFrameCount >= this.options.capacity.meterFrames) {
-      recording.overflowed ??= this.options.capacity.meterFrames;
+    recording.lastFrameCtx[frame.bus] = Math.max(recording.lastFrameCtx[frame.bus], frame.ctx);
+    if (recording.meterFrameCount >= recording.capacity.meterFrames) {
+      recording.degraded = true;
       return;
     }
     recording.meters[frame.bus].push(frame);

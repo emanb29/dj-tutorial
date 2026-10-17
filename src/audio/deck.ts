@@ -49,6 +49,8 @@ interface Loaded {
 }
 
 export const DEFAULT_TEMPO_RANGE: TempoRangePercent = 10;
+/** How much longer than the audio needs a load waits for the old track's stop (see Deck.untilContextTime). */
+const CONTEXT_WAIT_GRACE_MS = 1_000;
 
 export class Deck {
   private track: Loaded | null = null;
@@ -60,6 +62,8 @@ export class Deck {
   private jogBend = 0;
   private masterTempo = false;
   private cuePointSec = 0;
+  /** Context time until which the stretcher may still be playing a track's audio (its last scheduled stop). */
+  private stretchAudibleUntil: CtxTime = 0;
 
   constructor(
     readonly id: DeckId,
@@ -90,7 +94,7 @@ export class Deck {
 
   /** The latest time any change was scheduled; later changes must not come before it. */
   lastChangeCtx(): CtxTime {
-    return this.track?.record.playhead.segments().at(-1)?.fromCtx ?? 0;
+    return this.track?.record.playhead.lastCtx() ?? 0;
   }
 
   /** Starts a load synchronously: the old track stops at `when` and transport is refused until it finishes. */
@@ -100,6 +104,7 @@ export class Deck {
     if (track !== null && this.playing) {
       track.record.playhead.setRate(when, 0);
       this.voiceOf(track).stop(when);
+      if (this.masterTempo) this.stretchAudibleUntil = Math.max(this.stretchAudibleUntil, when);
     }
     this.track = null;
     this.playing = false;
@@ -114,6 +119,9 @@ export class Deck {
       if (this.stretch !== null) {
         // One copy per channel, transferred to the worklet; it needs two channels even for mono tracks.
         const channels = [0, 1].map((index) => buffer.getChannelData(Math.min(index, buffer.numberOfChannels - 1)).slice());
+        // The old track keeps playing through the stretcher until its scheduled stop; dropping its audio
+        // earlier would cut it short by up to the stretch lead.
+        await this.untilContextTime(this.stretchAudibleUntil);
         await this.stretch.dropBuffers();
         await this.stretch.addBuffers(channels, channels.map((channel) => channel.buffer));
       }
@@ -132,6 +140,12 @@ export class Deck {
     } finally {
       this.loadsInFlight--;
     }
+  }
+
+  /** Ends a load started with beginLoad without loading anything, because a later load replaced it. */
+  skipLoad(): { ok: true; record: null } {
+    this.loadsInFlight--;
+    return { ok: true, record: null };
   }
 
   /** Tempo multiplier from the fader, without the jog bend. Sync matches this. */
@@ -230,6 +244,7 @@ export class Deck {
     if (!allowed.ok) return allowed;
     const position = track.record.playhead.positionAt(when);
     this.voiceOf(track).stop(when);
+    if (!on) this.stretchAudibleUntil = Math.max(this.stretchAudibleUntil, when);
     this.masterTempo = on;
     this.voiceOf(track).play(when, position, this.rate());
     return OK;
@@ -268,6 +283,24 @@ export class Deck {
       masterTempoAvailability: this.masterTempoAvailability,
       cuePointSec: this.cuePointSec,
     };
+  }
+
+  /**
+   * Waits until the context has played up to `target`. Bounded: a context that is not advancing (suspended
+   * by the browser) is waited for at most as long as it would take running, plus a grace period; the
+   * stop is then at most a stretch lead away, so the cost of going on is a cut that short.
+   */
+  private async untilContextTime(target: CtxTime): Promise<void> {
+    const remainingSec = () => target - this.context.currentTime;
+    if (remainingSec() <= 0) return;
+    const deadline = performance.now() + remainingSec() * 1000 + CONTEXT_WAIT_GRACE_MS;
+    while (remainingSec() > 0 && this.context.state !== "closed") {
+      if (performance.now() >= deadline) {
+        console.warn(`[audio] deck ${this.id}: the context did not reach ${String(target)} s; replacing the old track's audio now.`);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(50, Math.max(5, remainingSec() * 1000))));
+    }
   }
 
   private start(track: Loaded, when: CtxTime, position: number): Result {

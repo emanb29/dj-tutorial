@@ -144,6 +144,8 @@ export class AudioEngine {
   private readonly pending = new PendingWork();
   private readonly history: Record<DeckId, TrackRecord[]> = { A: [], B: [] };
   private readonly loadQueue: Record<DeckId, Promise<unknown>> = { A: Promise.resolve(), B: Promise.resolve() };
+  /** Counts load() calls per deck, so a load can tell that a later one has overtaken it. */
+  private readonly loadGeneration: Record<DeckId, number> = { A: 0, B: 0 };
   private readonly meters: AudioWorkletNode[];
   private readonly cueOn: Record<DeckId, boolean> = { A: false, B: false };
   private readonly channelState: Record<DeckId, Record<ChannelControl, number>> = {
@@ -201,7 +203,8 @@ export class AudioEngine {
 
   /**
    * Loads a track. The deck stops and refuses transport at once; overlapping loads on one deck run in
-   * order and the last one wins. Bad input is refused with every problem listed.
+   * order and the last one wins: an overtaken load resolves OK but is never loaded, recorded in the
+   * history or announced with `track-loaded`. Bad input is refused with every problem listed.
    */
   async load(deck: DeckId, buffer: AudioBuffer, info: TrackInfo): Promise<Result> {
     if (this.closed) return fail({ kind: "engine-closed" });
@@ -212,10 +215,15 @@ export class AudioEngine {
     this.decks[deck].beginLoad(this.deckTime(deck));
     this.emitDecks();
 
-    const loaded = this.loadQueue[deck].then(() => this.decks[deck].finishLoad(buffer, info, () => this.deckTime(deck)));
+    const generation = ++this.loadGeneration[deck];
+    const superseded = () => generation !== this.loadGeneration[deck];
+    // A load overtaken by a later one is skipped when its turn comes: the deck never holds its track.
+    const loaded = this.loadQueue[deck].then((): Result<{ record: TrackRecord | null }> | Promise<Result<{ record: TrackRecord }>> =>
+      superseded() ? this.decks[deck].skipLoad() : this.decks[deck].finishLoad(buffer, info, () => this.deckTime(deck)),
+    );
     this.loadQueue[deck] = loaded;
     const result = await loaded;
-    if (result.ok) {
+    if (result.ok && result.record !== null) {
       const history = this.history[deck];
       history.push(result.record);
       if (history.length > TRACK_HISTORY_LIMIT) history.shift();

@@ -96,6 +96,14 @@ describe("playhead tracker", () => {
     expect(tracker.segments()).toHaveLength(1);
   });
 
+  it("reports the time of its latest change, or null before any", () => {
+    const tracker = new PlayheadTracker({ durationSec: 10 });
+    expect(tracker.lastCtx()).toBeNull();
+    tracker.seek(1, 5);
+    tracker.setRate(3, 1);
+    expect(tracker.lastCtx()).toBe(3);
+  });
+
   it("refuses to rewrite history, as a typed error", () => {
     const tracker = new PlayheadTracker({ durationSec: 10 });
     tracker.setRate(5, 1);

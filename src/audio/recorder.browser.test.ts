@@ -137,14 +137,107 @@ describe("AttemptRecorder", () => {
     expect(fader.map((event) => event.ctx)).toEqual([...fader.map((event) => event.ctx)].sort((a, b) => a - b));
   });
 
-  it("is bounded: past its capacity it stops and reports the attempt as unusable", async () => {
+  it("coalesces refused moves too, without letting them hide the accepted ones", async () => {
     const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock });
-    const recorder = new AttemptRecorder(engine, { wallClock, capacity: { controlEvents: 2, meterFrames: 10 } });
+    const recorder = new AttemptRecorder(engine, { wallClock });
     recorder.start();
-    for (const [index, control] of (["tap", "done", "tap"] as const).entries()) {
-      engine.command({ control }, { device: "keyboard", eventTimeMs: 5_000 + 100 * index });
+    for (let step = 0; step <= 100; step++) {
+      // EQ knobs are -1…1: every odd move is out of range and refused.
+      engine.command({ control: "eq-low", deck: "A", value: step % 2 === 0 ? step / 100 : 5 }, { device: "trackpad", eventTimeMs: 5_000 + step });
     }
-    expect(await recorder.stop(details)).toEqual({ ok: false, error: { kind: "recorder-full", capacity: 2 } });
+    const attempt = await stopped(recorder);
+    const refused = attempt.engineEvents.filter((event) => event.rejected !== null);
+
+    expect(refused.length).toBeLessThanOrEqual(6);
+    expect(attempt.events.filter((event) => event.control === "eqLow").at(-1)).toMatchObject({ ctx: expect.closeTo(1.1, 9) as number });
+  });
+
+  it("sizes its budget from the attempt's expected duration, so a 15-minute final mix fits", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock });
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    expect(recorder.usage()).toBeNull();
+    expect(recorder.start({ expectedDurationSec: 900 })).toEqual({ ok: true });
+
+    // 900 s × 2 active controls × 30 moves/s × 2 headroom; meters: 3 buses × 50 frames/s × 900 s × 2.
+    expect(recorder.usage()).toEqual({
+      controlEvents: 0,
+      controlEventBudget: 108_000,
+      meterFrames: 0,
+      meterFrameCapacity: 270_000,
+      nearCapacity: false,
+      degraded: false,
+    });
+  });
+
+  it("refuses an expected duration that is not a positive number of seconds", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1 });
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    expect(recorder.start({ expectedDurationSec: 0 })).toMatchObject({
+      ok: false,
+      error: { kind: "value-out-of-range", control: "expectedDurationSec", value: 0 },
+    });
+    expect(recorder.isRecording()).toBe(false);
+  });
+
+  it("warns once near capacity and then coalesces continuous moves harder, keeping every button press", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock });
+    const recorder = new AttemptRecorder(engine, { wallClock, capacity: { controlEvents: 100, meterFrames: 10 } });
+    const warnings: unknown[] = [];
+    recorder.on("recorder-near-capacity", (warning) => warnings.push(warning));
+    recorder.start();
+    for (let press = 0; press < 80; press++) engine.command({ control: "tap" }, { device: "keyboard", eventTimeMs: 5_000 + press });
+    expect(warnings).toEqual([{ kind: "recorder-near-capacity", controlEvents: 80, controlEventBudget: 100, coalesceHz: 7.5 }]);
+    expect(recorder.usage()?.nearCapacity).toBe(true);
+
+    // 25 moves a second: all kept at the usual 30 Hz, about one in four at 7.5 Hz.
+    for (let step = 0; step <= 10; step++) {
+      engine.command({ control: "crossfader", value: step / 10 }, { device: "trackpad", eventTimeMs: 5_100 + 40 * step });
+    }
+    engine.command({ control: "tap" }, { device: "keyboard", eventTimeMs: 5_600 });
+    const attempt = await stopped(recorder);
+
+    expect(warnings).toHaveLength(1);
+    expect(attempt.events.filter((event) => event.control === "tap")).toHaveLength(81);
+    const crossfader = attempt.events.filter((event) => event.control === "crossfader");
+    expect(crossfader.length).toBeLessThanOrEqual(5);
+    expect(crossfader.at(-1)).toMatchObject({ value: 1 });
+    expect(attempt.degraded).toBe(false);
+  });
+
+  it("never loses an attempt at its ceiling: discrete events are all kept, continuous ones stop, and it is marked degraded", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock });
+    const recorder = new AttemptRecorder(engine, { wallClock, capacity: { controlEvents: 4, meterFrames: 10 } });
+    recorder.start();
+    for (let step = 0; step < 8; step++) {
+      // Moves 200 ms apart are never coalesced, so only the ceiling limits them.
+      engine.command({ control: "crossfader", value: step / 8 }, { device: "trackpad", eventTimeMs: 5_000 + 200 * step });
+      engine.command({ control: "tap" }, { device: "keyboard", eventTimeMs: 5_000 + 200 * step + 100 });
+    }
+    const attempt = await stopped(recorder);
+
+    expect(attempt.degraded).toBe(true);
+    expect(attempt.events.filter((event) => event.control === "tap")).toHaveLength(8);
+    expect(attempt.events.filter((event) => event.control === "crossfader").length).toBeLessThanOrEqual(4);
+  });
+
+  it("keeps an attempt that outgrows its meter capacity, marked degraded", async () => {
+    const { context, engine } = await engineWithTrack({ seconds: 1 });
+    const recorder = new AttemptRecorder(engine, { wallClock, capacity: { controlEvents: 100, meterFrames: 30 } });
+    recorder.start();
+    engine.command({ control: "play", deck: "A" }, KEYBOARD);
+    await context.startRendering();
+    const attempt = await stopped(recorder);
+
+    expect(attempt.degraded).toBe(true);
+    expect(attempt.meters.master.length + (attempt.meters.A?.length ?? 0) + (attempt.meters.B?.length ?? 0)).toBe(30);
+  });
+
+  it("is not degraded when it stays within its budget", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock });
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    recorder.start();
+    engine.command({ control: "tap" }, { device: "keyboard", eventTimeMs: 5_100 });
+    expect((await stopped(recorder)).degraded).toBe(false);
   });
 
   it("refuses to start twice, or to stop when idle", async () => {

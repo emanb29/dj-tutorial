@@ -179,10 +179,13 @@ describe("loading", () => {
     expect(engine.deckState("A")).toMatchObject({ loading: false, trackId: "next" });
   });
 
-  it("serialises overlapping loads: the last one wins and history keeps their order", async () => {
+  it("serialises overlapping loads: the last one wins and a superseded load leaves no trace", async () => {
     const context = offlineContext(0.1);
     const engine = await createAudioEngine({ context });
     const tone = () => toneBuffer(context, { frequency: 500, peak: 0.5, seconds: 1 });
+    await engine.load("A", tone(), { trackId: "before", grid: null });
+    const loadedEvents: string[] = [];
+    engine.on("track-loaded", ({ record }) => loadedEvents.push(record.trackId));
     const results = await Promise.all([
       engine.load("A", tone(), { trackId: "first", grid: null }),
       engine.load("A", tone(), { trackId: "second", grid: null }),
@@ -190,7 +193,8 @@ describe("loading", () => {
 
     expect(results).toEqual([{ ok: true }, { ok: true }]);
     expect(engine.deckState("A").trackId).toBe("second");
-    expect(engine.trackHistory("A").map((track) => track.trackId)).toEqual(["first", "second"]);
+    expect(engine.trackHistory("A").map((track) => track.trackId)).toEqual(["before", "second"]);
+    expect(loadedEvents).toEqual(["second"]);
   });
 
   it("keeps only metadata and the playhead model in the track history, not the audio", async () => {
