@@ -1,9 +1,10 @@
 name: CI
 
+# Pull requests only: every change reaches main through a PR that was rebased and tested first, so
+# a second run on the merge commit would spend Actions minutes re-testing the same tree.
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -30,9 +31,26 @@ jobs:
 
       - run: npm run lint
 
-      # Both the Vitest browser project and the end-to-end tests need Chromium.
+      # Both the Vitest browser project and the end-to-end tests need Chromium. The browser download
+      # is cached per Playwright version; the system libraries still install each run.
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - run: npm test
 
