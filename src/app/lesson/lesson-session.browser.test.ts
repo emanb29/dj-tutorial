@@ -2,8 +2,20 @@
 // owner runs a Lesson: hook and practice first (the deck plays the Check's sections already), then
 // Checks in a row with every tap on a heard beat, at both common hardware sample rates.
 import { afterEach, describe, expect, it } from "vitest";
-import { createAudioEngine, type AudioEngine } from "@audio";
-import { lessonDefinition, lessonTrackFromKnownGrid, SYNTHETIC_HOUSE, synthesizeHouse, syntheticLessonTrack, type BuiltLessonId, type CheckPlan, type LessonTrack } from "@lessons";
+import { createAudioEngine, type AudioEngine, type EngineCommand } from "@audio";
+import {
+  blendPositions,
+  lessonDefinition,
+  lessonTrackFromKnownGrid,
+  SYNTHETIC_HOUSE,
+  SYNTHETIC_PARTNER,
+  synthesizeHouse,
+  syntheticLessonTrack,
+  type BuiltLessonId,
+  type CheckPlan,
+  type LessonTrack,
+  type Observation,
+} from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { knownGridFromMeta } from "@tracks";
@@ -66,6 +78,10 @@ async function harness(options: {
   readonly track: LessonTrack;
   readonly audio: (context: BaseAudioContext) => AudioBuffer;
   readonly renderSec: number;
+  /** Deck B's audio, for a Lesson that mixes `track` with `track.partner`. */
+  readonly partnerAudio?: (context: BaseAudioContext) => AudioBuffer;
+  /** Every observation the session makes, in order. */
+  readonly observed?: Observation[];
 }): Promise<Harness> {
   const { sampleRate, track } = options;
   const context = new OfflineAudioContext({ numberOfChannels: 2, length: Math.round(options.renderSec * sampleRate), sampleRate });
@@ -73,16 +89,22 @@ async function harness(options: {
   engine = running;
   const audio = options.audio(context);
   expect(await running.load("A", audio, { trackId: track.trackId, grid: track.grid })).toEqual({ ok: true });
+  const partner = track.partner;
+  if (options.partnerAudio !== undefined && partner !== undefined) {
+    expect(await running.load("B", options.partnerAudio(context), { trackId: partner.trackId, grid: partner.grid })).toEqual({ ok: true });
+  }
   const definition = lessonDefinition(options.lessonId);
   let ended = 0;
   const listener = {
-    observed: () => undefined,
+    observed: (observation: Observation) => {
+      options.observed?.push(observation);
+    },
     audioEnded: () => (ended += 1),
     checkFailed: (message: string) => {
       throw new Error(message);
     },
   };
-  const session = new LessonSession(running, definition, track, audio, "learner-1", listener, false);
+  const session = new LessonSession(running, definition, track, audio, "learner-1", listener, options.partnerAudio !== undefined);
   const quantum = 128 / sampleRate;
   let started = false;
   const renderTo = async (ctx: number) => {
@@ -239,5 +261,106 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     expect(outcome.outcome, JSON.stringify(summary(outcome))).toEqual({ kind: "passed" });
     // Only this attempt's phrase starts are targets, not the ones practice played.
     expect(summary(outcome)).toContainEqual({ id: "phrases.phrase-taps", status: "met", detail: { matched: 8, extras: 0, targets: 8 } });
+  });
+
+  // Lessons 12–13 on the synthetic pair (A 124 BPM, B 121 BPM synced to it): a practice rep is seen as
+  // good, then the Check passes, with every move made as A's position is heard.
+  const pair = (context: BaseAudioContext, layout: typeof SYNTHETIC_HOUSE) => {
+    const samples = synthesizeHouse(layout, context.sampleRate);
+    const buffer = context.createBuffer(1, samples.length, context.sampleRate);
+    buffer.copyToChannel(samples, 0);
+    return buffer;
+  };
+  const pairTrack = (): LessonTrack => ({ ...syntheticLessonTrack(SYNTHETIC_HOUSE), partner: syntheticLessonTrack(SYNTHETIC_PARTNER) });
+  const EQ_FILTER_BEFORE: readonly LessonId[] = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase", "tempo-fader", "sync-blend", "eq-basics"];
+
+  interface Move {
+    readonly pos: number;
+    readonly command: EngineCommand;
+  }
+
+  /** Sends each command as A's track position `pos` is heard, A having started from `fromPos` at `playAt`. */
+  async function movesAt(run: Harness, playAt: number, fromPos: number, timed: readonly { readonly pos: number; readonly command: EngineCommand }[]): Promise<void> {
+    for (const { pos, command } of [...timed].sort((a, b) => a.pos - b.pos)) {
+      await run.renderTo(playAt + (pos - fromPos));
+      expect(run.engine.command(command, { device: "trackpad" }), JSON.stringify(command)).toEqual({ ok: true });
+    }
+  }
+
+  /** Practice from its set-up: waits, with the render suspended, until the session has played deck A. */
+  async function startedPractice(run: Harness): Promise<number> {
+    run.session.preparePractice();
+    await until(() => run.engine.deckState("A").playing, "the session to play the practice");
+    return run.now();
+  }
+
+  /** Ends the Check by A's fader (the moves close it) and grades it. */
+  async function gradedBlend(run: Harness, playAt: number, endPos: number): Promise<CheckResult | VoidAttempt> {
+    await run.renderTo(playAt + (endPos - run.plan.startPos));
+    // The Check ends 2 bars after A's fader closed, on the wall clock: keep the render suspended meanwhile.
+    await until(() => run.audioEnded() === 1, "the Check to end 2 bars after A's fader closed");
+    const graded = await run.session.grade({}, EQ_FILTER_BEFORE);
+    run.session.close();
+    if (!graded.ok) throw new Error(graded.message);
+    return graded.outcome;
+  }
+
+  it("bass-swap: a swap on the phrase is a good practice rep, then the Check passes", { timeout: 90_000 }, async () => {
+    const observed: Observation[] = [];
+    const track = pairTrack();
+    const run = await harness({ sampleRate, lessonId: "bass-swap", track, audio: (context) => pair(context, SYNTHETIC_HOUSE), partnerAudio: (context) => pair(context, SYNTHETIC_PARTNER), renderSec: 120, observed });
+    const { leadPos, blendPos, handoverPos } = blendPositions(track);
+    const beat = 60 / track.grid.bpm;
+    const swap: { pos: number; command: EngineCommand }[] = [
+      { pos: leadPos + 1, command: { control: "eq-low", deck: "B", value: -1 } },
+      { pos: blendPos, command: { control: "play", deck: "B" } },
+      ...Array.from({ length: 10 }, (_, step): Move => ({ pos: blendPos + (step + 1) * 0.4 * beat, command: { control: "channel-fader", deck: "B", value: (step + 1) / 10 } })),
+      { pos: handoverPos - 0.1, command: { control: "eq-low", deck: "A", value: -1 } },
+      { pos: handoverPos + 0.1, command: { control: "eq-low", deck: "B", value: 0 } },
+    ];
+    await movesAt(run, await startedPractice(run), leadPos, swap);
+    expect(observed.filter((observation) => observation.kind === "swap")).toEqual([{ kind: "swap", onPhrase: true }]);
+
+    await startedCheck(run);
+    const playAt = run.now();
+    const outPos = handoverPos + 8 * beat;
+    await movesAt(run, playAt, leadPos, [
+      { pos: leadPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true } },
+      ...swap,
+      { pos: outPos, command: { control: "channel-fader", deck: "A", value: 0 } },
+      { pos: outPos + 2 * beat, command: { control: "eq-low", deck: "A", value: 0 } },
+    ]);
+    const outcome = await gradedBlend(run, playAt, outPos + 9 * beat);
+    expect(outcome.outcome, JSON.stringify(summary(outcome))).toEqual({ kind: "passed" });
+    expect(summary(outcome)).toContainEqual({ id: "bass-swap.clash-short", status: "met", detail: undefined });
+  });
+
+  it("filter-transition: a 10-bar high-pass out is a good practice rep, then the Check passes", { timeout: 90_000 }, async () => {
+    const observed: Observation[] = [];
+    const track = pairTrack();
+    const run = await harness({ sampleRate, lessonId: "filter-transition", track, audio: (context) => pair(context, SYNTHETIC_HOUSE), partnerAudio: (context) => pair(context, SYNTHETIC_PARTNER), renderSec: 120, observed });
+    const { leadPos, blendPos, handoverPos } = blendPositions(track);
+    const beat = 60 / track.grid.bpm;
+    const out: { pos: number; command: EngineCommand }[] = [
+      ...Array.from({ length: 81 }, (_, step): Move => ({ pos: blendPos - 8 * beat + step * 0.4 * beat, command: { control: "filter", deck: "A", value: 0.06 + (0.79 * step) / 80 } })),
+      { pos: blendPos, command: { control: "play", deck: "B" } },
+      ...Array.from({ length: 10 }, (_, step): Move => ({ pos: blendPos + (step + 1) * 0.4 * beat, command: { control: "channel-fader", deck: "B", value: (step + 1) / 10 } })),
+      { pos: handoverPos, command: { control: "channel-fader", deck: "A", value: 0 } },
+    ];
+    await movesAt(run, await startedPractice(run), leadPos, out);
+    const reps = observed.filter((observation) => observation.kind === "filter-out");
+    expect(reps).toHaveLength(1);
+    expect(reps[0]?.kind === "filter-out" ? reps[0].depth : null).toBeCloseTo(0.85);
+    expect(reps[0]?.kind === "filter-out" ? reps[0].bars : null).toBeCloseTo(10, 0);
+
+    await startedCheck(run);
+    const playAt = run.now();
+    await movesAt(run, playAt, leadPos, [
+      { pos: leadPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true } },
+      ...out,
+      { pos: handoverPos + 2 * beat, command: { control: "filter", deck: "A", value: 0 } },
+    ]);
+    const outcome = await gradedBlend(run, playAt, handoverPos + 9 * beat);
+    expect(outcome.outcome, JSON.stringify(summary(outcome))).toEqual({ kind: "passed" });
   });
 });

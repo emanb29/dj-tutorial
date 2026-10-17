@@ -94,6 +94,12 @@ export const EQ_CUT_DB = -20;
 export const EQ_CENTRED_DB = 1;
 /** The crossfader within this of an end is all the way to that side. */
 const CROSSFADER_END = 0.05;
+/** The CFX knob this far to a side is "turned" for a hook step; within the Check's ±5% it is centred. */
+const FILTER_TURNED = 0.5;
+export const FILTER_CENTRED = 0.05;
+/** A filter-out rep is good as the filter-transition Check's: 70% high-pass or more, on for 8–16 bars ± 1 beat. */
+export const FILTER_OUT_DEPTH = 0.7;
+export const FILTER_OUT_BARS: readonly [number, number] = [8 - 0.25, 16 + 0.25];
 
 export function initialLessonState(lessonId: BuiltLessonId): LessonState {
   return { lessonId, phase: { kind: "loading" }, attempts: 0, started: 0, missStreaks: {}, tipsShown: [], margins: {} };
@@ -136,6 +142,14 @@ function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "r
     case "crossfader-to":
       if (observation.kind !== "crossfader") return 0;
       return (trigger.side === "A" ? observation.value <= CROSSFADER_END : observation.value >= 1 - CROSSFADER_END) ? 1 : 0;
+    case "filter-to": {
+      if (observation.kind !== "filter" || observation.deck !== trigger.deck) return 0;
+      const { value } = observation;
+      const there = trigger.side === "high-pass" ? value >= FILTER_TURNED : trigger.side === "low-pass" ? value <= -FILTER_TURNED : Math.abs(value) <= FILTER_CENTRED;
+      return there ? 1 : 0;
+    }
+    case "swap":
+      return observation.kind === "swap" ? 1 : 0;
     case "beat-taps":
       return observation.kind === "tap" && observation.onBeat ? 1 : 0;
     case "downbeat-taps":
@@ -183,6 +197,14 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
       return observation.kind === "tempo-set" ? withRep(config, phase, observation.onTarget) : phase;
     case "eq-return":
       return observation.kind === "eq-return" ? withRep(config, phase, observation.onPhrase) : phase;
+    case "swap":
+      return observation.kind === "swap" ? withRep(config, phase, observation.onPhrase) : phase;
+    case "filter-out": {
+      if (observation.kind !== "filter-out") return phase;
+      const [shortest, longest] = FILTER_OUT_BARS;
+      const { bars } = observation;
+      return withRep(config, phase, observation.depth >= FILTER_OUT_DEPTH && bars !== null && bars >= shortest && bars <= longest);
+    }
   }
 }
 

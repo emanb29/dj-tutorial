@@ -25,3 +25,5 @@ export {
   TAP_TOLERANCE_MS,
 } from "./tolerance.ts";
 export { matchTaps, type TapMatch } from "./measures.ts";
+/** A LOW above this is a bassline in the mix (bass-swap's clash and swap crossings). */
+export { CLASH_LOW_DB } from "./blend.ts";

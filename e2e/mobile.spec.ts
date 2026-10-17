@@ -488,3 +488,51 @@ test.describe("Lessons 8–11 on a phone (412×915, touch)", () => {
     await expectFingerSized(page, page.locator(".channel-A").getByRole("slider", { name: "LOW" }));
   });
 });
+
+// Lessons 12–13 on a phone: LOW B and PLAY B for the swap, then CFX A for the filter, on screen and
+// finger-sized when the step asks; captions name PLAY and the faders, no key; the Check starts by button.
+test.describe("Lessons 12–13 on a phone (412×915, touch)", () => {
+  test.use(phone(412, 915));
+  const BEFORE = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase", "tempo-fader", "sync-blend", "eq-basics"];
+  const caption = (page: Page) => page.getByRole("status", { name: "Lesson caption" });
+  const phase = (page: Page) => page.locator("main.lesson");
+
+  test("bass-swap: LOW B, PLAY B and LOW A on screen and finger-sized, PLAY named for a finger", async ({ page }) => {
+    await openLesson(page, "bass-swap", { touch: true, passed: BEFORE, headphones: true });
+    await expect(caption(page)).toHaveText("Turn LOW B all the way down");
+    await expectFingerSized(page, page.locator(".channel-B").getByRole("slider", { name: "LOW" }));
+    await command(page, { control: "eq-low", deck: "B", value: -1 });
+    await expect(caption(page)).toContainText("On the phrase's 1: Tap PLAY on deck B and push fader B up");
+    await expectFingerSized(page, page.locator('[data-control="B.play"] button'));
+    await command(page, { control: "play", deck: "B" });
+    await expect(caption(page)).toContainText("Swap: LOW A down, LOW B up");
+    await expectFingerSized(page, page.locator(".channel-A").getByRole("slider", { name: "LOW" }));
+    await command(page, { control: "eq-low", deck: "A", value: -1 });
+    await command(page, { control: "eq-low", deck: "B", value: 0 });
+    await expect(phase(page)).toHaveAttribute("data-phase", "practice");
+    const go = page.getByRole("button", { name: "Start the Check" });
+    await expectFingerSized(page, go);
+    await go.tap();
+    await expect(phase(page)).toHaveAttribute("data-phase", "check");
+    await expect(page.locator(".lesson-cue")).toHaveText("CUE 🎧 B on. LOW B all the way down");
+  });
+
+  test("filter-transition: CFX A on screen and finger-sized, CFX B after the hook, no S in the captions", async ({ page }) => {
+    await openLesson(page, "filter-transition", { touch: true, passed: BEFORE, headphones: true });
+    await expect(caption(page)).toHaveText("Turn CFX A right");
+    await expectFingerSized(page, page.locator(".channel-A").getByRole("slider", { name: "CFX" }));
+    await command(page, { control: "filter", deck: "A", value: 0.8 });
+    await expect(caption(page)).toContainText("Now turn CFX A left");
+    await command(page, { control: "filter", deck: "A", value: -0.8 });
+    await expect(caption(page)).toContainText("CFX A back to the middle");
+    await command(page, { control: "filter", deck: "A", value: 0 });
+    await expect(phase(page)).toHaveAttribute("data-phase", "practice");
+    await expect(caption(page)).toContainText("CFX A right from 2 bars before B; A out a phrase after B");
+    await expect(caption(page)).not.toContainText("(S)");
+    // No step asks for CFX B yet: it is unlocked and finger-sized, a scroll away.
+    const cfxB = page.locator(".channel-B").getByRole("slider", { name: "CFX" });
+    await expect(page.locator('[data-control="B.filter"]')).toHaveAttribute("data-locked", "false");
+    await cfxB.scrollIntoViewIfNeeded();
+    await expectFingerSized(page, cfxB);
+  });
+});

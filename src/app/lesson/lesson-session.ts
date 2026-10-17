@@ -5,13 +5,14 @@
 // The audio part of a Check ends (and the recorder stops) before any questions are asked, so the
 // grading window and the end reason never include the time spent answering.
 import { AttemptRecorder, eqKnobToDecibels, type AudioEngine, type CommandEvent, type EngineCommand, type RecordedAttempt, type Result } from "@audio";
-import { runCheck } from "@checks";
+import { CLASH_LOW_DB, runCheck } from "@checks";
 import {
   checkDecksFor,
   checkSpecFor,
   classifyTap,
   EQ_CENTRED_DB,
   EQ_CUT_DB,
+  FILTER_CENTRED,
   GAIN_ZONE_DB,
   LESSON_GRADING,
   practiceDecksFor,
@@ -57,6 +58,8 @@ const CUT_TOLERANCE_MS = 120;
 /** tempo-fader practice: B's BPM this close to the target is on it (the Check's set-bpm limit). */
 const BPM_TOLERANCE = 0.05;
 const EQ_BANDS: Readonly<Record<"eq-low" | "eq-mid" | "eq-high", EqBand>> = { "eq-low": "low", "eq-mid": "mid", "eq-high": "high" };
+/** A's LOW going down and B's coming up pair as one swap within this (the bass-swap Check's pairing). */
+const SWAP_PAIR_BARS = 2;
 const DEVICE = { device: "keyboard" } as const;
 const DECKS: readonly DeckId[] = ["A", "B"];
 
@@ -104,6 +107,14 @@ export class LessonSession {
   private faderWasUp = false;
   /** Decks whose LOW is cut now (at or below the kill line), for the eq-basics practice rep. */
   private readonly lowCut: Record<DeckId, boolean> = { A: false, B: false };
+  /** Each deck's LOW in dB as the Learner left it, for the bass-swap practice rep. */
+  private readonly lowDb: Record<DeckId, number> = { A: 0, B: 0 };
+  /** Heard time of each half of a swap not yet paired: A's LOW down through −6 dB, B's up through it. */
+  private readonly swapHalf: Record<DeckId, number | null> = { A: null, B: null };
+  /** The high-pass sweep on CFX A now (filter-transition practice): heard time it began, deepest point. */
+  private sweep: { readonly fromCtx: number; depth: number } | null = null;
+  /** Whether each channel fader is open now, so a close is seen once. */
+  private readonly faderOpen: Record<DeckId, boolean> = { A: true, B: true };
   /** The listening clip playing now (tempo-fader questions), if any. */
   private clip: ListeningClip | null = null;
   /**
@@ -184,7 +195,10 @@ export class LessonSession {
         if (command.control === "play" && command.deck === "B") this.onPlayB(event.heardCtx);
         return;
       case "channel-fader":
-        this.onFader(command.deck, command.value);
+        this.onFader(command.deck, command.value, event.heardCtx);
+        return;
+      case "filter":
+        this.onFilter(command.deck, command.value, event.heardCtx);
         return;
       case "headphone-cue":
         this.observe({ kind: "headphone-cue", deck: command.deck, on: command.value });
@@ -227,8 +241,11 @@ export class LessonSession {
     }
   }
 
-  private onFader(deck: DeckId, value: number): void {
+  private onFader(deck: DeckId, value: number, heardCtx: number | null): void {
     this.observe({ kind: "fader", deck, value });
+    const wasOpen = this.faderOpen[deck];
+    this.faderOpen[deck] = value > FADER_DOWN;
+    if (deck === "A" && wasOpen && !this.faderOpen.A && this.definition.practice.rep === "filter-out") this.onFilterOut(heardCtx);
     const check = this.check;
     if (check !== null && check.stopped === null) {
       if (value <= FADER_DOWN) {
@@ -276,6 +293,7 @@ export class LessonSession {
     const db = eqKnobToDecibels(value);
     this.observe({ kind: "eq", deck, band, db });
     if (band !== "low" || this.settingUp) return;
+    this.onLow(deck, db, heardCtx);
     if (db <= EQ_CUT_DB) {
       this.lowCut[deck] = true;
       return;
@@ -286,6 +304,52 @@ export class LessonSession {
     if (offsetMs === null || !this.engine.deckState(deck).playing) return;
     const beatMs = 60_000 / (trackOnDeck(this.track, deck).grid.bpm * this.engine.deckState(deck).tempoRate);
     this.observe({ kind: "eq-return", deck, onPhrase: Math.abs(offsetMs) <= beatMs });
+  }
+
+  /**
+   * A LOW crossing −6 dB, for the bass-swap rep: A's going down and B's coming up within 2 bars of each
+   * other are one swap, timed (as the Check times it) at the mean of the two heard crossings.
+   */
+  private onLow(deck: DeckId, db: number, heardCtx: number | null): void {
+    const before = this.lowDb[deck];
+    this.lowDb[deck] = db;
+    const down = before > CLASH_LOW_DB && db <= CLASH_LOW_DB;
+    const up = before <= CLASH_LOW_DB && db > CLASH_LOW_DB;
+    // The half a swap needs: A's LOW going out, B's coming in. The other way undoes it.
+    if (deck === "A" ? up : down) this.swapHalf[deck] = null;
+    if (!(deck === "A" ? down : up) || heardCtx === null) return;
+    this.swapHalf[deck] = heardCtx;
+    const { A: outAt, B: inAt } = this.swapHalf;
+    if (outAt === null || inAt === null) return;
+    const rateA = this.engine.deckState("A").tempoRate;
+    const beatSec = 60 / (this.track.grid.bpm * rateA);
+    // Too far apart for one swap: this crossing starts a new one.
+    if (Math.abs(outAt - inAt) > SWAP_PAIR_BARS * 4 * beatSec) {
+      this.swapHalf[deck === "A" ? "B" : "A"] = null;
+      return;
+    }
+    this.swapHalf.A = null;
+    this.swapHalf.B = null;
+    const offsetMs = this.phraseOffsetMs("A", (outAt + inAt) / 2);
+    const playing = DECKS.every((each) => this.engine.deckState(each).playing);
+    this.observe({ kind: "swap", onPhrase: playing && offsetMs !== null && Math.abs(offsetMs) <= beatSec * 1000 });
+  }
+
+  /** CFX moves; on A, the high-pass sweep a filter-out rep is timed from (it ends back at centre). */
+  private onFilter(deck: DeckId, value: number, heardCtx: number | null): void {
+    this.observe({ kind: "filter", deck, value });
+    if (deck !== "A") return;
+    if (value <= FILTER_CENTRED) this.sweep = null;
+    else if (this.sweep !== null) this.sweep.depth = Math.max(this.sweep.depth, value);
+    else if (heardCtx !== null) this.sweep = { fromCtx: heardCtx, depth: value };
+  }
+
+  /** A's fader closed (filter-transition practice): how deep the sweep went and for how many bars. */
+  private onFilterOut(heardCtx: number | null): void {
+    if (!this.engine.deckState("A").playing) return;
+    const sweep = this.sweep;
+    const barSec = (4 * 60) / (this.track.grid.bpm * this.engine.deckState("A").tempoRate);
+    this.observe({ kind: "filter-out", depth: sweep?.depth ?? 0, bars: sweep === null || heardCtx === null ? null : (heardCtx - sweep.fromCtx) / barSec });
   }
 
   private onCuePoint(deck: DeckId, pos: number): void {
@@ -342,6 +406,7 @@ export class LessonSession {
     this.send({ control: "pause", deck });
     this.send({ control: "seek", deck, value: setup.pos });
     this.send({ control: "channel-fader", deck, value: setup.fader });
+    this.faderOpen[deck] = setup.fader > FADER_DOWN;
     if (setup.trim !== undefined) this.send({ control: "trim", deck, value: setup.trim });
     if (setup.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck, value: setup.headphoneCue });
     this.setDeckControls(deck, setup);
@@ -362,6 +427,12 @@ export class LessonSession {
     if (setup.eqCentred === true) {
       for (const band of ["eq-low", "eq-mid", "eq-high"] as const) this.send({ control: band, deck, value: 0 });
       this.lowCut[deck] = false;
+      this.lowDb[deck] = 0;
+      this.swapHalf[deck] = null;
+    }
+    if (setup.filterCentred === true) {
+      this.send({ control: "filter", deck, value: 0 });
+      if (deck === "A") this.sweep = null;
     }
   }
 

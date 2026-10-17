@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LESSONS, SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, syntheticLessonTrack } from "@lessons";
+import { LESSONS, lessonDefinition, SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, syntheticLessonTrack } from "@lessons";
 import { inputWording } from "../controller/wording.ts";
 
 // Every caption a Lesson shows, as a touchscreen Learner reads it: no key is left to press.
@@ -35,6 +35,17 @@ describe("Lesson captions on a touchscreen", () => {
       "Tap PLAY on deck B on the phrase's 1, crossfader to B; later snap the crossfader to A on a 1",
     );
     expect(inputWording("Snap it back to A (C)", "keys")).toBe("Snap it back to A (C)");
+  });
+
+  it("words the bass swap and the filter for a finger: PLAY on deck B, no S for A's fader", () => {
+    const bassSwap = lessonDefinition("bass-swap");
+    const filter = lessonDefinition("filter-transition");
+    expect(inputWording(bassSwap.hook[1]?.caption ?? "", "touch")).toBe("On the phrase's 1: Tap PLAY on deck B and push fader B up");
+    expect(inputWording(filter.practice.caption, "touch")).toBe("CFX A right from 2 bars before B; A out a phrase after B");
+    const cues = filter.planCheck(track).cues.map((cue) => inputWording(cue.caption, "touch"));
+    expect(cues).toContain("Next 1: Tap PLAY on deck B and slide B up");
+    expect(cues).toContain("Next 1: A out");
+    expect(inputWording(filter.practice.caption, "keys")).toContain("(S)");
   });
 
   it("names Ready for the Lesson's R key", () => {

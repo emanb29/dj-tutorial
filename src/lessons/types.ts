@@ -74,7 +74,19 @@ export type Observation =
   /** The crossfader moved: 0 = full A … 1 = full B. */
   | { readonly kind: "crossfader"; readonly value: number }
   /** tempo-fader practice: Ready (R) with deck B's BPM on the target or not. */
-  | { readonly kind: "tempo-set"; readonly onTarget: boolean };
+  | { readonly kind: "tempo-set"; readonly onTarget: boolean }
+  /** The CFX knob moved: −1 (full low-pass) … 0 (off) … +1 (full high-pass). */
+  | { readonly kind: "filter"; readonly deck: DeckId; readonly value: number }
+  /**
+   * The LOWs swapped: A's LOW went down through −6 dB and B's came up through it, within 2 bars of each
+   * other. `onPhrase`: their mean heard time is within 1 beat of A's nearest phrase start, both playing.
+   */
+  | { readonly kind: "swap"; readonly onPhrase: boolean }
+  /**
+   * A's channel fader closed while A played: `depth` is the most high-pass the sweep on CFX A reached
+   * (0 without one), `bars` how long the sweep was on when the fader closed (null without one).
+   */
+  | { readonly kind: "filter-out"; readonly depth: number; readonly bars: number | null };
 
 export type EqBand = "low" | "mid" | "high";
 
@@ -99,7 +111,11 @@ export type HookTrigger =
   /** An EQ band back within 1 dB of centre. */
   | { readonly kind: "eq-centred"; readonly deck: DeckId; readonly band: EqBand }
   /** The crossfader all the way to one side (within 5% of the end). */
-  | { readonly kind: "crossfader-to"; readonly side: DeckId };
+  | { readonly kind: "crossfader-to"; readonly side: DeckId }
+  /** The CFX knob at least halfway to high-pass or low-pass, or back within 5% of centre. */
+  | { readonly kind: "filter-to"; readonly deck: DeckId; readonly side: "high-pass" | "low-pass" | "centre" }
+  /** A bass swap (LOW A down, LOW B up), on the phrase or not. */
+  | { readonly kind: "swap" };
 
 export interface HookStep {
   /** What to do, a few words with the key: "Press X". */
@@ -120,9 +136,10 @@ export interface PracticeConfig {
    * What counts as one rep: a fade out, a tap, a Ready press (good when in the zone), a cue point set
    * (good on a downbeat within 20 ms), a cut (good on A's phrase start within 120 ms), a blend start
    * (B's Play within 1 beat of A's phrase start), a Ready with B on the target BPM, a LOW brought back
-   * on a phrase start (within 1 beat).
+   * on a phrase start (within 1 beat), a bass swap (good within 1 beat of A's phrase start), A's fader
+   * closed after a high-pass sweep on CFX A (good at 70% or more, on for 8–16 bars).
    */
-  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return";
+  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out";
   readonly window: number;
   readonly needed: number;
 }
@@ -150,6 +167,8 @@ export interface DeckSetup {
   readonly masterTempo?: boolean;
   /** HI, MID and LOW back to centre. */
   readonly eqCentred?: true;
+  /** The CFX knob back to centre (no filter). */
+  readonly filterCentred?: true;
 }
 
 export interface DeckSetups {

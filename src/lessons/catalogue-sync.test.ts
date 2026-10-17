@@ -54,7 +54,7 @@ function fromRecorderStart(definition: LessonDefinition): LessonDefinition {
 
 describe("the Lesson catalogue for Lessons 8–11", () => {
   it("adds tempo-fader, sync-blend, crossfader and eq-basics after cut-on-phrase, in catalogue order", () => {
-    expect(LESSONS.map((lesson) => lesson.id).slice(7)).toEqual(["tempo-fader", "sync-blend", "crossfader", "eq-basics"]);
+    expect(LESSONS.map((lesson) => lesson.id).slice(7, 11)).toEqual(["tempo-fader", "sync-blend", "crossfader", "eq-basics"]);
   });
 
   it("reveals each Lesson's new parts on the controller", () => {

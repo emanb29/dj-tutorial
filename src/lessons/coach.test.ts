@@ -130,6 +130,21 @@ describe("describeCriterion", () => {
     expect(describeCriterion(criterion("eq-basics.low-return", 0.3, "beats", 1))).toBe("LOW back 0.30 beats from the phrase start (need 1 or less)");
     expect(describeCriterion(criterion("eq-basics.eq-centred", 0, "dB", 1))).toBe("EQs at the end: 0.0 dB from the middle at most (need 1 or less)");
   });
+
+  it("words the Lessons 12–13 criteria: LOW B in, the swap, two basslines and the CFX sweep", () => {
+    expect(describeCriterion(criterion("bass-swap.enter-low-cut", -120, "dB", -20))).toBe("LOW B as B came in: all the way down");
+    expect(describeCriterion(criterion("bass-swap.enter-low-cut", -8.5, "dB", -20))).toBe("LOW B as B came in: −8.5 dB (need −20 or lower)");
+    expect(describeCriterion(criterion("bass-swap.enter-low-cut", null, "dB", -20))).toBe("LOW B as B came in: B never came in");
+    expect(describeCriterion(criterion("bass-swap.swap-time", 0.42, "beats", 1))).toBe("Bass swap 0.42 beats from the phrase start (need 1 or less)");
+    expect(describeCriterion(criterion("bass-swap.swap-time", null, "beats", 1))).toBe("Bass swap: the LOWs never swapped while both played");
+    expect(describeCriterion(criterion("bass-swap.clash-short", 0, "beats", 1))).toBe("Two basslines at once: 0.00 beats (need 1 or less)");
+    expect(describeCriterion({ ...criterion("filter-transition.hpf-depth", 0.84, "ratio", 0.7), threshold: { op: ">=", value: 0.7, unit: "ratio" } })).toBe("CFX A: up to 84% high-pass (need 70%)");
+    expect(describeCriterion({ ...criterion("filter-transition.filter-length", 7.94, "bars", 0), threshold: { op: "in", value: [7.75, 16.25], unit: "bars" } })).toBe(
+      "Filter on 7.9 bars before A went out (need 8–16)",
+    );
+    expect(describeCriterion(criterion("filter-transition.filter-length", null, "bars", 0))).toBe("Filter: no sweep was still on as A went out");
+    expect(describeCriterion(criterion("filter-transition.cfx-back", 0.25, "bars", 1))).toBe("CFX A back 0.25 bars after A went out (need 1 or less)");
+  });
 });
 
 describe("the Curriculum re-plan when a skip group is passed (coach-design §1 a)", () => {

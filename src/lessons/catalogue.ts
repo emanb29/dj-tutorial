@@ -1,6 +1,7 @@
 // Lessons 1–7 as data (docs/lesson-catalogue.md §1, check-design §4): the hook, practice, the Check
 // plan on the chosen track, and authored tips. Captions, not prose: a few words, the key in brackets.
 import type { Aids, Attempt, CheckMode, CheckVariant, CtxSpan, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
+import { EQ_FILTER_LESSONS, type EqFilterLessonId } from "./catalogue-eq-filter.ts";
 import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
 import { barsSec, fromOwnCue, heardSpan, steadyPhrase } from "./plan.ts";
 import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor } from "./track.ts";
@@ -378,10 +379,10 @@ const cutOnPhrase: LessonDefinition = {
   },
 };
 
-export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase" | SyncLessonId;
+export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase" | SyncLessonId | EqFilterLessonId;
 export type BuiltLesson = LessonDefinition & { readonly id: BuiltLessonId };
 
-/** Lessons 1–11, in catalogue order (8–11 in catalogue-sync.ts). */
+/** Lessons 1–13, in catalogue order (8–11 in catalogue-sync.ts, 12–13 in catalogue-eq-filter.ts). */
 export const LESSONS: readonly BuiltLesson[] = [
   { ...deckBasics, id: "deck-basics" },
   { ...beatsAndBars, id: "beats-and-bars" },
@@ -391,6 +392,7 @@ export const LESSONS: readonly BuiltLesson[] = [
   { ...cuePoint, id: "cue-point" },
   { ...cutOnPhrase, id: "cut-on-phrase" },
   ...SYNC_LESSONS,
+  ...EQ_FILTER_LESSONS,
 ];
 
 /** Practice loops for Lessons that do not set their own: tap Lessons loop deck A from the practice start. */

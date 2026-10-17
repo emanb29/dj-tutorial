@@ -298,6 +298,35 @@ function describeSyncMixing(criterion: CriterionResult): string | null {
   }
 }
 
+/** A LOW at or below this reads as all the way down (a kill is −120 dB on the timeline). */
+const LOW_KILLED_DB = -60;
+
+/** Lessons 12–13; null for criteria of other Lessons. */
+function describeEqFilter(criterion: CriterionResult): string | null {
+  const measured = criterion.measured;
+  const need = thresholdValue(criterion);
+  switch (criterion.id) {
+    case "bass-swap.enter-low-cut":
+      if (measured === null) return "LOW B as B came in: B never came in";
+      return measured <= LOW_KILLED_DB ? "LOW B as B came in: all the way down" : `LOW B as B came in: ${signed(measured, 1)} dB (need ${signed(need, 0)} or lower)`;
+    case "bass-swap.swap-time":
+      return measured === null ? "Bass swap: the LOWs never swapped while both played" : `Bass swap ${measured.toFixed(2)} beats from the phrase start (need 1 or less)`;
+    case "bass-swap.clash-short":
+      return measured === null ? "Two basslines: not measured" : `Two basslines at once: ${measured.toFixed(2)} beats (need ${String(need)} or less)`;
+    case "filter-transition.hpf-depth":
+      return measured === null ? "CFX A: A never went out" : `CFX A: up to ${round(measured * 100)}% high-pass (need ${round(need * 100)}%)`;
+    case "filter-transition.filter-length": {
+      const range = criterion.threshold?.value;
+      const span = range === undefined || typeof range === "number" ? "" : ` (need ${String(Math.ceil(range[0]))}–${String(Math.floor(range[1]))})`;
+      return measured === null ? "Filter: no sweep was still on as A went out" : `Filter on ${measured.toFixed(1)} bars before A went out${span}`;
+    }
+    case "filter-transition.cfx-back":
+      return measured === null ? "CFX A: not back to the middle after A went out" : `CFX A back ${measured.toFixed(2)} bars after A went out (need ${String(need)} or less)`;
+    default:
+      return null;
+  }
+}
+
 /** One plain line per criterion for the result card: what was measured against what was needed. */
 export function describeCriterion(criterion: CriterionResult): string {
   const measured = criterion.measured;
@@ -319,7 +348,7 @@ export function describeCriterion(criterion: CriterionResult): string {
       return `Sections named: ${String(questions - (measured ?? questions))} of ${String(questions)} right`;
     }
     default: {
-      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion);
+      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion) ?? describeEqFilter(criterion);
       if (mixing !== null) return mixing;
       const name = criterionPlainName(criterion.id);
       const label = name.charAt(0).toUpperCase() + name.slice(1);
