@@ -167,11 +167,14 @@ for (const [orientation, width, height] of [
       // touches go through the DevTools protocol.
       const touchscreen = await page.context().newCDPSession(page);
       const touch = async (type: "touchStart" | "touchMove", x: number, y: number) => touchscreen.send("Input.dispatchTouchEvent", { type, touchPoints: [{ x, y }] });
-      // One stroke along the fader moves it end to end (the cap follows the finger). Measured each
-      // time: the caption line above changes height between steps. A stroke that lands while the
-      // page is still scrolling the next control into view can miss the fader, so a finger goes
-      // again, as a person would, until the fader is at the end (at most three strokes).
+      // One stroke along the fader moves it end to end (the cap follows the finger). A finger can only
+      // touch what is on screen, and the CDP touches land wherever they are sent: in the Check the
+      // caption line is taller and pushes the fader partly below a 360×780 screen, where a touch
+      // would scroll the page instead. So the fader is brought fully on screen first, as a person
+      // would scroll to it, and measured once the page is still.
       const stroke = async (direction: "up" | "down") => {
+        await fader.scrollIntoViewIfNeeded();
+        await expect(fader).toBeInViewport({ ratio: 1 });
         const box = await settledBox(page, fader);
         const x = box.x + box.width / 2;
         const [fromY, toY] = direction === "up" ? [box.y + box.height - 4, box.y + 4] : [box.y + 4, box.y + box.height - 4];
@@ -180,9 +183,8 @@ for (const [orientation, width, height] of [
         await touchscreen.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       };
       const strokeToEnd = async (direction: "up" | "down") => {
-        const end = direction === "up" ? "1" : "0";
-        for (let count = 0; count < 3 && (await fader.getAttribute("aria-valuenow")) !== end; count += 1) await stroke(direction);
-        await expect(fader).toHaveAttribute("aria-valuenow", end);
+        await stroke(direction);
+        await expect(fader, `one stroke ${direction} moves the fader to the end`).toHaveAttribute("aria-valuenow", direction === "up" ? "1" : "0");
       };
       await strokeToEnd("up");
       await expect(caption).toContainText("pull it down");

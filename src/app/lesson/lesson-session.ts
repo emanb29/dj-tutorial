@@ -39,7 +39,14 @@ const WATCH_MS = 25;
 /** After a fade out, keep recording this long so the meters see the silence. */
 const FADE_OUT_SETTLE_MS = 300;
 const FADER_UP = 0.9;
+/** A channel fader this low counts as closed (Placement's faded-out-then tasks). */
 const FADER_DOWN = 0.05;
+/**
+ * The fader's bottom: a faded-out Check ends only there, where its fade-out criterion grades the fader
+ * (deck-basics, "fader ended at 0%"). Ending on the way down (it once ended at 5%) cut off a finger still
+ * pulling, or a final move a busy main thread had not got to yet, and failed a fade that reached 0.
+ */
+const FADER_BOTTOM = 0;
 /** Level readings for the gain-staging hook and practice: the peak over the last second, twice a second. */
 const LEVEL_WINDOW_SEC = 1;
 const LEVEL_EVERY_MS = 500;
@@ -230,7 +237,7 @@ export class LessonSession {
     }
     if (deck !== "A") return;
     if (value >= FADER_UP) this.faderWasUp = true;
-    if (check?.plan.endWhen.kind === "faded-out" && this.faderWasUp && value <= FADER_DOWN) {
+    if (check?.plan.endWhen.kind === "faded-out" && this.faderWasUp && value <= FADER_BOTTOM) {
       setTimeout(() => {
         // Only the attempt that faded out: a restart within the settle time is a new attempt.
         if (this.check === check) this.endAudio();

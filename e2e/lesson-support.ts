@@ -17,7 +17,8 @@ export interface LessonWindow {
       playhead(deck: DeckId): { ok: boolean; beat?: number | null; positionSec?: number };
       deckState(deck: DeckId): { playing: boolean; cuePointSec: number; masterTempo?: boolean; syncOn?: boolean; tempoRate?: number };
       command(command: Record<string, unknown>, input: { device: string }): { ok: boolean };
-      heardTime(): { ok: boolean; ctx?: number };
+      heardTime(performanceTimeMs?: number): { ok: boolean; ctx?: number };
+      playheadAt(deck: DeckId, ctx: number): { beat: number | null } | null;
     };
     track: { grid: Grid };
     phase(): string;
@@ -78,25 +79,45 @@ export async function seedPassed(page: Page, learnerId: string, lessonIds: reado
   expect(status).toBe(200);
 }
 
-/** Presses keys (by code) on each beat of a deck's grid, timed in the page from the engine's own heard playhead. */
+/**
+ * Presses keys (by code) on each beat of a deck's grid, timed in the page from the engine's own heard
+ * playhead. Each key event carries the beat's own time as its timeStamp, as a real keyboard's does: on
+ * a loaded machine the page's timer wakes up to 200 ms late (ISS-84), and a press stamped when it is
+ * finally dispatched would be graded that late. Late delivery of an on-time press is the app's to
+ * handle (it grades the event's timeStamp, not when it got to it); the test's timer is not the Learner.
+ */
 export async function keysAtBeats(page: Page, beats: readonly number[], options: { deck?: DeckId; codes?: readonly string[] } = {}): Promise<void> {
   await page.evaluate(
     async ({ targets, deck, codes }) => {
       const lesson = (window as LessonWindow).learnToDjLesson;
       if (lesson === undefined) throw new Error("No Lesson is open.");
       const beatMs = 60_000 / lesson.track.grid.bpm;
-      const heardBeat = () => {
-        const reading = lesson.engine.playhead(deck);
-        if (!reading.ok || reading.beat == null) throw new Error(`Deck ${deck} has no playhead reading.`);
-        return reading.beat;
+      /**
+       * performance.now() of `beat`, from the deck's playhead at the heard time of a moment just taken,
+       * placed as a key press at that moment would be (not the playhead of "now", which never steps back
+       * when the output timestamp does).
+       */
+      const beatAtMs = (beat: number) => {
+        const now = performance.now();
+        const heard = lesson.engine.heardTime(now);
+        const reading = heard.ok && heard.ctx !== undefined ? lesson.engine.playheadAt(deck, heard.ctx) : null;
+        if (reading?.beat == null) throw new Error(`Deck ${deck} has no playhead reading.`);
+        return now + (beat - reading.beat) * beatMs;
+      };
+      const stamped = (type: "keydown" | "keyup", code: string, timeStamp: number) => {
+        const event = new KeyboardEvent(type, { code });
+        Object.defineProperty(event, "timeStamp", { value: timeStamp });
+        return event;
       };
       for (const beat of targets) {
-        // Re-read the heard playhead before every press: the audio clock may drift from performance.now().
-        for (let remainingMs = (beat - heardBeat()) * beatMs; remainingMs > 0.5; remainingMs = (beat - heardBeat()) * beatMs) {
+        // Re-read the heard playhead after every wait: the audio clock may drift from performance.now().
+        let atMs = beatAtMs(beat);
+        for (let remainingMs = atMs - performance.now(); remainingMs > 0.5; remainingMs = atMs - performance.now()) {
           if (remainingMs > 12) await new Promise((resolve) => setTimeout(resolve, remainingMs - 8));
+          atMs = beatAtMs(beat);
         }
-        for (const code of codes) window.dispatchEvent(new KeyboardEvent("keydown", { code }));
-        for (const code of codes) window.dispatchEvent(new KeyboardEvent("keyup", { code }));
+        for (const code of codes) window.dispatchEvent(stamped("keydown", code, atMs));
+        for (const code of codes) window.dispatchEvent(stamped("keyup", code, atMs));
       }
     },
     { targets: beats, deck: options.deck ?? "A", codes: options.codes ?? ["Space"] },

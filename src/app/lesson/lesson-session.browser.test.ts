@@ -93,10 +93,38 @@ async function harness(options: {
       void context.startRendering();
     }
     await reached;
-    // Let the session's watch (a 25 ms interval) see the new position.
+    // Let the session's watch (a 25 ms interval) see the new position. Nothing graded depends on it
+    // running in this time: the Check's end is waited for (`until`) and its start too (`startedCheck`).
     await new Promise((resolve) => setTimeout(resolve, 30));
   };
   return { session, track, plan: definition.planCheck(track), engine: running, renderTo, now: () => context.currentTime, audioEnded: () => ended };
+}
+
+/** Waits, on the wall clock, for something the session does on its own timers or promises. */
+async function until(done: () => boolean, what: string): Promise<void> {
+  const deadline = performance.now() + 10_000;
+  while (!done()) {
+    if (performance.now() > deadline) throw new Error(`Gave up after 10 s waiting for ${what}; is the machine badly overloaded, or did the session stop?`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+/**
+ * Starts the Check and waits, with the render suspended, until the session has cued and played it.
+ * The session plays the Check from a promise callback: rendering on before then lets the deck start
+ * late by however long the main thread took to get there, which shifts every heard beat off the taps.
+ */
+async function startedCheck(run: Harness): Promise<void> {
+  let played = false;
+  const stop = run.engine.on("command", (event) => {
+    if (event.command.control === "play" && event.command.deck === "A" && event.rejected === null) played = true;
+  });
+  try {
+    run.session.startCheck();
+    await until(() => played, "the session to play the Check");
+  } finally {
+    stop();
+  }
 }
 
 /**
@@ -109,7 +137,7 @@ async function checkWithTaps(
   answers: Readonly<Record<string, number>>,
   passed: readonly LessonId[],
 ): Promise<CheckResult | VoidAttempt> {
-  run.session.startCheck();
+  await startedCheck(run);
   const playAt = run.now();
   const heard = (pos: number) => playAt + (pos - run.plan.startPos);
   for (const pos of positions) {
@@ -119,7 +147,7 @@ async function checkWithTaps(
   if (run.plan.endWhen.kind !== "position") throw new Error("this Check ends at a position");
   const endedBefore = run.audioEnded();
   await run.renderTo(heard(run.plan.endWhen.pos) + 0.1);
-  expect(run.audioEnded()).toBe(endedBefore + 1);
+  await until(() => run.audioEnded() === endedBefore + 1, "the session's watch to end the Check's audio part");
   const graded = await run.session.grade(answers, passed);
   if (!graded.ok) throw new Error(graded.message);
   return graded.outcome;
@@ -154,13 +182,41 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
 
   it("beats-and-bars: a deck stopped before the downbeat section voids the attempt instead of failing it", { timeout: 30_000 }, async () => {
     const run = await harness({ sampleRate, lessonId: "beats-and-bars", track: lamplightMoths(), audio: (context) => toneBuffer(context, ORIGINAL_SEC), renderSec: 30 });
-    run.session.startCheck();
+    await startedCheck(run);
     await run.renderTo(run.now() + 10);
     run.engine.command({ control: "pause", deck: "A" }, { device: "keyboard" });
     await run.renderTo(run.now() + 1);
     const graded = await run.session.grade({}, ["deck-basics"]);
     run.session.close();
     expect(graded.ok && graded.outcome.outcome).toEqual({ kind: "void", reason: "sectionNotHeard" });
+  });
+
+  it("deck-basics: the Check ends when the fader reaches the bottom, not on the way down", { timeout: 30_000 }, async () => {
+    const run = await harness({ sampleRate, lessonId: "deck-basics", track: lamplightMoths(), audio: (context) => toneBuffer(context, ORIGINAL_SEC), renderSec: 30 });
+    // The Learner plays this Check (X): the session only cues it, with the deck stopped.
+    let cued = false;
+    const stop = run.engine.on("command", (event) => {
+      if (event.command.control === "seek") cued = true;
+    });
+    run.session.startCheck();
+    await until(() => cued, "the session to cue the Check");
+    stop();
+    expect(run.engine.command({ control: "play", deck: "A" }, { device: "touch" })).toEqual({ ok: true });
+    const fader = (value: number) => run.engine.command({ control: "channel-fader", deck: "A", value }, { device: "touch" });
+    await run.renderTo(run.now() + 1);
+    fader(1);
+    await run.renderTo(run.now() + 3);
+    // A finger on its way down (or a move the main thread has not got to yet): the attempt goes on.
+    fader(0.03);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(run.audioEnded()).toBe(0);
+    await run.renderTo(run.now() + 0.2);
+    fader(0);
+    await run.renderTo(run.now() + 1);
+    await until(() => run.audioEnded() === 1, "the Check to end once the fader is down");
+    const graded = await run.session.grade({}, []);
+    run.session.close();
+    expect(graded.ok && summary(graded.outcome)).toContainEqual({ id: "deck-basics.fade-out", status: "met", detail: undefined });
   });
 
   it("phrases on the synthetic groove: a Check after practice passes with a tap on each phrase start", { timeout: 60_000 }, async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { barBeatAt, beatAt, beatGridProblems, beatLengthSec, positionOfBeat, type BeatGrid } from "./beat-grid.ts";
 import { audioContextClock, heardContextTime } from "./output-clock.ts";
 import { PlayheadTracker } from "./playhead.ts";
@@ -138,6 +138,65 @@ describe("output clock", () => {
       getOutputTimestamp: () => ({ contextTime: 1, performanceTime: 1_000 }),
     } as unknown as AudioContext;
     expect(audioContextClock(suspended).heardTime(9_000)).toEqual({ ok: false, error: { kind: "output-not-running" } });
+  });
+
+  // Two output timestamps 36 ms apart from a loaded machine (ISS-84): the second one's contextTime
+  // is 99 ms earlier. Mapped as they are, the fader's last move (to 0) was heard before the one
+  // before it (0.008), so the attempt ended at 0.008 and "fade out" failed with the fader down.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  const loadedTimestamps = [
+    { contextTime: 18.7853, performanceTime: 24_066.6 },
+    { contextTime: 18.6863, performanceTime: 24_102.4 },
+  ];
+  function clockReading(timestamps: readonly { contextTime: number; performanceTime: number }[]) {
+    let next = 0;
+    const context = {
+      state: "running",
+      getOutputTimestamp: () => timestamps[Math.min(next++, timestamps.length - 1)],
+    } as unknown as AudioContext;
+    return audioContextClock(context);
+  }
+  const ctxOf = (reading: ReturnType<ReturnType<typeof audioContextClock>["heardTime"]>) => (reading.ok ? reading.ctx : Number.NaN);
+
+  it("keeps inputs in the order they happened when the output timestamp jumps back", () => {
+    const clock = clockReading(loadedTimestamps);
+    const earlier = ctxOf(clock.heardTime(24_024.6));
+    const later = ctxOf(clock.heardTime(24_067.3));
+    expect(earlier).toBeCloseTo(18.7433, 4);
+    expect(later).toBeGreaterThanOrEqual(earlier);
+  });
+
+  it("keeps the present after an input already heard", () => {
+    const clock = clockReading(loadedTimestamps);
+    const move = ctxOf(clock.heardTime(24_060));
+    vi.spyOn(performance, "now").mockReturnValue(24_102.4);
+    const now = ctxOf(clock.heardTime());
+    expect(now).toBeGreaterThanOrEqual(move);
+  });
+
+  // A tap the main thread got to 80 ms late, after the timestamp jumped forward: it is placed with the
+  // newest timestamp, not held back by the readings of "now" made with the older one.
+  it("places a late-delivered input with the newest timestamp", () => {
+    const clock = clockReading([
+      { contextTime: 10, performanceTime: 1_000 },
+      { contextTime: 10.2, performanceTime: 1_100 },
+    ]);
+    vi.spyOn(performance, "now").mockReturnValue(1_030);
+    const readingAfterTap = ctxOf(clock.heardTime());
+    const tap = ctxOf(clock.heardTime(1_020));
+    expect(readingAfterTap).toBeGreaterThan(0);
+    expect(tap).toBeCloseTo(10.12, 9);
+  });
+
+  it("maps as before while the output timestamps agree", () => {
+    const clock = clockReading([
+      { contextTime: 20, performanceTime: 5_000 },
+      { contextTime: 20.5, performanceTime: 5_500 },
+    ]);
+    expect(ctxOf(clock.heardTime(5_250))).toBeCloseTo(20.25, 9);
+    expect(ctxOf(clock.heardTime(5_600))).toBeCloseTo(20.6, 9);
   });
 });
 
