@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barStart, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, phraseOf } from "./track.ts";
+import { barStart, cuedAt, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, phraseOf } from "./track.ts";
 
 describe("barStart", () => {
   it("puts bar 1 on the grid's first downbeat and counts 4 beats a bar", () => {
@@ -96,5 +96,32 @@ describe("heardTimeOf", () => {
     };
     expect(heardTimeOf(playhead, 3)).toBeCloseTo(15);
     expect(heardTimeOf(playhead, 9)).toBeNull();
+  });
+
+  it("finds the first time at or after `notBefore`, when the deck played the position more than once", () => {
+    const playhead = {
+      segments: [
+        { fromCtx: 0, pos: 0, rate: 1 },
+        { fromCtx: 10, pos: 0, rate: 1 },
+      ],
+    };
+    expect(heardTimeOf(playhead, 3)).toBeCloseTo(3);
+    expect(heardTimeOf(playhead, 3, 10)).toBeCloseTo(13);
+    expect(heardTimeOf(playhead, 3, 14)).toBeNull();
+  });
+});
+
+describe("cuedAt", () => {
+  it("finds when the deck was cued exactly to a position", () => {
+    const playhead = {
+      segments: [
+        { fromCtx: 0, pos: 5, rate: 1 },
+        { fromCtx: 4, pos: 2, rate: 1 },
+        { fromCtx: 9, pos: 5, rate: 1 },
+      ],
+    };
+    expect(cuedAt(playhead, 5)).toBe(0);
+    expect(cuedAt(playhead, 5, 1)).toBe(9);
+    expect(cuedAt(playhead, 6)).toBeNull();
   });
 });

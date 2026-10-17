@@ -71,13 +71,27 @@ async function tapAtBeats(page: Page, beats: readonly number[]): Promise<void> {
   }, beats);
 }
 
-/** Waits until the Check is running and the heard playhead has moved past `beat`. */
+/** Waits until the Lesson is in `phase` and the heard playhead is past `beat`, but not `before`. */
+async function playingPast(page: Page, phase: string, beat: number, before = Number.POSITIVE_INFINITY): Promise<void> {
+  await page.waitForFunction(
+    ({ expected, past, until }) => {
+      const lesson = (window as LessonWindow).learnToDjLesson;
+      const reading = lesson?.engine.playhead("A");
+      const heard = reading?.beat ?? 0;
+      return lesson?.phase() === expected && reading?.ok === true && heard > past && heard < until;
+    },
+    // Infinity does not survive the trip into the page.
+    { expected: phase, past: beat, until: Number.isFinite(before) ? before : Number.MAX_VALUE },
+    { timeout: 60_000 },
+  );
+}
+
+/**
+ * Waits until the Check is running and the heard playhead has moved just past `beat`. Bounded above:
+ * for the output latency after the Check's cue, what is heard is still the hook's loop further on.
+ */
 async function checkPlayingPast(page: Page, beat: number): Promise<void> {
-  await page.waitForFunction((past) => {
-    const lesson = (window as LessonWindow).learnToDjLesson;
-    const reading = lesson?.engine.playhead("A");
-    return lesson?.phase() === "check" && reading?.ok === true && (reading.beat ?? 0) > past;
-  }, beat);
+  await playingPast(page, "check", beat, beat + 2);
 }
 
 test("deck-basics: the hook starts on PLAY, and a fade in and out by keyboard passes the Check", async ({ page }) => {
@@ -119,6 +133,9 @@ test("beats-and-bars: taps on every beat, then on every 1, pass the Check", asyn
   await openLesson(page, learnerId, "beats-and-bars");
   await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("Tap Space on every kick");
 
+  // As a Learner does: let the hook's loop play on into the downbeat section (bar 17, beat 64) before
+  // the Check. The deck's playhead model then holds those positions twice; grading must use the Check's.
+  await playingPast(page, "hook", 66);
   await page.keyboard.press("Enter");
   // Anchor only once the heard playhead is moving (past the count-in's first beat, 28): Play takes
   // effect after the output latency, and a stationary reading would put every tap early.
@@ -147,6 +164,8 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
 
   // The synthetic groove: phrase k starts on beat 32·(k − 1). The Check leads in from bar 7 (beat 24)
   // and taps phrases 2–9 (beats 32 … 256): the breakdown is the 4th tapped phrase, the drop the 6th.
+  // The hook's loop plays into the tap section (phrase 2, beat 32) first, as it does for a Learner.
+  await playingPast(page, "hook", 34);
   await page.keyboard.press("Enter");
   await checkPlayingPast(page, 24.5);
   const caption = page.getByRole("status", { name: "Lesson caption" });

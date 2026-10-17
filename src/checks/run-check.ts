@@ -1,6 +1,6 @@
 // `runCheck(spec, attempt)`: the one grading path for Lessons, Placement, cold re-passes,
 // warm-ups and bonus exercises. Pure and deterministic: no I/O, no clock.
-import type { Aids, LessonId, LessonTask, TaskSpec } from "@shared/attempt.ts";
+import type { Aids, CtxSpan, LessonId, LessonTask, TaskSpec } from "@shared/attempt.ts";
 import type { CheckOutcome, CheckResult, VoidAttempt, VoidReason } from "@shared/check-result.ts";
 import type { CheckContext, LessonCheck, OwnCriteria, TaskOf } from "./context.ts";
 import { gradeDegraded } from "./degraded.ts";
@@ -64,6 +64,26 @@ function runOwn(context: CheckContext, task: LessonTask): OwnCriteria {
   return lessonCheckFor(task).run(context, task);
 }
 
+/** The heard spans a task grades in. The Lesson content finds them in the attempt's playhead. */
+function taskSections(task: LessonTask): CtxSpan[] {
+  switch (task.lessonId) {
+    case "beats-and-bars":
+      return [task.beatSection, task.downbeatSection];
+    case "phrases":
+    case "headphone-cue":
+      return [task.tapSection];
+    case "crossfader":
+      return task.cutSection === null ? [task.blendSection] : [task.blendSection, task.cutSection.span];
+    default:
+      return [];
+  }
+}
+
+/** A section the deck never reached, or never got to the end of, has no finite, non-empty span. */
+function isHeard(section: CtxSpan): boolean {
+  return Number.isFinite(section.from) && Number.isFinite(section.to) && section.from < section.to;
+}
+
 function voidReason(spec: TaskSpec, attempt: GradedAttempt): VoidReason | null {
   if (attempt.abandoned) return "abandoned";
   const interruption = attempt.interruptions.find(
@@ -75,7 +95,8 @@ function voidReason(spec: TaskSpec, attempt: GradedAttempt): VoidReason | null {
     const residual = attempt.grids[track.trackId]?.rmsResidualMs;
     return residual === undefined || !(residual <= MAX_GRID_RESIDUAL_MS);
   });
-  return untrusted ? "gridUntrusted" : null;
+  if (untrusted) return "gridUntrusted";
+  return taskSections(spec.task).every(isHeard) ? null : "sectionNotHeard";
 }
 
 /** An aid left on where the Lesson locks it off would grade a different skill: a content bug. */

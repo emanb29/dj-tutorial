@@ -84,7 +84,11 @@ export interface CriterionResult {
   readonly detail?: Readonly<Record<string, number>>;
 }
 
-export type VoidReason = "contextSuspended" | "tabHidden" | "gridUntrusted" | "abandoned";
+/**
+ * `sectionNotHeard`: a section the task grades was never (fully) played in the attempt, e.g. the deck
+ * stopped or the attempt timed out before it; grading it would count every target as missed.
+ */
+export type VoidReason = "contextSuspended" | "tabHidden" | "gridUntrusted" | "abandoned" | "sectionNotHeard";
 
 export interface FinalMixBands {
   readonly beatSyncing: Band;

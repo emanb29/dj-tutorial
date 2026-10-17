@@ -96,6 +96,24 @@ describe("beats-and-bars", () => {
     const result = grade(definition, plan, recorded(track, plan, { events: taps([...everyBeat, ...everyBeatAgain]) }), end);
     expect(result.outcome).toEqual({ kind: "failed", failedCriteria: ["beats-and-bars.downbeat-taps"] });
   });
+
+  it("finds the sections after the Check's own cue, not in the practice still heard as the attempt starts", () => {
+    // The attempt starts while practice is heard just before bar 9; the Check's cue lands 50 ms later.
+    const practice = { fromCtx: PLAY_AT - 0.05, pos: beatsFrom - BEAT / 2 - 0.01, rate: 1 };
+    const segments = [practice, { fromCtx: PLAY_AT, pos: plan.startPos, rate: 1 }];
+    const tapEvents = taps([...everyBeat, ...everyOne]);
+    const result = grade(definition, plan, recorded(track, plan, { events: tapEvents, decks: { A: { trackId: track.trackId, playhead: { segments } } } }), end);
+    expect(result.outcome).toEqual({ kind: "passed" });
+  });
+
+  it("voids an attempt whose deck stopped before the downbeat section, rather than failing every target", () => {
+    const segments = [
+      { fromCtx: PLAY_AT, pos: plan.startPos, rate: 1 },
+      { fromCtx: heard(plan, downbeatsFrom - 4 * BEAT), pos: downbeatsFrom - 4 * BEAT, rate: 0 },
+    ];
+    const result = grade(definition, plan, recorded(track, plan, { events: taps(everyBeat), decks: { A: { trackId: track.trackId, playhead: { segments } } } }), end);
+    expect(result.outcome).toEqual({ kind: "void", reason: "sectionNotHeard" });
+  });
 });
 
 describe("phrases", () => {

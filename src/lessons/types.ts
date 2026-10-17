@@ -1,6 +1,6 @@
 // The shape of a Lesson as data: what the Learner touches first (the hook), how they practise, and
 // how the Check is set up on the chosen track. Pure data plus pure builders; no audio, no React.
-import type { Attempt, BeatGrid, LessonId, LessonTask } from "@shared/attempt.ts";
+import type { Attempt, BeatGrid, CtxSpan, LessonId, LessonTask } from "@shared/attempt.ts";
 import type { CriterionId } from "@shared/check-result.ts";
 import type { ControlId } from "@app/controller/control-ids.ts";
 
@@ -116,8 +116,12 @@ export interface LessonDefinition {
   /** Questions asked after the audio part of the Check (phrases); answers go into the attempt. */
   readonly questions: readonly CheckQuestion[];
   readonly planCheck: (track: LessonTrack) => CheckPlan;
-  /** The task the Check grades, from the plan and what was recorded. Pure. */
-  readonly taskFor: (track: LessonTrack, plan: CheckPlan, attempt: Attempt) => LessonTask;
+  /**
+   * The task the Check grades, from the plan and what was recorded. Pure. A recorded playhead model
+   * holds the track's whole history since it was loaded (hook, practice, earlier attempts): look for
+   * this attempt's moments within `window` only.
+   */
+  readonly taskFor: (track: LessonTrack, plan: CheckPlan, attempt: Attempt, window: CtxSpan) => LessonTask;
   /** Authored tips per criterion (coach-design §1 c), rotated. */
   readonly tips: Readonly<Partial<Record<CriterionId, readonly string[]>>>;
 }

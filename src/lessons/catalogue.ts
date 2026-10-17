@@ -1,7 +1,7 @@
 // Lessons 1–3 as data (docs/lesson-catalogue.md §1, check-design §4): the hook, practice, the Check
 // plan on the chosen track, and authored tips. Captions, not prose: a few words, the key in brackets.
 import type { Aids, Attempt, CtxSpan, LessonId, LessonTask, TaskSpec } from "@shared/attempt.ts";
-import { barStart, beatSec, heardTimeOf, phraseOf, phraseStart } from "./track.ts";
+import { barStart, beatSec, cuedAt, heardTimeOf, phraseOf, phraseStart } from "./track.ts";
 import type { CheckPlan, ControlId, LessonDefinition, LessonTrack } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
@@ -11,15 +11,19 @@ const CHECKPOINT_BARS = 4;
 /** Lesson aids for Lessons 1–3: no sync or quantize to speak of, captions on. */
 export const LESSON_AIDS: Aids = { sync: false, quantize: false, bpmDisplay: false, phaseMeter: false, lessonText: true };
 
-/** Heard span of track positions `[fromPos, toPos)`, both shifted half a beat early so beats sit inside. */
-function heardSpan(track: LessonTrack, attempt: Attempt, fromPos: number, toPos: number): CtxSpan {
+/**
+ * Heard span of track positions `[fromPos, toPos)`, both shifted half a beat early so beats sit inside,
+ * as deck A played them after the Check's own cue to `plan.startPos` in `window`. The recorded playhead
+ * also holds the hook, practice and earlier attempts, which play the same positions; and for the
+ * output latency after the attempt starts, the practice is still heard. A bound the deck never reached
+ * is +Infinity: runCheck voids such an attempt (`sectionNotHeard`) rather than failing it.
+ */
+function heardSpan(track: LessonTrack, plan: CheckPlan, attempt: Attempt, window: CtxSpan, fromPos: number, toPos: number): CtxSpan {
   const playhead = attempt.decks.A?.playhead;
+  const cued = playhead === undefined ? null : cuedAt(playhead, plan.startPos, window.from);
   const half = beatSec(track.grid) / 2;
-  const from = playhead === undefined ? null : heardTimeOf(playhead, fromPos - half);
-  const to = playhead === undefined ? null : heardTimeOf(playhead, toPos - half);
-  // A deck that never reached the section grades as an empty section: every target missed.
-  if (from === null) return { from: 0, to: 0 };
-  return { from, to: to ?? Number.POSITIVE_INFINITY };
+  const heard = (pos: number) => (playhead === undefined || cued === null ? null : heardTimeOf(playhead, pos - half, cued));
+  return { from: heard(fromPos) ?? Number.POSITIVE_INFINITY, to: heard(toPos) ?? Number.POSITIVE_INFINITY };
 }
 
 /** The first phrase at or after 2 whose 16 bars hold no breakdown or build (they may have no kick). */
@@ -101,13 +105,13 @@ const beatsAndBars: LessonDefinition = {
       ],
     };
   },
-  taskFor: (track, _plan, attempt): LessonTask => {
+  taskFor: (track, plan, attempt, attemptWindow): LessonTask => {
     const beatsBar = (steadyPhrase(track) - 1) * BARS_PER_PHRASE + 1;
     const at = (bar: number) => barStart(track.grid, bar);
     return {
       lessonId: "beats-and-bars",
-      beatSection: heardSpan(track, attempt, at(beatsBar), at(beatsBar + 8)),
-      downbeatSection: heardSpan(track, attempt, at(beatsBar + 8), at(beatsBar + 16)),
+      beatSection: heardSpan(track, plan, attempt, attemptWindow, at(beatsBar), at(beatsBar + 8)),
+      downbeatSection: heardSpan(track, plan, attempt, attemptWindow, at(beatsBar + 8), at(beatsBar + 16)),
     };
   },
   tips: {
@@ -152,11 +156,11 @@ const phrases: LessonDefinition = {
       ],
     };
   },
-  taskFor: (track, _plan, attempt): LessonTask => {
+  taskFor: (track, plan, attempt, attemptWindow): LessonTask => {
     const window = phraseWindow(track) ?? { first: 2, breakdown: 0, drop: 0 };
     return {
       lessonId: "phrases",
-      tapSection: heardSpan(track, attempt, phraseStart(track.grid, window.first), phraseStart(track.grid, window.first + BARS_PER_PHRASE)),
+      tapSection: heardSpan(track, plan, attempt, attemptWindow, phraseStart(track.grid, window.first), phraseStart(track.grid, window.first + BARS_PER_PHRASE)),
       sections: { breakdown: window.breakdown - window.first + 1, drop: window.drop - window.first + 1 },
     };
   },
@@ -203,7 +207,7 @@ export function checkSpecFor(
   return {
     mode: "lesson",
     variant: "full",
-    task: definition.taskFor(track, plan, attempt),
+    task: definition.taskFor(track, plan, attempt, options.window),
     tracks: [{ trackId: track.trackId, trackSetId: track.source === "synthetic" ? null : `${definition.id}-house`, deck: "A" }],
     aids: LESSON_AIDS,
     window: options.window,

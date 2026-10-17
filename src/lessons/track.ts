@@ -98,13 +98,21 @@ export function lessonTrackFromAnalysis(
   };
 }
 
-/** The heard time at which a recorded deck plays track position `pos`; null if it never does. */
-export function heardTimeOf(playhead: PlayheadModel, pos: number): CtxTime | null {
+/**
+ * The first heard time at or after `notBefore` at which a recorded deck plays track position `pos`;
+ * null if it never does.
+ */
+export function heardTimeOf(playhead: PlayheadModel, pos: number, notBefore: CtxTime = Number.NEGATIVE_INFINITY): CtxTime | null {
   for (const [index, segment] of playhead.segments.entries()) {
     if (segment.rate <= 0) continue;
     const end = playhead.segments[index + 1]?.fromCtx ?? Number.POSITIVE_INFINITY;
     const at = segment.fromCtx + (pos - segment.pos) / segment.rate;
-    if (at >= segment.fromCtx - 1e-9 && at < end) return at;
+    if (at >= Math.max(segment.fromCtx - 1e-9, notBefore) && at < end) return at;
   }
   return null;
+}
+
+/** When the deck was cued to `pos` (a seek or a start exactly there) at or after `notBefore`; null if never. */
+export function cuedAt(playhead: PlayheadModel, pos: number, notBefore: CtxTime = Number.NEGATIVE_INFINITY): CtxTime | null {
+  return playhead.segments.find((segment) => segment.fromCtx >= notBefore && Math.abs(segment.pos - pos) < 1e-6)?.fromCtx ?? null;
 }

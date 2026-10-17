@@ -14,6 +14,7 @@ const VOID_WORDS = {
   tabHidden: "the tab was hidden",
   gridUntrusted: "this track's beat grid is too uneven to grade",
   abandoned: "it was left early",
+  sectionNotHeard: "the deck never played all of the part being graded. Let the music run until the Check ends by itself, then go again",
   recordingFailed: "it could not be recorded",
 } as const;
 

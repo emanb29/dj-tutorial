@@ -189,7 +189,11 @@ by whole bars. The Check uses the confirmed markers. Prep itself is not graded.
 | Ending | "Done", or timeout = task length + 16 bars (timeout = criteria not met) | same | same |
 
 An attempt is **void** (not pass, not fail, not counted) if the AudioContext suspends or the tab is
-hidden during the task window, a grid fails `grid-trust`, or the Learner abandons it.
+hidden during the task window, a grid fails `grid-trust`, the Learner abandons it, or the deck never
+played all of a section the task grades (`sectionNotHeard`: grading it would count every target missed).
+A recorded playhead model holds the track's whole history since it was loaded (hook, practice, earlier
+attempts, which play the same positions), so Lesson content looks for a section's heard times only
+after the Check's own cue inside the task window.
 
 ## 7. Variants
 
@@ -286,7 +290,7 @@ interface CriterionResult {
   detail?: Readonly<Record<string, number>>;   // e.g. { matched: 29, extras: 1, medianOffsetMs: -12 }
 }
 
-type VoidReason = "contextSuspended" | "tabHidden" | "gridUntrusted" | "abandoned";
+type VoidReason = "contextSuspended" | "tabHidden" | "gridUntrusted" | "abandoned" | "sectionNotHeard";
 
 interface CheckResult {
   schemaVersion: 1;
