@@ -1,3 +1,62 @@
 // The audio engine: owns the only AudioContext, the decks and the mixer (ADR 0001).
-// Nothing audio-rate goes through React state.
-export {};
+// Nothing audio-rate goes through React state: the UI sends commands and reads events and playheads.
+// Attempts are recorded in the canonical shape of shared/attempt.ts, which the Checks read.
+
+export { createAudioEngine, AudioEngine, TRACK_HISTORY_LIMIT } from "./engine.ts";
+export type {
+  AudioEngineOptions,
+  ChannelSnapshot,
+  CommandEvent,
+  CuePointEvent,
+  EngineDeckSnapshot,
+  EngineEvents,
+  EngineMixerSnapshot,
+  PlayheadReading,
+} from "./engine.ts";
+
+export { CONTINUOUS_CONTROLS, CONTROL_RANGES, JOG_BEND_LIMIT } from "./commands.ts";
+export type { ChannelControl, CommandInput, Control, EngineCommand, EqControl } from "./commands.ts";
+
+export { AttemptRecorder, DEFAULT_RECORDER_CAPACITY } from "./recorder.ts";
+export type { AttemptDetails, RecordedAttempt, RecordedControlEvent, RecorderCapacity, RecorderOptions } from "./recorder.ts";
+
+export { MasterOnlyMonitor, SplitCueMonitor } from "./monitor.ts";
+export type { MonitorBuses, MonitorOutput } from "./monitor.ts";
+
+export type { BusMeterFrame, MeterBus } from "./meter.ts";
+export type { DeckSnapshot, MasterTempoAvailability, TrackInfo, TrackRecord } from "./deck.ts";
+export type { EqBand, MixerState } from "./mixer.ts";
+export { LOW_MID_CROSSOVER_HZ, MID_HIGH_CROSSOVER_HZ } from "./mixer.ts";
+
+export { BEATS_PER_BAR, barBeatAt, beatAt, beatGridProblems, beatLengthSec, positionOfBeat } from "./beat-grid.ts";
+export { PLAYHEAD_SEGMENT_LIMIT, PlayheadTracker } from "./playhead.ts";
+export { phaseAlignedPosition, syncTempo } from "./sync.ts";
+export { TEMPO_RANGES, tempoFaderForRate, tempoRate } from "./tempo.ts";
+export type { TempoRangePercent } from "./tempo.ts";
+export { audioContextClock, heardContextTime, renderTimeClock } from "./output-clock.ts";
+export type { OutputClock, OutputTimestamp } from "./output-clock.ts";
+
+export {
+  FILTER_DEAD_ZONE,
+  channelFaderGain,
+  crossfaderGain,
+  decibelsToGain,
+  eqKnobToDecibels,
+  filterKnobSettings,
+  gainToDecibels,
+  masterKnobToDecibels,
+  toTimelineDecibels,
+  trimKnobToDecibels,
+} from "./curves.ts";
+export type { CentredKnob, FaderPosition, FilterSettings } from "./curves.ts";
+
+export { LoudnessMeter, METER_FRAMES_PER_SECOND } from "./loudness.ts";
+export type { LoudnessFrame } from "./loudness.ts";
+
+export { describeError } from "./result.ts";
+export type { AudioEngineError, Result } from "./result.ts";
+export { DECK_IDS, INPUT_DEVICES, otherDeck } from "./types.ts";
+export type { CtxTime, DeckId, InputDevice } from "./types.ts";
+
+// The attempt contract the recorder produces, re-exported for the app's convenience.
+export type { Attempt, BeatGrid, ControlEvent, ControlId, MeterFrame, PlayheadSegment } from "@shared/attempt.ts";
