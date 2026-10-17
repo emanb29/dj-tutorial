@@ -248,3 +248,11 @@ Additions from `/teach` (see GLOSSARY.md):
 ### Final project (owner, 2026-10-16)
 
 The owner's Mission is to post their own mixes and edits (DJ remixes, not produced remixes) to SoundCloud. So `final-mix` becomes the **final project**: the app records the Learner's mix from the master bus to an audio file they can download. Set recording is in v1 scope **for the final project only**. A general set-recording feature stays out. Uploading to SoundCloud is done by hand, and licensing is handled outside this map. Produced (DAW) remixes are a possible future effort.
+
+### Bass music (owner, 2026-10-17: Q7b)
+
+The owner's own tracks are mostly bass music: dubstep and riddim at about 140–150 BPM, plus some trap and drum & bass. This revises Q7:
+- Early Lessons, up to `cut-on-phrase` and `sync-blend`, stay on house, where the beat is easiest to hear.
+- From `bass-swap` and the By-ear group onwards, Lesson track sets include a **bass-music set (140–150 BPM, half-time)** drawn from the owner's tracks.
+- **`final-mix` (the final project) may be bass music.**
+- Bass flips usually have short intros (about 8 bars), so for this Learner the Coach should place the `loop-transition` and `hot-cues` electives early. Quick cuts, drop swaps and loop transitions suit the genre better than long EQ blends.
