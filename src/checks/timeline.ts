@@ -171,7 +171,8 @@ export const GESTURE_START_TRAVEL = 0.1;
 export function faderGestureStart(
   events: readonly ControlEvent[],
   control: ControlId,
-  deck: DeckId,
+  /** `undefined` for the crossfader, which has no deck. */
+  deck: DeckId | undefined,
   t: CtxTime,
   initial: number,
 ): CtxTime | null {

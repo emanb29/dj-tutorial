@@ -1,6 +1,7 @@
 // Checks: pure functions over a recorded attempt, shared by the client and the eval scripts (ADR 0001).
 // Grading is `runCheck`; Skill profile writes are `applyCheckResult`; warm-ups are `scheduleWarmups`.
-export { runCheck, MAX_GRID_RESIDUAL_MS } from "./run-check.ts";
+export { runCheck, LOCKED_OFF_AIDS, MAX_GRID_RESIDUAL_MS } from "./run-check.ts";
+export type { EngineCommandRecord, GradedAttempt } from "./deck-commands.ts";
 export {
   applyCheckResult,
   criterionRecords,

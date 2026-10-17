@@ -9,6 +9,8 @@ import { cueOnSeconds, entryTime, exitTime, frameAt, framesIn, isAudible, MAX_FR
 import { phraseOffsetBeats } from "./phrasing.ts";
 import { CUED_BEFORE_S } from "./lessons/cut-on-phrase.ts";
 import { CLIP_DBFS } from "./lessons/deck-basics.ts";
+import { EQ_BANDS } from "./lessons/eq-basics.ts";
+import { controlsReset, drift, oneBass, overcorrect, syncKept } from "./standing-mixing.ts";
 import { controlEvents, controlValueAt } from "./timeline.ts";
 
 /** Severity before `final-mix` and in it; `null` where the criterion does not apply. */
@@ -46,10 +48,11 @@ const DECKS: readonly DeckId[] = ["A", "B"];
 
 interface StandingDefinition {
   readonly id: StandingId;
-  /** Applies once this Lesson is passed. */
-  readonly from: LessonId;
-  readonly situation: keyof Situations | "any";
-  readonly measure: (context: CheckContext, severity: Severity) => CriterionResult;
+  /** Applies once any of these Lessons is passed. */
+  readonly from: readonly LessonId[];
+  /** `syncAvailable`: the task offers SYNC (`spec.aids.sync`). */
+  readonly situation: keyof Situations | "any" | "syncAvailable";
+  readonly measure: (context: CheckContext, severity: Severity, passed: ReadonlySet<LessonId>) => CriterionResult;
 }
 
 function noClip(context: CheckContext, severity: Severity): CriterionResult {
@@ -176,11 +179,6 @@ function noRecue(context: CheckContext, severity: Severity): CriterionResult {
   });
 }
 
-const EQ_BANDS = [
-  ["eqHigh", "eqHighDb"],
-  ["eqMid", "eqMidDb"],
-  ["eqLow", "eqLowDb"],
-] as const;
 
 /** Longest stretch, in bars, that any EQ band sits above +3 dB. */
 function noBoost(context: CheckContext, severity: Severity): CriterionResult {
@@ -214,25 +212,39 @@ function noBoost(context: CheckContext, severity: Severity): CriterionResult {
 
 /**
  * Implemented standing criteria, in check-design §3 order. Deferred until their Lessons' Checks
- * exist: controls-reset, sync-kept, one-bass, drift, overcorrect, key-clash, technique-mix.
+ * exist: key-clash and technique-mix (`final-mix`), and the FX part of controls-reset (`echo-out`).
  */
 const DEFINITIONS: readonly StandingDefinition[] = [
-  { id: "no-clip", from: "gain-staging", situation: "any", measure: noClip },
-  { id: "no-dead-air", from: "cut-on-phrase", situation: "transition", measure: noDeadAir },
-  { id: "on-phrase", from: "cut-on-phrase", situation: "transition", measure: onPhrase },
-  { id: "level-match", from: "cut-on-phrase", situation: "transition", measure: levelMatch },
-  { id: "cued-first", from: "cut-on-phrase", situation: "transition", measure: cuedFirst },
-  { id: "trim-still", from: "sync-blend", situation: "transition", measure: trimStill },
-  { id: "no-boost", from: "eq-basics", situation: "any", measure: noBoost },
-  { id: "no-recue", from: "nudge-phase", situation: "transition", measure: noRecue },
+  { id: "no-clip", from: ["gain-staging"], situation: "any", measure: noClip },
+  { id: "no-dead-air", from: ["cut-on-phrase"], situation: "transition", measure: noDeadAir },
+  { id: "on-phrase", from: ["cut-on-phrase"], situation: "transition", measure: onPhrase },
+  { id: "level-match", from: ["cut-on-phrase"], situation: "transition", measure: levelMatch },
+  { id: "cued-first", from: ["cut-on-phrase"], situation: "transition", measure: cuedFirst },
+  { id: "trim-still", from: ["sync-blend"], situation: "transition", measure: trimStill },
+  { id: "no-boost", from: ["eq-basics"], situation: "any", measure: noBoost },
+  {
+    id: "controls-reset",
+    // Each Lesson teaches its own part: EQ from eq-basics, CFX from filter-transition.
+    from: ["eq-basics", "filter-transition"],
+    situation: "transition",
+    measure: (context, severity, passed) =>
+      controlsReset(context, severity, { eq: passed.has("eq-basics"), cfx: passed.has("filter-transition") }),
+  },
+  // "Warn (sync Checks only)": only where the task offers sync; n/a in final-mix (severity table).
+  { id: "sync-kept", from: ["sync-blend"], situation: "syncAvailable", measure: syncKept },
+  { id: "no-recue", from: ["nudge-phase"], situation: "transition", measure: noRecue },
+  { id: "one-bass", from: ["blend-by-ear"], situation: "transition", measure: oneBass },
+  { id: "drift", from: ["blend-by-ear"], situation: "transition", measure: drift },
+  { id: "overcorrect", from: ["tempo-by-ear"], situation: "any", measure: overcorrect },
 ];
 
 export function standingCriteria(context: CheckContext, situations: Situations): CriterionResult[] {
-  const passed = new Set(context.spec.passedLessons);
+  const passed: ReadonlySet<LessonId> = new Set(context.spec.passedLessons);
+  const present = (situation: StandingDefinition["situation"]) =>
+    situation === "any" || (situation === "syncAvailable" ? context.spec.aids.sync : situations[situation]);
   return DEFINITIONS.flatMap((definition) => {
     const severity = standingSeverity(definition.id, context.lessonId);
-    const applies =
-      severity !== null && passed.has(definition.from) && (definition.situation === "any" || situations[definition.situation]);
-    return applies ? [definition.measure(context, severity)] : [];
+    const applies = severity !== null && definition.from.some((lesson) => passed.has(lesson)) && present(definition.situation);
+    return applies ? [definition.measure(context, severity, passed)] : [];
   });
 }

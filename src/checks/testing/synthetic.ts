@@ -13,6 +13,7 @@ import type {
   PlayheadSegment,
   TaskSpec,
 } from "@shared/attempt.ts";
+import type { EngineCommandRecord } from "../deck-commands.ts";
 
 export const BPM = 120;
 export const BEAT = 60 / BPM;
@@ -122,6 +123,23 @@ export function event(ctx: number, control: ControlEvent["control"], value: numb
   return deck === undefined ? { ctx, control, value } : { ctx, control, value, deck };
 }
 
+/** An accepted engine command, as the recorder's `engineEvents` holds it (heard = applied here). */
+export function engineCommand(
+  ctx: number,
+  control: string,
+  deck: DeckId,
+  value: number | boolean,
+  options: { readonly byEngine?: boolean; readonly rejected?: boolean } = {},
+): EngineCommandRecord {
+  return {
+    command: { control, deck, value },
+    device: options.byEngine === true ? "engine" : "keyboard",
+    heardCtx: options.byEngine === true ? null : ctx,
+    appliedCtx: ctx,
+    rejected: options.rejected === true ? { kind: "refused" } : null,
+  };
+}
+
 export function taps(times: readonly number[]): ControlEvent[] {
   return times.map((ctx) => event(ctx, "tap", 1));
 }
@@ -180,4 +198,64 @@ export function cutScenario(options: CutScenario = {}): Attempt {
       ),
     },
   });
+}
+
+export interface BlendScenario {
+  /** When B starts playing (default 32 s, A's third phrase start). */
+  readonly playB?: number;
+  /** B's track position when it starts (default 0, its first phrase marker). */
+  readonly bStartPos?: number;
+  /** B's playback rate (default 1, same tempo). */
+  readonly bRate?: number;
+  /** B's playhead, replacing the default single segment. */
+  readonly bSegments?: readonly PlayheadSegment[];
+  /** B's channel fader opens here (default `playB`). */
+  readonly inB?: number;
+  /** A's channel fader closes here (default 12 bars after `inB`). */
+  readonly outA?: number;
+  /** Starting mixer per channel, merged over the defaults (A open, B closed). */
+  readonly initialA?: Partial<ChannelSnapshot>;
+  readonly initialB?: Partial<ChannelSnapshot>;
+  /** More events (trim, EQ, crossfader …), merged in time order. */
+  readonly extraEvents?: readonly ControlEvent[];
+  readonly engineEvents?: readonly EngineCommandRecord[];
+  /** Master momentary loudness at `t` (default −14). */
+  readonly masterLufs?: (t: number) => number;
+  /** Replaces the default channel-fader events entirely (crossfader blends). */
+  readonly faderEvents?: readonly ControlEvent[];
+  readonly crossfader?: number;
+}
+
+export const BLEND_WINDOW: CtxSpan = { from: 0, to: 96 };
+
+/** A plays from 0 with its fader up; B (cued at 2 s) starts at `playB`, fades in at `inB`; A closes at `outA`. */
+export function blendScenario(options: BlendScenario = {}): Attempt & { readonly engineEvents: readonly EngineCommandRecord[] } {
+  const { playB = 2 * PHRASE, bStartPos = 0, bRate = 1, extraEvents = [], engineEvents = [], masterLufs = () => -14 } = options;
+  const inB = options.inB ?? playB;
+  const outA = options.outA ?? inB + 12 * BAR;
+  const end = BLEND_WINDOW.to;
+  const faders = options.faderEvents ?? [event(inB, "channelFader", 1, "B"), event(outA, "channelFader", 0, "A")];
+  const bSegments = options.bSegments ?? playing(playB, bStartPos, undefined, bRate);
+  const bStart = bSegments[0]?.fromCtx ?? playB;
+  return {
+    ...attempt({
+      decks: {
+        A: { trackId: "track-a", playhead: { segments: playing(0) } },
+        B: { trackId: "track-b", playhead: { segments: bSegments } },
+      },
+      initialMixer: {
+        A: channel({ channelFader: 1, ...options.initialA }),
+        B: channel(options.initialB),
+        crossfader: options.crossfader ?? 0.5,
+      },
+      events: [event(2, "cueMonitor", 1, "B"), ...faders, ...extraEvents].sort((a, b) => a.ctx - b.ctx),
+      cuePoints: [{ ctx: 1, deck: "B", trackId: "track-b", pos: bStartPos }],
+      meters: {
+        master: frames(0, end, (t) => ({ peak: -3, momentary: masterLufs(t) })),
+        A: frames(0, end, () => ({ peak: -3, momentary: -14 })),
+        B: frames(0, end, (t) => (t >= bStart ? { peak: -3, momentary: -14 } : SILENT)),
+      },
+    }),
+    engineEvents,
+  };
 }

@@ -1,0 +1,93 @@
+import { describe, expect, it } from "vitest";
+import type { ControlEvent, PlayheadSegment } from "@shared/attempt.ts";
+import type { CheckResult } from "@shared/check-result.ts";
+import type { EngineCommandRecord } from "../deck-commands.ts";
+import { runCheck } from "../run-check.ts";
+import { BPM, attempt, engineCommand, event, spec } from "../testing/synthetic.ts";
+
+const TARGETS = [122, 118, 125];
+const CLIPS = [
+  { answerKey: "clip1", masterTempoOn: true },
+  { answerKey: "clip2", masterTempoOn: false },
+];
+
+/** B plays at each BPM in turn for 10 s; the Learner confirms each at the end of its 10 s. */
+function setTo(bpms: readonly number[]): PlayheadSegment[] {
+  let pos = 0;
+  return bpms.map((bpm, index) => {
+    const segment = { fromCtx: index * 10, pos, rate: bpm / BPM };
+    pos += 10 * segment.rate;
+    return segment;
+  });
+}
+
+const confirms: ControlEvent[] = [event(9, "ready", 1, "B"), event(19, "ready", 1, "B"), event(29, "done", 1)];
+
+function check(
+  segments: readonly PlayheadSegment[],
+  options: {
+    answers?: Record<string, number>;
+    events?: readonly ControlEvent[];
+    engineEvents?: readonly EngineCommandRecord[];
+    targets?: readonly number[];
+    clips?: typeof CLIPS;
+  } = {},
+): CheckResult {
+  const result = runCheck(
+    spec({ lessonId: "tempo-fader", targetsBpm: options.targets ?? TARGETS, masterTempoClips: options.clips ?? CLIPS }, { from: 0, to: 30 }),
+    {
+      ...attempt({
+        decks: { B: { trackId: "track-b", playhead: { segments } } },
+        events: options.events ?? confirms,
+        answers: options.answers ?? { clip1: 1, clip2: 0 },
+      }),
+      engineEvents: options.engineEvents ?? [],
+    },
+  );
+  if (!("criteria" in result)) throw new Error("expected a graded result");
+  return result;
+}
+
+const byId = (result: CheckResult, id: string) => result.criteria.find((criterion) => criterion.id === id);
+
+describe("tempo-fader", () => {
+  it("passes three BPMs set within 0.05 and both Master Tempo clips named", () => {
+    const result = check(setTo(TARGETS));
+
+    expect(result.outcome).toEqual({ kind: "passed" });
+    expect(result.criteria.map((criterion) => criterion.id)).toEqual(["tempo-fader.set-bpm", "tempo-fader.master-tempo-ear"]);
+    expect(byId(result, "tempo-fader.set-bpm")?.measured).toBeCloseTo(0);
+  });
+
+  it("allows 0.05 BPM off a target and fails beyond, on any one of the three", () => {
+    expect(byId(check(setTo([122.05, 118, 125])), "tempo-fader.set-bpm")?.status).toBe("met");
+    expect(byId(check(setTo([122, 117.94, 125])), "tempo-fader.set-bpm")).toMatchObject({ status: "notMet" });
+    expect(byId(check(setTo([122, 117.94, 125])), "tempo-fader.set-bpm")?.measured).toBeCloseTo(0.06);
+  });
+
+  it("factors out a jog bend held at the confirm press: the tempo fader is what is set", () => {
+    const bent = [...setTo(TARGETS).slice(0, 2), { fromCtx: 18.5, pos: 0, rate: (118 / BPM) * 1.05 }];
+    // Re-anchor the bent segment's position; only rate matters for BPM.
+    const result = check([...bent, ...setTo(TARGETS).slice(2)], {
+      engineEvents: [engineCommand(18.5, "jog-bend", "B", 0.05), engineCommand(19.5, "jog-bend", "B", 0)],
+    });
+
+    expect(byId(result, "tempo-fader.set-bpm")?.status).toBe("met");
+  });
+
+  it("needs a confirm press per target", () => {
+    expect(byId(check(setTo(TARGETS), { events: confirms.slice(0, 2) }), "tempo-fader.set-bpm")).toMatchObject({
+      status: "notMet",
+      measured: null,
+    });
+  });
+
+  it("needs every Master Tempo clip right (2 of 2; 1 of 1 in the short form)", () => {
+    expect(byId(check(setTo(TARGETS), { answers: { clip1: 1, clip2: 1 } }), "tempo-fader.master-tempo-ear")).toMatchObject({
+      status: "notMet",
+      measured: 1,
+    });
+    const short = check(setTo([122]), { targets: [122], clips: CLIPS.slice(0, 1), events: [event(29, "done", 1)], answers: { clip1: 1 } });
+    expect(short.outcome).toEqual({ kind: "passed" });
+  });
+});

@@ -1,6 +1,5 @@
 // What every criterion function reads: the spec, the attempt and per-deck lookups.
 import type {
-  Attempt,
   BeatGrid,
   CtxSpan,
   CtxTime,
@@ -12,12 +11,13 @@ import type {
   TaskSpec,
 } from "@shared/attempt.ts";
 import type { CriterionResult, Evidence } from "@shared/check-result.ts";
+import type { GradedAttempt } from "./deck-commands.ts";
 import { framesIn } from "./mix.ts";
 import { beatSeconds } from "./timeline.ts";
 
 export interface CheckContext {
   readonly spec: TaskSpec;
-  readonly attempt: Attempt;
+  readonly attempt: GradedAttempt;
   readonly window: CtxSpan;
   readonly lessonId: LessonId;
 }

@@ -72,6 +72,23 @@ export function judgeAll(first: Judgement, ...rest: readonly Judgement[]): Crite
   };
 }
 
+/**
+ * Several criteria reported as one (e.g. `crossfader.xf-blend` = sync-blend's rules): met when all
+ * are, margin = the worst, measured and threshold of the first one not met (else the first).
+ */
+export function allOf(id: CriterionId, results: readonly [CriterionResult, ...CriterionResult[]]): CriterionResult {
+  const head = results.find((result) => result.status !== "met") ?? results[0];
+  const margins = results.map((result) => result.margin);
+  const known = margins.every((value) => value !== null);
+  return {
+    ...head,
+    id,
+    status: results.every((result) => result.status === "met") ? "met" : "notMet",
+    margin: known ? Math.min(...margins) : null,
+    evidence: results.flatMap((result) => result.evidence),
+  };
+}
+
 export function notApplicable(id: CriterionId, severity: Severity, unit: Unit, threshold: Threshold | null): CriterionResult {
   return { id, severity, status: "notApplicable", measured: null, unit, threshold, margin: null, evidence: [] };
 }

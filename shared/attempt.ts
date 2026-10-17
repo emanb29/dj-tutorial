@@ -281,7 +281,39 @@ export type LessonTask =
       readonly tapSection: CtxSpan;
     }
   | { readonly lessonId: "cue-point" }
-  | { readonly lessonId: "cut-on-phrase" };
+  | { readonly lessonId: "cut-on-phrase" }
+  | {
+      readonly lessonId: "tempo-fader";
+      /**
+       * Set B to each BPM in turn (3 full, 1 short). The i-th confirm press (`ready` or `done`, in
+       * time order) marks target i. B plays while the Learner sets it, so its tempo is in its playhead.
+       */
+      readonly targetsBpm: readonly number[];
+      /** Listening clips: was Master Tempo on? The Learner's pick (1 = on, 0 = off) is `answers[answerKey]`. */
+      readonly masterTempoClips: readonly { readonly answerKey: string; readonly masterTempoOn: boolean }[];
+    }
+  | { readonly lessonId: "sync-blend" }
+  | {
+      readonly lessonId: "crossfader";
+      /** A blends into B here, crossfader only. */
+      readonly blendSection: CtxSpan;
+      /** A cut to `incoming` here, crossfader only; `null` in the short form (blend only). */
+      readonly cutSection: { readonly span: CtxSpan; readonly incoming: DeckId } | null;
+    }
+  | { readonly lessonId: "eq-basics" }
+  | { readonly lessonId: "bass-swap" }
+  | { readonly lessonId: "filter-transition" }
+  | {
+      readonly lessonId: "nudge-phase";
+      /** Phase grading starts here: both decks playing, B up to ¼ beat out of phase. */
+      readonly phaseFrom: CtxTime;
+    }
+  | {
+      readonly lessonId: "tempo-by-ear";
+      /** Tempo matching starts here: both decks playing, 0.5–2% apart. */
+      readonly matchFrom: CtxTime;
+    }
+  | { readonly lessonId: "blend-by-ear" };
 
 /** What the Learner was asked to do. */
 export interface TaskSpec {
@@ -297,4 +329,9 @@ export interface TaskSpec {
    * standing criteria apply.
    */
   readonly passedLessons: readonly LessonId[];
+  /**
+   * Decks with SYNC on when the attempt starts (the Lesson's setup). Later changes come from the
+   * recorded SYNC commands. Absent = none.
+   */
+  readonly syncedAtStart?: readonly DeckId[];
 }

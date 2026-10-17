@@ -23,6 +23,15 @@ const SHORT_FORM_SECONDS: Readonly<Partial<Record<LessonId, number>>> = {
   "headphone-cue": 20,
   "cue-point": 20,
   "cut-on-phrase": 55,
+  "tempo-fader": 30,
+  "sync-blend": 30,
+  crossfader: 40,
+  "eq-basics": 40,
+  "bass-swap": 40,
+  "filter-transition": 40,
+  "nudge-phase": 25,
+  "tempo-by-ear": 60,
+  "blend-by-ear": 60,
 };
 const DEFAULT_SHORT_FORM_SECONDS = 60;
 

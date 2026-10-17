@@ -129,8 +129,11 @@ export function overlapSpans(attempt: Attempt, window: CtxSpan): CtxSpan[] {
  * the change is timed from the start of that move.
  */
 function gestureAdjusted(attempt: Attempt, deck: DeckId, t: CtxTime): CtxTime {
-  const start = faderGestureStart(attempt.events, "channelFader", deck, t, attempt.initialMixer[deck].channelFader);
-  return start === null ? t : Math.min(start, t);
+  const starts = [
+    faderGestureStart(attempt.events, "channelFader", deck, t, attempt.initialMixer[deck].channelFader),
+    faderGestureStart(attempt.events, "crossfader", undefined, t, attempt.initialMixer.crossfader),
+  ].filter((start) => start !== null);
+  return Math.min(t, ...starts);
 }
 
 /** `t_in`: the first audible frame of the deck in the window. */
