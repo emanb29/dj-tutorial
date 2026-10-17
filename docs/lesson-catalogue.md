@@ -249,10 +249,11 @@ Additions from `/teach` (see GLOSSARY.md):
 
 The owner's Mission is to post their own mixes and edits (DJ remixes, not produced remixes) to SoundCloud. So `final-mix` becomes the **final project**: the app records the Learner's mix from the master bus to an audio file they can download. Set recording is in v1 scope **for the final project only**. A general set-recording feature stays out. Uploading to SoundCloud is done by hand, and licensing is handled outside this map. Produced (DAW) remixes are a possible future effort.
 
-### Bass music (owner, 2026-10-17: Q7b)
+### Genre focus (revised 2026-10-17)
 
-The owner's own tracks are mostly bass music: dubstep and riddim at about 140–150 BPM, plus some trap and drum & bass. This revises Q7:
-- Early Lessons, up to `cut-on-phrase` and `sync-blend`, stay on house, where the beat is easiest to hear.
-- From `bass-swap` and the By-ear group onwards, Lesson track sets include a **bass-music set (140–150 BPM, half-time)** drawn from the owner's tracks.
-- **`final-mix` (the final project) may be bass music.**
-- Bass flips usually have short intros (about 8 bars), so for this Learner the Coach should place the `loop-transition` and `hot-cues` electives early. Quick cuts, drop swaps and loop transitions suit the genre better than long EQ blends.
+An earlier revision (Q7b) leaned toward bass music based on about 45 SoundCloud flips the owner shared. The owner then said Spotify, not SoundCloud, is the source of truth for their taste. Their Spotify listening (about 2,190 h, 2014–2023) is indie/alt 41%, pop 18%, rock/metal 9%, house 3.2% and bass music 1.6%.
+
+- **The course centres on house (120–126 BPM)** for every graded Lesson up to and including `final-mix`. It is closest in tempo and feel to the owner's indie and pop listening, their biggest club genre, and the easiest phrasing to learn on.
+- **Remix targets** for the remix finder and Lesson track sets are house, indie-dance and nu-disco remixes of indie, pop and rock songs.
+- **Bass music** (the owner's SoundCloud flips plus composer tracks) is practice material and an optional second genre after `blend-by-ear`. The final project defaults to house; the Learner may choose bass music instead.
+- The `loop-transition` and `hot-cues` electives are placed early only if the Learner chooses bass music.
