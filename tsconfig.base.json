@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "paths": {
+      "@app/*": ["./src/app/*"],
+      "@audio": ["./src/audio/index.ts"],
+      "@audio/*": ["./src/audio/*"],
+      "@analysis": ["./src/analysis/index.ts"],
+      "@analysis/*": ["./src/analysis/*"],
+      "@checks": ["./src/checks/index.ts"],
+      "@checks/*": ["./src/checks/*"],
+      "@lessons": ["./src/lessons/index.ts"],
+      "@lessons/*": ["./src/lessons/*"],
+      "@shared": ["./shared/index.ts"],
+      "@shared/*": ["./shared/*"],
+      "@server/*": ["./server/*"]
+    }
+  }
+}
