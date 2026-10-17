@@ -6,6 +6,7 @@ import {
   eqKnobToDecibels,
   filterKnobSettings,
   gainToDecibels,
+  headphoneLevelToDecibels,
   masterKnobToDecibels,
   trimKnobToDecibels,
 } from "./curves.ts";
@@ -41,6 +42,13 @@ describe("trim and master knobs", () => {
     expect(trimKnobToDecibels(1)).toBe(9);
     expect(trimKnobToDecibels(-0.5)).toBe(-12);
     expect(trimKnobToDecibels(-1)).toBe(Number.NEGATIVE_INFINITY);
+  });
+
+  it("headphone level is silent at 0, −12 dB at a quarter, unity at the centre and +6 dB at the top", () => {
+    expect(headphoneLevelToDecibels(0)).toBe(Number.NEGATIVE_INFINITY);
+    expect(headphoneLevelToDecibels(0.25)).toBeCloseTo(-12.04, 2);
+    expect(headphoneLevelToDecibels(0.5)).toBe(0);
+    expect(headphoneLevelToDecibels(1)).toBe(6);
   });
 
   it("master spans silence to +6 dB with 0 dB at centre", () => {

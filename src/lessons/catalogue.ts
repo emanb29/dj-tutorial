@@ -1,8 +1,8 @@
-// Lessons 1–3 as data (docs/lesson-catalogue.md §1, check-design §4): the hook, practice, the Check
+// Lessons 1–7 as data (docs/lesson-catalogue.md §1, check-design §4): the hook, practice, the Check
 // plan on the chosen track, and authored tips. Captions, not prose: a few words, the key in brackets.
-import type { Aids, Attempt, CtxSpan, LessonId, LessonTask, TaskSpec } from "@shared/attempt.ts";
-import { barStart, beatSec, cuedAt, heardTimeOf, phraseOf, phraseStart } from "./track.ts";
-import type { CheckPlan, ControlId, LessonDefinition, LessonTrack } from "./types.ts";
+import type { Aids, Attempt, CtxSpan, DeckId, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
+import { barStart, beatSec, cuedAt, heardTimeOf, phraseOf, phraseStart, sliceTrack, trimKnobFor } from "./track.ts";
+import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
 /** How long a checkpoint's tick and caption stay up. */
@@ -12,15 +12,17 @@ const CHECKPOINT_BARS = 4;
 export const LESSON_AIDS: Aids = { sync: false, quantize: false, bpmDisplay: false, phaseMeter: false, lessonText: true };
 
 /**
- * Heard span of track positions `[fromPos, toPos)`, both shifted half a beat early so beats sit inside,
- * as deck A played them after the Check's own cue to `plan.startPos` in `window`. The recorded playhead
- * also holds the hook, practice and earlier attempts, which play the same positions; and for the
- * output latency after the attempt starts, the practice is still heard. A bound the deck never reached
- * is +Infinity: runCheck voids such an attempt (`sectionNotHeard`) rather than failing it.
+ * Heard span of track positions `[fromPos, toPos)` on a deck, both shifted half a beat early so beats
+ * sit inside, as the deck played them after the Check's own cue to its start position (`plan.startPos`
+ * on A, `plan.deckB.pos` on B) in `window`. The recorded playhead also holds the hook, practice and
+ * earlier attempts, which play the same positions; and for the output latency after the attempt
+ * starts, the practice is still heard. A bound the deck never reached is +Infinity: runCheck voids such
+ * an attempt (`sectionNotHeard`) rather than failing it.
  */
-function heardSpan(track: LessonTrack, plan: CheckPlan, attempt: Attempt, window: CtxSpan, fromPos: number, toPos: number): CtxSpan {
-  const playhead = attempt.decks.A?.playhead;
-  const cued = playhead === undefined ? null : cuedAt(playhead, plan.startPos, window.from);
+function heardSpan(track: LessonTrack, plan: CheckPlan, attempt: Attempt, window: CtxSpan, fromPos: number, toPos: number, deck: DeckId = "A"): CtxSpan {
+  const playhead = attempt.decks[deck]?.playhead;
+  const startPos = deck === "A" ? plan.startPos : plan.deckB?.pos;
+  const cued = playhead === undefined || startPos === undefined ? null : cuedAt(playhead, startPos, window.from);
   const half = beatSec(track.grid) / 2;
   const heard = (pos: number) => (playhead === undefined || cued === null ? null : heardTimeOf(playhead, pos - half, cued));
   return { from: heard(fromPos) ?? Number.POSITIVE_INFINITY, to: heard(toPos) ?? Number.POSITIVE_INFINITY };
@@ -170,15 +172,294 @@ const phrases: LessonDefinition = {
   },
 };
 
-export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases";
+// ---------------------------------------------------------------------------------------------
+// Lessons 4–7 (two decks, the mixer and the headphone cue)
+// ---------------------------------------------------------------------------------------------
+
+/** The gain-staging zone for a channel's sample peak, dBFS: the gain-staging Check's own zone. */
+export const GAIN_ZONE_DB: readonly [number, number] = [-6, -0.1];
+/** Where the gain-staging Lesson starts each deck: A clipping, B too quiet. */
+const HOT_PEAK_DB = 3;
+const QUIET_PEAK_DB = -15;
+/** The synthetic groove's peak, used when a track's own peak is not known. */
+const DEFAULT_PEAK_DB = -6;
+/** gain-staging: time to set both trims, and the bars held after the second Ready (the timeout adds them). */
+const GAIN_SETUP_SEC = 60;
+const GAIN_HOLD_BARS = 8;
+/** headphone-cue: B plays this far ahead of A, so A's beats (and its off-beat hats) never land on B's. */
+const CUED_OFFSET_BEATS = 1 / 3;
+/** cue-point: each slice starts this many beats before a downbeat, and lasts 6 bars. */
+const SLICE_LEADS_BEATS = [1.37, 2.62, 0.71] as const;
+const SLICE_BARS = 6;
+/** cut-on-phrase: bars of A before the cut, and after it until the attempt ends. */
+const CUT_LEAD_BARS = 6;
+const CUT_TAIL_BARS = 5;
+
+const barsSec = (track: LessonTrack, bars: number) => bars * 4 * beatSec(track.grid);
+const steadyBar = (track: LessonTrack) => (steadyPhrase(track) - 1) * BARS_PER_PHRASE + 1;
+const trimFor = (track: LessonTrack, targetPeakDb: number) => trimKnobFor(targetPeakDb - (track.peakDbfs ?? DEFAULT_PEAK_DB));
+const tooShort = (track: LessonTrack) => (track.phraseStarts.length < 4 ? ["The track is too short for a steady 16 bars."] : []);
+
+/** Both decks off the zone; in the hook and practice B waits paused for the Learner's PLAY (`,`). */
+function gainDecks(track: LessonTrack, playB: boolean): DeckSetups {
+  const pos = phraseStart(track.grid, steadyPhrase(track));
+  return {
+    A: { pos, fader: 1, play: true, trim: trimFor(track, HOT_PEAK_DB) },
+    B: { pos, fader: 0, play: playB, trim: trimFor(track, QUIET_PEAK_DB) },
+  };
+}
+
+/** One steady phrase, looped: the levels stay the same however long the Learner takes. */
+const steadyLoop = (track: LessonTrack): LoopPlan => ({ atPos: phraseStart(track.grid, steadyPhrase(track) + 1), reset: "positions" });
+
+const gainStaging: LessonDefinition = {
+  id: "gain-staging",
+  title: "Set the level",
+  unlocks: ["A.trim", "B.trim", "A.level-meter", "B.level-meter", "B.play", "B.channel-fader"],
+  practiceStart: (track) => gainDecks(track, false).A.pos,
+  practiceDecks: (track) => gainDecks(track, false),
+  practiceLoop: steadyLoop,
+  trackProblems: tooShort,
+  hook: [
+    { caption: "Turn TRIM A: meter out of the red", control: "A.trim", trigger: { kind: "in-zone", deck: "A" }, named: "That's TRIM: the level into the channel." },
+    { caption: "Press , to play B", control: "B.play", trigger: { kind: "play", deck: "B" }, named: "B plays, fader down: only its meter moves." },
+    { caption: "Turn TRIM B to match A", control: "B.trim", trigger: { kind: "in-zone", deck: "B" }, named: "Both in the zone: loud, no red." },
+  ],
+  practice: { caption: "Both meters in the zone, then Ready (R)", rep: "ready", window: 2, needed: 2 },
+  checkCaption: "This one counts: trim A, R; trim B, R",
+  questions: [],
+  planCheck: (track) => {
+    const decks = gainDecks(track, true);
+    return {
+      startPos: decks.A.pos,
+      autoPlay: true,
+      faderAtStart: 1,
+      deckA: { trim: decks.A.trim ?? 0 },
+      ...(decks.B === undefined ? {} : { deckB: decks.B }),
+      loop: steadyLoop(track),
+      endWhen: { kind: "ready-windows", decks: ["A", "B"], bars: GAIN_HOLD_BARS },
+      timeoutSec: GAIN_SETUP_SEC + barsSec(track, GAIN_HOLD_BARS),
+      cues: [],
+      readyCues: ["Trim A into the zone, then R", "Hands off A. Trim B to match, then R", "Hold it: 8 bars"],
+    };
+  },
+  taskFor: (): LessonTask => ({ lessonId: "gain-staging", decks: ["A", "B"] }),
+  tips: {
+    "gain-staging.trim-A": ["TRIM A until its meter peaks just under the red.", "Red means clipping: turn TRIM down, not the fader."],
+    "gain-staging.trim-B": ["TRIM B up until its meter peaks next to A's.", "The fader can stay down: TRIM works before it."],
+    "gain-staging.loud-match": ["Match the meters: B's peaks level with A's.", "Same peak on both meters ≈ same loudness."],
+  },
+};
+
+function cuedDecks(track: LessonTrack): DeckSetups {
+  const pos = barStart(track.grid, steadyBar(track) - 4);
+  return { A: { pos, fader: 1, play: true }, B: { pos: pos + CUED_OFFSET_BEATS * beatSec(track.grid), fader: 0, play: true, headphoneCue: false } };
+}
+
+const headphoneCue: LessonDefinition = {
+  id: "headphone-cue",
+  title: "Listen before they hear it",
+  unlocks: ["A.headphone-cue", "B.headphone-cue", "cue-mix", "headphone-level", "tap"],
+  practiceStart: (track) => cuedDecks(track).A.pos,
+  practiceDecks: (track) => {
+    const decks = cuedDecks(track);
+    // Practice leaves CUE as the Learner set it in the hook.
+    return { A: decks.A, ...(decks.B === undefined ? {} : { B: { pos: decks.B.pos, fader: 0, play: true } }) };
+  },
+  practiceLoop: (track) => ({ atPos: cuedDecks(track).A.pos + barsSec(track, 16), reset: "positions" }),
+  headphones: true,
+  tapDeck: "B",
+  trackProblems: tooShort,
+  hook: [
+    { caption: "Turn on CUE 🎧 on channel B", control: "B.headphone-cue", trigger: { kind: "cue-on", deck: "B" }, named: "That's CUE: B in your left ear only." },
+    { caption: "Turn MIXING", control: "cue-mix", trigger: { kind: "touch", control: "cue-mix" }, named: "MIXING: cue ↔ master in the headphone ear." },
+    { caption: "Tap Space on B's kick (left ear)", control: "tap", trigger: { kind: "beat-taps", count: 4 }, named: "That's cueing: you hear B, the room doesn't." },
+  ],
+  practice: { caption: "Tap B's kick (Space): left ear, not the speakers", rep: "beat-tap", window: 8, needed: 7 },
+  checkCaption: "This one counts: CUE B on, tap B's kick",
+  questions: [],
+  planCheck: (track) => {
+    const decks = cuedDecks(track);
+    const tapFrom = barStart(track.grid, steadyBar(track));
+    return {
+      startPos: decks.A.pos,
+      autoPlay: true,
+      faderAtStart: 1,
+      deckA: { headphoneCue: false },
+      ...(decks.B === undefined ? {} : { deckB: decks.B }),
+      endWhen: { kind: "position", pos: barStart(track.grid, steadyBar(track) + 8) + beatSec(track.grid) },
+      timeoutSec: 40,
+      cues: [
+        { fromPos: decks.A.pos, caption: "CUE 🎧 B on, fader B stays down" },
+        { fromPos: tapFrom - beatSec(track.grid), caption: "Tap B's kick (Space)" },
+      ],
+    };
+  },
+  taskFor: (track, plan, attempt, attemptWindow): LessonTask => {
+    const offset = (plan.deckB?.pos ?? plan.startPos) - plan.startPos;
+    const from = barStart(track.grid, steadyBar(track)) + offset;
+    return { lessonId: "headphone-cue", tapSection: heardSpan(track, plan, attempt, attemptWindow, from, from + barsSec(track, 8), "B") };
+  },
+  tips: {
+    "headphone-cue.cued-taps": ["Left ear is B: tap its kick, not the speakers'.", "Turn MIXING fully left: only B in that ear."],
+    "headphone-cue.b-off-master": ["Fader B stays down: CUE alone puts B in your ear.", "Turn CUE B on before the taps start."],
+  },
+};
+
+const cueSetup = (track: LessonTrack): DeckSetups => ({
+  A: { pos: barStart(track.grid, steadyBar(track)) - SLICE_LEADS_BEATS[0] * beatSec(track.grid), fader: 1, play: false, headphoneCue: true },
+});
+
+const cuePoint: LessonDefinition = {
+  id: "cue-point",
+  title: "Set a cue point by ear",
+  unlocks: ["A.cue", "A.jog", "B.cue", "B.jog"],
+  practiceStart: (track) => cueSetup(track).A.pos,
+  practiceDecks: cueSetup,
+  practiceLoop: () => null,
+  headphones: true,
+  trackProblems: tooShort,
+  hook: [
+    { caption: "Turn the jog wheel", control: "A.jog", trigger: { kind: "touch", control: "A.jog" }, named: "Paused, the jog moves the playhead: search." },
+    { caption: "Find a kick. Press Z", control: "A.cue", trigger: { kind: "cue-set" }, named: "That's a cue point: Z sets it while paused." },
+    { caption: "Hold Z to hear it, let go", control: "A.cue", trigger: { kind: "cue-preview" }, named: "Held CUE plays from the point; let go, it snaps back." },
+  ],
+  practice: { caption: "Cue on a 1: X play, X stop, jog, Z. Hold Z to check", rep: "cue-set", window: 3, needed: 2 },
+  checkCaption: "This one counts: three cue points, each on a 1",
+  questions: [],
+  planCheck: (track) => {
+    const beat = beatSec(track.grid);
+    const bars = [0, 4, 8].map((offset) => steadyBar(track) + offset);
+    const slices = SLICE_LEADS_BEATS.map((lead, index) => ({ fromSec: barStart(track.grid, bars[index] ?? 1) - lead * beat, lengthSec: barsSec(track, SLICE_BARS) }));
+    return {
+      startPos: 0,
+      autoPlay: false,
+      faderAtStart: 1,
+      deckA: { headphoneCue: true },
+      slices,
+      endWhen: { kind: "slices-done" },
+      timeoutSec: 120,
+      cues: [],
+      readyCues: slices.map((_, index) => `Cue ${String(index + 1)} of ${String(slices.length)}: a 1, by ear. R when happy`),
+    };
+  },
+  taskFor: (): LessonTask => ({ lessonId: "cue-point" }),
+  taskTracks: (track, plan, trackSetId) =>
+    (plan.slices ?? []).map((_, index) => ({ trackId: `${track.trackId}#cue-${String(index + 1)}`, trackSetId, deck: "A" as const })),
+  tips: {
+    "cue-point.cue-on-downbeat": ["Hold Z: if the kick isn't instant, jog a hair and set again.", "Count 1-2-3-4 while it plays; stop on the 1, then jog."],
+  },
+};
+
+function cutDecks(track: LessonTrack): DeckSetups {
+  const cutPos = phraseStart(track.grid, steadyPhrase(track) + 1);
+  return {
+    A: { pos: cutPos - barsSec(track, CUT_LEAD_BARS), fader: 1, play: true, trim: 0 },
+    B: { pos: phraseStart(track.grid, steadyPhrase(track)), fader: 0, play: false, trim: 0, cuePoint: true },
+  };
+}
+
+const cutOnPhrase: LessonDefinition = {
+  id: "cut-on-phrase",
+  title: "Your first transition: the cut",
+  unlocks: [],
+  practiceStart: (track) => cutDecks(track).A.pos,
+  practiceDecks: cutDecks,
+  practiceLoop: (track) => ({ atPos: cutDecks(track).A.pos + barsSec(track, CUT_LEAD_BARS + 4), reset: "setup" }),
+  headphones: true,
+  trackProblems: tooShort,
+  hook: [
+    { caption: "Turn on CUE 🎧 on channel B", control: "B.headphone-cue", trigger: { kind: "cue-on", deck: "B" }, named: "B in your headphone ear: ready to go." },
+    { caption: "Fader B up (O): silent till it plays", control: "B.channel-fader", trigger: { kind: "fader-up", deck: "B" }, named: "Fader up, deck paused: nothing yet." },
+    { caption: "On the next phrase's 1: Press , and S together", control: "B.play", trigger: { kind: "cut" }, named: "That's a cut: B in, A out, on the phrase." },
+  ],
+  practice: { caption: "Cut on the phrase: Press , and S on the 1", rep: "cut", window: 2, needed: 1 },
+  checkCaption: "This one counts: CUE B, fader B up, cut on the phrase",
+  questions: [],
+  planCheck: (track) => {
+    const decks = cutDecks(track);
+    const cutPos = decks.A.pos + barsSec(track, CUT_LEAD_BARS);
+    return {
+      startPos: decks.A.pos,
+      autoPlay: true,
+      faderAtStart: 1,
+      deckA: { trim: 0, headphoneCue: false },
+      ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
+      endWhen: { kind: "after", sec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) },
+      timeoutSec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) + 5,
+      cues: [
+        { fromPos: decks.A.pos, caption: "CUE 🎧 B on, fader B up (O)" },
+        { fromPos: cutPos - barsSec(track, 2), caption: "Next phrase: Press , and S on the 1" },
+        { fromPos: cutPos + beatSec(track.grid), caption: "Let it ride" },
+      ],
+    };
+  },
+  taskFor: (): LessonTask => ({ lessonId: "cut-on-phrase" }),
+  tips: {
+    "cut-on-phrase.cut-start": ["Count 8 bars on the 1s. Press , on the next 1.", "Press , and S together, right on the 1."],
+    "cut-on-phrase.cut-tight": ["A out as B comes in: Press , and S together."],
+    "cut-on-phrase.cued-before": ["CUE B on early: listen before you cut."],
+    "cut-on-phrase.loud-jump": ["Match the meters with TRIM before you cut."],
+  },
+};
+
+export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase";
 export type BuiltLesson = LessonDefinition & { readonly id: BuiltLessonId };
 
-/** Lessons 1–3, in catalogue order. */
+/** Lessons 1–7, in catalogue order. */
 export const LESSONS: readonly BuiltLesson[] = [
   { ...deckBasics, id: "deck-basics" },
   { ...beatsAndBars, id: "beats-and-bars" },
   { ...phrases, id: "phrases" },
+  { ...gainStaging, id: "gain-staging" },
+  { ...headphoneCue, id: "headphone-cue" },
+  { ...cuePoint, id: "cue-point" },
+  { ...cutOnPhrase, id: "cut-on-phrase" },
 ];
+
+/** Practice loops for Lessons that do not set their own: tap Lessons loop deck A from the practice start. */
+const PRACTICE_LOOP_BARS = { "beat-tap": 16, "phrase-tap": 24 } as const;
+
+/** How the decks start for the hook and practice. */
+export function practiceDecksFor(definition: LessonDefinition, track: LessonTrack): DeckSetups {
+  if (definition.practiceDecks !== undefined) return definition.practiceDecks(track);
+  const taps = definition.practice.rep !== "fade";
+  return { A: { pos: definition.practiceStart(track), fader: taps ? 1 : 0, play: taps } };
+}
+
+/** Where practice loops back to its start, or null when it does not loop. */
+export function practiceLoopFor(definition: LessonDefinition, track: LessonTrack): LoopPlan | null {
+  if (definition.practiceLoop !== undefined) return definition.practiceLoop(track);
+  const rep = definition.practice.rep;
+  if (rep !== "beat-tap" && rep !== "phrase-tap") return null;
+  return { atPos: definition.practiceStart(track) + barsSec(track, PRACTICE_LOOP_BARS[rep]), reset: "positions" };
+}
+
+/** Both decks as the Check starts them. */
+export function checkDecksFor(plan: CheckPlan): DeckSetups {
+  return {
+    A: { pos: plan.startPos, fader: plan.faderAtStart, play: plan.autoPlay, ...plan.deckA },
+    ...(plan.deckB === undefined ? {} : { B: plan.deckB }),
+  };
+}
+
+/**
+ * The attempt with the grid of every track the Check planned to load (cue-point's slices). A slice the
+ * Check never reached (it timed out, or a load failed) has no recorded grid, which would void the attempt
+ * as an untrusted grid; its grid is Lesson data, so it is added and the missing cue point fails instead.
+ * Recorded grids win.
+ */
+export function withPlannedGrids<Recorded extends Attempt>(attempt: Recorded, track: LessonTrack, plan: CheckPlan): Recorded {
+  const planned = (plan.slices ?? []).map((slice, index) => sliceTrack(track, slice, index));
+  if (planned.length === 0) return attempt;
+  return { ...attempt, grids: { ...Object.fromEntries(planned.map((slice) => [slice.trackId, slice.grid])), ...attempt.grids } };
+}
+
+/** Where the Lesson's Ready (R) does something: practice reps, the Check's end, or both. */
+export function readyUsedIn(definition: LessonDefinition, track: LessonTrack): { readonly practice: boolean; readonly check: boolean } {
+  const end = definition.planCheck(track).endWhen.kind;
+  return { practice: definition.practice.rep === "ready", check: end === "ready-windows" || end === "slices-done" };
+}
 
 export function isBuiltLesson(id: string): id is BuiltLessonId {
   return LESSONS.some((lesson) => lesson.id === id);
@@ -204,11 +485,17 @@ export function checkSpecFor(
   attempt: Attempt,
   options: { readonly window: CtxSpan; readonly passedLessons: readonly LessonId[] },
 ): TaskSpec {
+  const trackSetId = track.source === "synthetic" ? null : `${definition.id}-house`;
+  const tracks: readonly TaskTrack[] =
+    definition.taskTracks?.(track, plan, trackSetId) ?? [
+      { trackId: track.trackId, trackSetId, deck: "A" },
+      ...(plan.deckB === undefined ? [] : [{ trackId: track.trackId, trackSetId, deck: "B" as const }]),
+    ];
   return {
     mode: "lesson",
     variant: "full",
     task: definition.taskFor(track, plan, attempt, options.window),
-    tracks: [{ trackId: track.trackId, trackSetId: track.source === "synthetic" ? null : `${definition.id}-house`, deck: "A" }],
+    tracks,
     aids: LESSON_AIDS,
     window: options.window,
     passedLessons: options.passedLessons,

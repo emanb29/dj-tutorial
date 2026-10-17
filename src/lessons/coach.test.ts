@@ -81,6 +81,39 @@ describe("describeCriterion", () => {
   it("says where the fader ended", () => {
     expect(describeCriterion(fadeOut)).toBe("Fade out: fader ended at 40% (needs 0%)");
   });
+
+  const criterion = (id: CriterionResult["id"], measured: number | null, unit: CriterionResult["unit"], value: number, detail?: Record<string, number>): CriterionResult => ({
+    id,
+    severity: "fail",
+    status: "met",
+    measured,
+    unit,
+    threshold: { op: "<=", value, unit },
+    margin: null,
+    evidence: [],
+    ...(detail === undefined ? {} : { detail }),
+  });
+
+  it("words the Lessons 4–7 criteria: levels, cue points and the cut", () => {
+    expect(describeCriterion({ ...criterion("gain-staging.trim-A", -3.24, "dBFS", 0), threshold: { op: "in", value: [-6, -0.1], unit: "dBFS" } })).toBe(
+      "Deck A peak: −3.2 dBFS (need −6 to −0.1)",
+    );
+    expect(describeCriterion(criterion("gain-staging.trim-B", null, "dBFS", 0))).toBe("Deck B: no Ready (R) with 8 bars after it");
+    expect(describeCriterion(criterion("gain-staging.loud-match", 0.84, "dB", 1.5))).toBe("A and B loudness: 0.8 dB apart (need 1.5 or less)");
+    expect(describeCriterion({ ...criterion("headphone-cue.cued-taps", 0.9, "ratio", 0.85, { matched: 29, targets: 32, extras: 0 }), threshold: { op: ">=", value: 0.85, unit: "ratio" } })).toBe(
+      "B's beats: 29 of 32 on time (need 28)",
+    );
+    expect(describeCriterion(criterion("headphone-cue.b-off-master", -120, "dB", -60, { cueOnFraction: 0.97 }))).toBe("B off the speakers: fader down, CUE on 97% of the taps (need 95%)");
+    expect(describeCriterion(criterion("headphone-cue.b-off-master", -6, "dB", -60, { cueOnFraction: 1 }))).toBe("B reached the speakers: fader B came up");
+    expect(describeCriterion(criterion("cue-point.cue-on-downbeat", 12.4, "ms", 20, { tracks: 3, wrongBeat: 1, missing: 0 }))).toBe(
+      "Cue points: worst 12 ms off the beat (need 20 or less), 1 not on a 1",
+    );
+    expect(describeCriterion(criterion("cut-on-phrase.cut-start", 35.2, "ms", 120))).toBe("Cut: 35 ms from the phrase start (need 120 or less)");
+    expect(describeCriterion(criterion("cut-on-phrase.cut-start", null, "ms", 120))).toBe("Cut: B never came in");
+    expect(describeCriterion(criterion("cut-on-phrase.cut-tight", 0.42, "beats", 1))).toBe("A out 0.42 beats from B in (need 1 or less)");
+    expect(describeCriterion({ ...criterion("cut-on-phrase.cued-before", 6.1, "s", 2), threshold: { op: ">=", value: 2, unit: "s" } })).toBe("CUE B on 6.1 s before the cut (need 2)");
+    expect(describeCriterion(criterion("cut-on-phrase.loud-jump", 0.31, "dB", 2))).toBe("Level jump at the cut: 0.3 dB (need 2 or less)");
+  });
 });
 
 describe("the Curriculum re-plan when a skip group is passed (coach-design §1 a)", () => {

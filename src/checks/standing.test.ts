@@ -11,6 +11,7 @@ import {
   SILENT,
   attempt,
   cutScenario,
+  engineCommand,
   event,
   frames,
   passedBefore,
@@ -38,6 +39,20 @@ function graded(result: ReturnType<typeof runCheck>): CheckResult {
 const byId = (result: CheckResult, id: string) => result.criteria.find((criterion) => criterion.id === id);
 const standingIds = (result: CheckResult) =>
   result.criteria.filter((criterion) => criterion.id.startsWith("standing.")).map((criterion) => criterion.id);
+
+describe("standing criteria timed from a Play press", () => {
+  it("on-phrase and cued-first read B's Play at the press, B's position where it starts, whatever the output latency", () => {
+    const scenario = cutScenario({ playB: 32.25, closeA: [event(32, "channelFader", 0, "A")], extraEvents: [event(20, "channelFader", 1, "B")] });
+    const recorded = { ...scenario, engineEvents: [{ ...engineCommand(32.25, "play", "B", true), heardCtx: 32 }] };
+    const result = graded(
+      runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { mode: "cold", passedLessons: passedBefore(LESSON_IDS, "tempo-fader") }), recorded),
+    );
+
+    expect(byId(result, "standing.on-phrase")).toMatchObject({ status: "met" });
+    expect(byId(result, "standing.on-phrase")?.measured).toBeCloseTo(0);
+    expect(byId(result, "standing.cued-first")?.measured).toBeCloseTo(30);
+  });
+});
 
 describe("standing criteria: which apply", () => {
   it("adds none before their teaching Lesson is passed", () => {

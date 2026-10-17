@@ -2,8 +2,10 @@
 // continuous loop (Lesson format, ISS-55). The app feeds it what the Learner did (`Observation`s)
 // and what the Check returned; it never touches audio, the clock or the network.
 import type { BuiltLessonId } from "./catalogue.ts";
-import type { CheckResult, CriterionId, VoidAttempt, VoidReason } from "@shared/check-result.ts";
+import type { CheckResult, CriterionId, VoidReason } from "@shared/check-result.ts";
 import type { ReviewTrigger } from "@checks";
+import { CUE_PLACEMENT_TOLERANCE_MS } from "@checks";
+import { GAIN_ZONE_DB } from "./catalogue.ts";
 import { FOCUS_HISTORY_MAX, type LineFacts } from "./coach.ts";
 import type { HookTrigger, LessonDefinition, Observation, PracticeConfig } from "./types.ts";
 
@@ -35,8 +37,11 @@ export type LessonPhase =
       /** What the Coach line knows beyond the result (margin history, best before, retention). */
       readonly lineFacts: LineFacts;
     }
-  /** Not counted: a void attempt (check-design §6), or one the app could not record. */
-  | { readonly kind: "void"; readonly reason: VoidReason | "recordingFailed"; readonly message: string | null };
+  /**
+   * Not counted: a void attempt (check-design §6), one the app could not record, or a graded result the
+   * Learner's profile refused to store (a bug, not the Learner's mix).
+   */
+  | { readonly kind: "void"; readonly reason: VoidReason | "recordingFailed" | "profileRefused"; readonly message: string | null };
 
 export interface LessonState {
   readonly lessonId: BuiltLessonId;
@@ -61,9 +66,11 @@ export type LessonEvent =
   | { readonly type: "start-check" }
   | { readonly type: "audio-ended" }
   | { readonly type: "answer"; readonly questionId: string; readonly value: number }
+  /** The Check ran but the attempt does not count (check-design §6). */
+  | { readonly type: "voided"; readonly reason: VoidReason }
   | {
       readonly type: "graded";
-      readonly outcome: CheckResult | VoidAttempt;
+      readonly result: CheckResult;
       /** From `applyCheckResult`: criteria that just reached the Review threshold. */
       readonly reviewTriggers: readonly ReviewTrigger[];
       readonly firstPass: boolean;
@@ -71,6 +78,8 @@ export type LessonEvent =
       readonly lineFacts: LineFacts;
     }
   | { readonly type: "grading-failed"; readonly message: string }
+  /** Graded, but the Skill profile schema refused the update, so it was not stored. */
+  | { readonly type: "profile-refused"; readonly message: string }
   /** The Check's audio part could not start recording: it would never end or grade. */
   | { readonly type: "check-failed"; readonly message: string }
   | { readonly type: "practice-again" }
@@ -90,15 +99,29 @@ function withMargins(margins: LessonState["margins"], result: CheckResult): Less
   return { ...margins, ...Object.fromEntries(measured.map(([id, margin]) => [id, [...(margins[id] ?? []), margin].slice(-FOCUS_HISTORY_MAX)])) };
 }
 
+const inZone = (peakDb: number) => peakDb >= GAIN_ZONE_DB[0] && peakDb < GAIN_ZONE_DB[1];
+
 /** How far an observation moves a hook trigger: +1, no change (0), or start over ("reset"). */
 function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "reset" {
   switch (trigger.kind) {
     case "play":
-      return observation.kind === "play" && observation.playing ? 1 : 0;
+      return observation.kind === "play" && observation.deck === (trigger.deck ?? "A") && observation.playing ? 1 : 0;
     case "fader-up":
-      return observation.kind === "fader" && observation.value >= FADER_UP ? 1 : 0;
+      return observation.kind === "fader" && observation.deck === (trigger.deck ?? "A") && observation.value >= FADER_UP ? 1 : 0;
     case "fader-down":
-      return observation.kind === "fader" && observation.value <= FADER_DOWN ? 1 : 0;
+      return observation.kind === "fader" && observation.deck === (trigger.deck ?? "A") && observation.value <= FADER_DOWN ? 1 : 0;
+    case "touch":
+      return observation.kind === "touch" && observation.control === trigger.control ? 1 : 0;
+    case "cue-on":
+      return observation.kind === "headphone-cue" && observation.deck === trigger.deck && observation.on ? 1 : 0;
+    case "in-zone":
+      return observation.kind === "level" && observation.deck === trigger.deck && inZone(observation.peakDb) ? 1 : 0;
+    case "cue-set":
+      return observation.kind === "cue-set" ? 1 : 0;
+    case "cue-preview":
+      return observation.kind === "cue-preview" ? 1 : 0;
+    case "cut":
+      return observation.kind === "cut" ? 1 : 0;
     case "beat-taps":
       return observation.kind === "tap" && observation.onBeat ? 1 : 0;
     case "downbeat-taps":
@@ -124,7 +147,7 @@ function withRep(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "pr
 function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "practice" }>, observation: Observation): LessonPhase {
   switch (config.rep) {
     case "fade":
-      if (observation.kind !== "fader") return phase;
+      if (observation.kind !== "fader" || observation.deck !== "A") return phase;
       if (observation.value >= FADER_UP) return { ...phase, fadeOpen: true };
       if (observation.value <= FADER_DOWN && phase.fadeOpen) return withRep(config, { ...phase, fadeOpen: false }, true);
       return phase;
@@ -132,6 +155,14 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
       return observation.kind === "tap" ? withRep(config, phase, observation.onBeat) : phase;
     case "phrase-tap":
       return observation.kind === "tap" ? withRep(config, phase, observation.onPhraseStart) : phase;
+    case "ready":
+      return observation.kind === "ready" ? withRep(config, phase, observation.inZone) : phase;
+    case "cue-set":
+      return observation.kind === "cue-set"
+        ? withRep(config, phase, observation.onDownbeat && Math.abs(observation.offsetMs) <= CUE_PLACEMENT_TOLERANCE_MS)
+        : phase;
+    case "cut":
+      return observation.kind === "cut" ? withRep(config, phase, observation.onPhrase) : phase;
   }
 }
 
@@ -176,10 +207,12 @@ export function lessonReducer(definition: LessonDefinition): (state: LessonState
         return phase.kind === "loading" ? { ...state, phase: { kind: "hook", step: 0, progress: 0, named: null } } : state;
       case "track-failed":
         return { ...state, phase: { kind: "unavailable", message: event.message } };
-      case "observed":
-        if (phase.kind === "hook") return { ...state, phase: hook(definition, phase, event.observation) };
-        if (phase.kind === "practice") return { ...state, phase: practise(definition.practice, phase, event.observation) };
-        return state;
+      case "observed": {
+        // Most observations change nothing (level readings arrive twice a second): keep the same state.
+        const next =
+          phase.kind === "hook" ? hook(definition, phase, event.observation) : phase.kind === "practice" ? practise(definition.practice, phase, event.observation) : phase;
+        return next === phase ? state : { ...state, phase: next };
+      }
       case "skip-hook":
         return phase.kind === "hook" ? { ...state, phase: practicePhase(phase.named) } : state;
       case "start-check":
@@ -194,11 +227,11 @@ export function lessonReducer(definition: LessonDefinition): (state: LessonState
         const done = Object.keys(answers).length >= definition.questions.length;
         return { ...state, phase: done ? { kind: "grading", answers } : { kind: "answering", answers } };
       }
+      case "voided":
+        return phase.kind === "grading" ? { ...state, phase: { kind: "void", reason: event.reason, message: null } } : state;
       case "graded": {
         if (phase.kind !== "grading") return state;
-        const { outcome } = event;
-        if (outcome.outcome.kind === "void") return { ...state, phase: { kind: "void", reason: outcome.outcome.reason, message: null } };
-        const result = outcome as CheckResult;
+        const { result } = event;
         const review = event.reviewTriggers[0] ?? null;
         const { tip, ...memory } = afterGrade(definition, state, result, review);
         return {
@@ -211,6 +244,8 @@ export function lessonReducer(definition: LessonDefinition): (state: LessonState
       }
       case "grading-failed":
         return phase.kind === "grading" ? { ...state, phase: { kind: "void", reason: "recordingFailed", message: event.message } } : state;
+      case "profile-refused":
+        return phase.kind === "grading" ? { ...state, phase: { kind: "void", reason: "profileRefused", message: event.message } } : state;
       case "check-failed":
         return phase.kind === "check" ? { ...state, phase: { kind: "void", reason: "recordingFailed", message: event.message } } : state;
       case "practice-again":

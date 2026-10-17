@@ -11,7 +11,7 @@ import { CUED_BEFORE_S } from "./lessons/cut-on-phrase.ts";
 import { CLIP_DBFS } from "./lessons/deck-basics.ts";
 import { EQ_BANDS } from "./lessons/eq-basics.ts";
 import { controlsReset, drift, oneBass, overcorrect, syncKept } from "./standing-mixing.ts";
-import { controlEvents, controlValueAt } from "./timeline.ts";
+import { controlEvents, controlValueAt, playingFrom } from "./timeline.ts";
 
 /** Severity before `final-mix` and in it; `null` where the criterion does not apply. */
 const SEVERITY: Readonly<Record<StandingId, readonly [Severity | null, Severity | null]>> = {
@@ -109,7 +109,8 @@ function onPhrase(context: CheckContext, severity: Severity): CriterionResult {
   const master = loadedDeck(context, OUTGOING);
   const incoming = loadedDeck(context, INCOMING);
   const masterBeats = inAt === null || master === null ? null : phraseOffsetBeats(master, inAt);
-  const incomingBeats = inAt === null || incoming === null ? null : phraseOffsetBeats(incoming, inAt);
+  // A Play is timed from its press, before the deck's audio starts: read the deck where it starts.
+  const incomingBeats = inAt === null || incoming === null ? null : phraseOffsetBeats(incoming, playingFrom(incoming.playhead, inAt));
   const measured = masterBeats === null || incomingBeats === null ? null : Math.max(Math.abs(masterBeats), Math.abs(incomingBeats));
   return judge({
     id: "standing.on-phrase",

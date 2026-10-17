@@ -26,9 +26,20 @@ export type EngineCommand =
   | { control: "master-tempo" | "headphone-cue" | "sync"; deck: DeckId; value: boolean }
   /** Temporary rate bend while the jog wheel turns, as a fraction of the rate (0.05 is 5% faster); 0 releases it. */
   | { control: "jog-bend"; deck: DeckId; value: number }
+  /**
+   * The jog wheel turned on a paused deck: search. Moves the playhead by `value` track seconds (negative is
+   * back), stopping at the start and end of the track; refused on a playing deck, where the jog bends
+   * instead. The attempt contract has no control id for it: like `seek`, it shows in the deck's playhead
+   * model (a segment at the new position, rate 0), which is what the Checks read (e.g. a cue point set
+   * after searching). The recorder keeps the command itself in `engineEvents`.
+   */
+  | { control: "jog-search"; deck: DeckId; value: number }
   | { control: ChannelControl; deck: DeckId; value: number }
-  /** Crossfader is 0 (full A) … 1 (full B); master level is a centred knob (-1…1); cue mix is 0 (cue) … 1 (master). */
-  | { control: "crossfader" | "master-level" | "cue-mix"; value: number }
+  /**
+   * Crossfader is 0 (full A) … 1 (full B); master level is a centred knob (-1…1); cue mix is 0 (cue) … 1
+   * (master); headphone level is 0 (silent) … 0.5 (unity) … 1 (+6 dB), the MonitorOutput's headphone gain.
+   */
+  | { control: "crossfader" | "master-level" | "cue-mix" | "headphone-level"; value: number }
   /** Lesson buttons with no audio effect, recorded for the Checks: the tap key, "Done", and "Ready" for a deck. */
   | { control: "tap" | "done" }
   | { control: "ready"; deck: DeckId };
@@ -59,6 +70,7 @@ export const CONTROL_RANGES = {
   crossfader: [0, 1],
   "master-level": [-1, 1],
   "cue-mix": [0, 1],
+  "headphone-level": [0, 1],
 } as const satisfies Partial<Record<Control, readonly [number, number]>>;
 
 /** Controls that move continuously under a pointer; the recorder coalesces their events. */

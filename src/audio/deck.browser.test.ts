@@ -179,6 +179,19 @@ describe("loading", () => {
     expect(engine.deckState("A")).toMatchObject({ loading: false, trackId: "next" });
   });
 
+  it("refuses deck CUE and jog search while a load is in flight, so no cue point lands on the outgoing track", async () => {
+    // cue-point loads its slices one after another: a CUE pressed mid-load must not set a cue anywhere.
+    const { context, engine } = await engineWithTone(0.5, { frequency: 1000, peak: 0.5 });
+    const cuePoints: string[] = [];
+    engine.on("cue-point", (cue) => cuePoints.push(cue.trackId));
+    const loading = engine.load("A", toneBuffer(context, { frequency: 500, peak: 0.5, seconds: 1 }), { trackId: "next", grid: null });
+
+    expect(engine.command({ control: "jog-search", deck: "A", value: 0.1 }, KEYBOARD)).toMatchObject({ ok: false, error: { kind: "deck-loading" } });
+    expect(engine.command({ control: "deck-cue", deck: "A", value: true }, KEYBOARD)).toMatchObject({ ok: false, error: { kind: "deck-loading" } });
+    await loading;
+    expect(cuePoints).toEqual([]);
+  });
+
   it("serialises overlapping loads: the last one wins and a superseded load leaves no trace", async () => {
     const context = offlineContext(0.1);
     const engine = await createAudioEngine({ context });
@@ -267,6 +280,55 @@ describe("tempo", () => {
     const bentFor = (await bendEnd) - (await bendStart);
 
     expect(engine.playheadAt("A", 0.9)?.positionSec).toBeCloseTo(0.9 + 0.1 * bentFor, 9);
+  });
+});
+
+describe("jog search while paused", () => {
+  async function pausedDeck() {
+    const context = offlineContext(0.2);
+    const engine = await createAudioEngine({ context, masterTempo: false });
+    await engine.load("A", toneBuffer(context, { frequency: 1000, peak: 0.5, seconds: 3 }), { trackId: "t", grid: null });
+    send(engine, { control: "seek", deck: "A", value: 1 });
+    return { context, engine };
+  }
+
+  it("moves a paused deck's playhead by the searched seconds, without starting it", async () => {
+    const { engine } = await pausedDeck();
+    send(engine, { control: "jog-search", deck: "A", value: 0.25 }, { control: "jog-search", deck: "A", value: -0.05 });
+    expect(engine.playheadAt("A", 0.1)?.positionSec).toBeCloseTo(1.2, 9);
+    expect(engine.deckState("A")).toMatchObject({ playing: false, jogBend: 0 });
+  });
+
+  it("stops at the start and the end of the track, like a CDJ's platter", async () => {
+    const { engine } = await pausedDeck();
+    send(engine, { control: "jog-search", deck: "A", value: -5 });
+    expect(engine.playheadAt("A", 0.1)?.positionSec).toBe(0);
+    send(engine, { control: "jog-search", deck: "A", value: 10 });
+    expect(engine.playheadAt("A", 0.1)?.positionSec).toBeCloseTo(3, 6);
+  });
+
+  it("then deck CUE sets the cue point where the search stopped", async () => {
+    const { engine } = await pausedDeck();
+    const cuePoints: number[] = [];
+    engine.on("cue-point", (cuePoint) => cuePoints.push(cuePoint.pos));
+    send(engine, { control: "jog-search", deck: "A", value: 0.125 }, { control: "deck-cue", deck: "A", value: true });
+    expect(cuePoints).toEqual([1.125]);
+  });
+
+  it("is refused on a playing deck: there the jog bends pitch instead", async () => {
+    const { engine } = await engineWithTone(0.1, { frequency: 1000, peak: 0.5 }, { masterTempo: false });
+    expect(engine.command({ control: "jog-search", deck: "A", value: 0.1 }, KEYBOARD)).toMatchObject({
+      ok: false,
+      error: { kind: "deck-playing", deck: "A" },
+    });
+  });
+
+  it("refuses a search that is not a finite number of seconds", async () => {
+    const { engine } = await pausedDeck();
+    expect(engine.command({ control: "jog-search", deck: "A", value: Number.NaN }, KEYBOARD)).toMatchObject({
+      ok: false,
+      error: { kind: "value-out-of-range", control: "jog-search" },
+    });
   });
 });
 

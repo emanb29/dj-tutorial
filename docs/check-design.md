@@ -82,13 +82,13 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 
 | Lesson | Criterion id | Measured | Threshold → met when | Short form |
 |---|---|---|---|---|
-| `deck-basics` | `fade-in` | `t_in(A) − t_play(A)` | `≤ 4 bars` | same (it is short) |
+| `deck-basics` | `fade-in` | `t_in(A) − t_play(A)` (here the run start: the latency only shortens the span) | `≤ 4 bars` | same (it is short) |
 | | `fade-out` | fader A at task end | `= 0` | |
 | | `no-clip-local` | master peak | never `> −0.1 dBFS` | |
 | `beats-and-bars` | `beat-taps` | `matchTaps(taps, 32 beats, 40 ms)` | `matched/32 ≥ 0.90` ∧ `extras ≤ 3` | 4 + 4 bars, same ratios |
 | | `downbeat-taps` | `matchTaps(taps, 8 downbeats, 40 ms)`; taps nearest a non-downbeat | `matched ≥ 7` ∧ wrong-beat taps `= 0` | (`matched ≥ 4` of 4) |
 | | report | median signed tap offset (rushing/dragging) | — | |
-| `phrases` | `phrase-taps` | `matchTaps(taps, 6 phrase starts, 1 beat)` | `matched ≥ 5` ∧ `extras ≤ 1` | 32 bars, 3 starts, `matched ≥ 3`, `extras = 0` |
+| `phrases` | `phrase-taps` | `matchTaps(taps, 8 phrase starts, 1 beat)` | `matched ≥ 6` ∧ `extras ≤ 1` | 32 bars, 3 starts, `matched ≥ 3`, `extras = 0` |
 | | `name-sections` | Learner's picked phrase index for breakdown and drop | both equal the marked index | drop only |
 | `gain-staging` | `trim-A`, `trim-B` | max channel sample peak over an 8-bar window after "Ready" | `∈ [−6, −0.1) dBFS` | one deck, 4 bars |
 | | `loud-match` | `|integrated_A − integrated_B|` over those windows | `≤ 1.5 dB` | dropped |
@@ -98,7 +98,7 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 | `cut-on-phrase` | `cut-start` | `|t_play(B) − nearest A phrase start|` | `≤ 40 ms` | same (one cut) |
 | | `cut-tight` | `|t_out(A) − t_play(B)|` | `≤ 1 beat` | |
 | | `cued-before` | CUE B on before `t_in(B)` | `≥ 2 s` | |
-| | `loud-jump` | `loudJump(t_play(B))` | `≤ 2 dB` | |
+| | `loud-jump` | `loudJump` at B's audio start | `≤ 2 dB` | |
 | `tempo-fader` | `set-bpm` ×3 | `|bpm_B − target|` at "Done" | `≤ 0.05 BPM` on all 3 | 1 target |
 | | `master-tempo-ear` | correct answers | `2 of 2` | 1 of 1 |
 | `sync-blend` | `blend-start` | `|phraseOff(t_in(B), A)|` | `≤ 1 beat` | 8-bar blend |
@@ -405,4 +405,5 @@ The owner noted that on a MacBook trackpad, and on a simulated deck generally, l
 - **Keyboard for timing-critical actions.** Play, cue, tap, hot cues and "cut" (snap a channel fader fully open or closed) get key bindings, and Lessons teach them first. A key press is the most precise input a laptop has.
 - **Faders are judged on intent, not completion.** A channel-fader or crossfader move is timed from the moment it starts (first movement, or crossing 10% of travel), not when it finishes. A drag that starts on time passes even if it lands late.
 - **Wider timing in Lesson Checks, tightening toward `final-mix`.** Point-in-time actions (cut, hot-cue trigger, phrase-start Play) get ±120 ms in the Lesson that introduces them, ±80 ms in later Lessons, and ±60 ms in `final-mix`. Tap Checks keep ±40 ms, since they are keyboard taps. Continuous measures (phase error, levels, bass clash) are unchanged, because they don't depend on gesture speed.
+- **Point actions are timed from the action, not from the sound.** A Play (or a deck CUE press that starts a preview) is timed at its press, mapped to heard time like every input, so it sits on the same clock as the beats the Learner heard when pressing. The deck's audio starts later, by the output latency (Bluetooth headphones can add a few hundred ms) and the engine's lookahead; that gap never counts against the Learner. So `t_play(d)` is the heard time of the press that started the deck's play run (the recorder's `engineEvents`; an attempt without them falls back to the run start). Loudness measures (`loudJump`) stay on the audio start, and an incoming deck's own phrase position is read where its audio starts. `deck-basics.fade-in` (`t_in − t_play`, a 4-bar span, not a point action) keeps the audio start: the latency only makes that span shorter, never longer.
 - **The input device is recorded with every attempt** (keyboard, trackpad, mouse, touch, and later MIDI), so these tolerances can be tuned per device once real attempts exist. There is still no per-Learner latency calibration.

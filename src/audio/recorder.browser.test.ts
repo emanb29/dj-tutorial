@@ -273,6 +273,21 @@ describe("AttemptRecorder", () => {
     expect(attempt.interruptions).toEqual([{ ctx: 1.5, kind: "tabHidden" }]);
   });
 
+  it("with track changes allowed, keeps every loaded track's grid and the last track's playhead per deck", async () => {
+    const { context, engine } = await engineWithTrack({ seconds: 0.1 });
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    recorder.start({ allowTrackChanges: true });
+    const otherGrid = { ...grid, firstBeat: 0.2 };
+    await engine.load("A", toneBuffer(context, { frequency: 500, peak: 0.5, seconds: 1 }), { trackId: "track-b", grid: otherGrid });
+    engine.command({ control: "seek", deck: "A", value: 0.5 }, KEYBOARD);
+    engine.command({ control: "deck-cue", deck: "A", value: true }, KEYBOARD);
+    const attempt = await stopped(recorder);
+    expect(attempt.decks.A?.trackId).toBe("track-b");
+    expect(Object.keys(attempt.grids).sort()).toEqual(["track-a", "track-b"].sort());
+    expect(attempt.grids["track-b"]).toEqual(otherGrid);
+    expect(attempt.cuePoints.map((cue) => [cue.trackId, cue.pos])).toEqual([["track-b", 0.5]]);
+  });
+
   it("refuses an attempt in which a deck changed track (v1: one track per deck)", async () => {
     const { context, engine } = await engineWithTrack({ seconds: 0.1 });
     const recorder = new AttemptRecorder(engine, { wallClock });

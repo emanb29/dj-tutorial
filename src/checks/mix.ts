@@ -9,6 +9,7 @@ import {
   type DeckId,
   type MeterFrame,
 } from "@shared/attempt.ts";
+import { playPressTime, type GradedAttempt } from "./deck-commands.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { controlValueAt, faderGesture, isPlaying, playRunStartAt } from "./timeline.ts";
 
@@ -166,17 +167,19 @@ function lastGainUp(attempt: Attempt, deck: DeckId, t: CtxTime): CtxTime | null 
 }
 
 /**
- * When the Learner brought the deck in: the later of the Play that started it and the fader or
- * crossfader move that opened its gain (timed from that move's start). So a deck already open on
+ * When the Learner brought the deck in: the later of the Play that started it (timed from its press,
+ * `playPressTime`) and the fader or crossfader move that opened its gain (timed from that move's start). So a deck already open on
  * the master comes in at its Play, and a playing deck at the start of its fader move, even if its
  * first audible frame is later (a quiet first beat). Never later than `t_in`. `travelStart` (10% of
  * travel) suits a cut; `firstMove` suits a blend, whose slow move can take seconds to reach 10%.
  */
-export function entryActionTime(attempt: Attempt, deck: DeckId, window: CtxSpan, point: GesturePoint = "travelStart"): CtxTime | null {
+export function entryActionTime(attempt: GradedAttempt, deck: DeckId, window: CtxSpan, point: GesturePoint = "travelStart"): CtxTime | null {
   const inAt = entryTime(attempt, deck, window);
   if (inAt === null) return null;
   const playhead = attempt.decks[deck]?.playhead;
-  const startedPlaying = playhead === undefined ? null : playRunStartAt(playhead, inAt);
+  const runStart = playhead === undefined ? null : playRunStartAt(playhead, inAt);
+  // The Play is timed from its press: the audio starts an output latency (and lookahead) later.
+  const startedPlaying = runStart === null ? null : playPressTime(attempt, deck, runStart);
   const gainUp = lastGainUp(attempt, deck, inAt);
   const openedAt = gainUp === null ? null : Math.min(gainUp, gestureStartBefore(attempt, deck, gainUp, point) ?? gainUp);
   const starts = [startedPlaying, openedAt].filter((start) => start !== null);

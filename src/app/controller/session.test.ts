@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandInput, DeckId, EngineCommand, EngineDeckSnapshot, EngineMixerSnapshot, Result } from "@audio";
 import { ALL_CONTROL_IDS, type ControlId } from "./control-ids.ts";
-import { ControllerSession, WHEEL_GESTURE_END_MS, type ControllerEngine } from "./session.ts";
+import { ControllerSession, JOG_SEARCH_SEC_PER_RADIAN, WHEEL_GESTURE_END_MS, type ControllerEngine } from "./session.ts";
 
 interface Sent {
   readonly command: EngineCommand;
@@ -40,7 +40,7 @@ function fakeEngine(options: { playing?: Partial<Record<DeckId, boolean>>; posit
     on: () => () => undefined,
     deckState: (deck) => deckSnapshot(deck, { playing: options.playing?.[deck] ?? false }),
     mixerState: () =>
-      ({ crossfader: 0.5, masterLevel: 0, channels: { A: CHANNEL, B: CHANNEL }, cueMix: 0 }) satisfies EngineMixerSnapshot,
+      ({ crossfader: 0.5, masterLevel: 0, channels: { A: CHANNEL, B: CHANNEL }, cueMix: 0, headphoneLevel: 0.5 }) satisfies EngineMixerSnapshot,
     playhead: () => ({ ok: true, ctx: 1, positionSec: options.positionSec ?? 12.5, beat: null, bar: null, beatInBar: null }),
     trackHistory: () => [],
   };
@@ -311,7 +311,7 @@ describe("review fixes: nothing stays held (H3)", () => {
 
 describe("review fixes: jog wheel (M4, M2)", () => {
   it("ignores coalesced moves with no elapsed time and sends at most one bend per 16 ms", () => {
-    const { engine, sent } = fakeEngine();
+    const { engine, sent } = fakeEngine({ playing: { A: true } });
     const jog = session(engine).session.beginJog("A", "trackpad");
     // 0.02 rad over 16 ms is 1.25 rad/s, a bend of 0.05; 0.04 rad is 0.1.
     jog?.turn(0.02, 0, { eventTimeMs: 100 });
@@ -322,7 +322,7 @@ describe("review fixes: jog wheel (M4, M2)", () => {
   });
 
   it("always ends with bend 0 and gestureEnd, and is flushed by releaseAll", () => {
-    const { engine, sent } = fakeEngine();
+    const { engine, sent } = fakeEngine({ playing: { B: true } });
     const { session: controller } = session(engine);
     const jog = controller.beginJog("B", "mouse");
     jog?.turn(0.3, 16, { eventTimeMs: 16 });
@@ -330,6 +330,58 @@ describe("review fixes: jog wheel (M4, M2)", () => {
     expect(sent.at(-1)).toMatchObject({ command: { control: "jog-bend", deck: "B", value: 0 }, input: { gestureEnd: true } });
     jog?.end({ eventTimeMs: 40 });
     expect(sent).toHaveLength(2);
+  });
+});
+
+describe("jog wheel on a paused deck: search, not pitch bend", () => {
+  const searched = (sent: readonly Sent[]) =>
+    sent.filter((entry) => entry.command.control === "jog-search").reduce((sum, entry) => sum + (entry.command as { value: number }).value, 0);
+
+  it("turns the platter into a playhead search, in proportion to the angle turned", () => {
+    const { engine, sent } = fakeEngine();
+    const jog = session(engine).session.beginJog("A", "trackpad");
+    jog?.turn(1, 16, { eventTimeMs: 16 });
+    jog?.turn(-0.5, 16, { eventTimeMs: 32 });
+    jog?.end({ eventTimeMs: 40 });
+    expect(sent.every((entry) => entry.command.control === "jog-search")).toBe(true);
+    expect(searched(sent)).toBeCloseTo(0.5 * JOG_SEARCH_SEC_PER_RADIAN, 9);
+  });
+
+  it("never loses search distance to throttling: fast moves are summed and sent by the end", () => {
+    const { engine, sent } = fakeEngine();
+    const jog = session(engine).session.beginJog("A", "trackpad");
+    for (let index = 1; index <= 10; index++) jog?.turn(0.1, 2, { eventTimeMs: index * 2 });
+    jog?.end({ eventTimeMs: 30 });
+    expect(sent.length).toBeLessThan(10);
+    expect(searched(sent)).toBeCloseTo(1 * JOG_SEARCH_SEC_PER_RADIAN, 9);
+    expect(sent.at(-1)?.input.gestureEnd).toBe(true);
+  });
+
+  it("searches even with zero elapsed time (search does not need a speed)", () => {
+    const { engine, sent } = fakeEngine();
+    const jog = session(engine).session.beginJog("A", "trackpad");
+    jog?.turn(0.2, 0, { eventTimeMs: 5 });
+    jog?.end({ eventTimeMs: 6 });
+    expect(searched(sent)).toBeCloseTo(0.2 * JOG_SEARCH_SEC_PER_RADIAN, 9);
+  });
+
+  it("bends a playing deck only once its pitch-bend part is unlocked (the nudge-phase Lesson)", () => {
+    const { engine, sent } = fakeEngine({ playing: { A: true } });
+    const searchOnly = new Set<ControlId>(["A.jog"]);
+    const jog = session(engine, searchOnly).session.beginJog("A", "trackpad");
+    jog?.turn(0.3, 16, { eventTimeMs: 16 });
+    jog?.end({ eventTimeMs: 40 });
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("headphone LEVEL", () => {
+  it("reads and sets the engine's headphone level", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine);
+    expect(controller.valueOf("headphone-level")).toBe(0.5);
+    controller.setValue("headphone-level", 0.8, { device: "mouse" });
+    expect(sent.map((entry) => entry.command)).toEqual([{ control: "headphone-level", value: 0.8 }]);
   });
 });
 

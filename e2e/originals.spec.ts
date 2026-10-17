@@ -2,12 +2,13 @@ import { appendFile, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
-// The Originals player (/originals), muted, against its own API and preview (4182/4181 in
+// The Originals player (/originals), muted, against its own API and preview (4182/4181 by default, in
 // playwright.config.ts) serving a tiny fixture folder this file writes: three 20-second quiet tracks
 // in two genres. A fourth is added mid-test to check the page picks it up without a reload.
 // Screenshots land in test-results/originals-*.png.
 
-const BASE = "http://127.0.0.1:4181";
+const BASE = process.env["E2E_ORIGINALS_BASE_URL"];
+if (BASE === undefined) throw new Error("E2E_ORIGINALS_BASE_URL is unset: run through npm run test:e2e (playwright.config.ts sets it).");
 const fixtureDir = process.env["E2E_ORIGINALS_DIR"];
 if (fixtureDir === undefined) throw new Error("E2E_ORIGINALS_DIR is unset: run through npm run test:e2e (playwright.config.ts sets it).");
 const root = join(fixtureDir, "originals");

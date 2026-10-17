@@ -32,7 +32,7 @@ function grade(definition: LessonDefinition, plan: CheckPlan, recordedAttempt: A
 
 describe("the Lesson catalogue for Lessons 1–3", () => {
   it("has deck-basics, beats-and-bars and phrases, in order, each with a hook of hands-on steps", () => {
-    expect(LESSONS.map((lesson) => lesson.id)).toEqual(["deck-basics", "beats-and-bars", "phrases"]);
+    expect(LESSONS.map((lesson) => lesson.id).slice(0, 3)).toEqual(["deck-basics", "beats-and-bars", "phrases"]);
     for (const lesson of LESSONS) expect(lesson.hook.length).toBeGreaterThan(0);
   });
 
@@ -150,11 +150,11 @@ describe("phrases", () => {
     expect(halfway - firstPhrase).toBeCloseTo(32 * 4 * BEAT);
   });
 
-  it("grades both halves together as one Check: 5 of 8 phrase starts across the halves pass", () => {
+  it("grades both halves together as one Check: 6 of 8 phrase starts across the halves pass", () => {
     const starts = Array.from({ length: 8 }, (_, index) => heard(plan, firstPhrase + index * 32 * BEAT));
     const end = heard(plan, phraseStart(track.grid, 10) + BEAT);
-    // 3 in the first half, 2 in the second: neither half alone has 5.
-    const someTaps = [starts[0], starts[1], starts[2], starts[5], starts[6]].filter((t) => t !== undefined);
+    // 3 in each half: neither half alone has 6.
+    const someTaps = [starts[0], starts[1], starts[2], starts[5], starts[6], starts[7]].filter((t) => t !== undefined);
     const passed = grade(definition, plan, recorded(track, plan, { events: taps(someTaps), answers: { breakdown: 4, drop: 6 } }), end);
     expect(passed.outcome).toEqual({ kind: "passed" });
     // One false tap in each half is two in the Check: too many.

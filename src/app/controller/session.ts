@@ -1,7 +1,7 @@
 // The controller's input layer, outside React: turns key presses, pointer drags, wheel turns and button
 // presses into engine commands, with the right input device and gestureEnd on release. It is the single
 // place that checks locks, so a locked control cannot reach the engine whatever the DOM does.
-// It also owns the UI-side state the engine does not have: hot cue slots, SHIFT and the headphone level.
+// It also owns the UI-side state the engine does not have: hot cue slots and SHIFT.
 
 import { TEMPO_RANGES, type AudioEngine, type CommandInput, type DeckId, type EngineCommand, type EngineDeckSnapshot, type EngineMixerSnapshot, type InputDevice, type Result } from "@audio";
 import { deckControl, type ControlId, type ControllerUnlocks } from "./control-ids.ts";
@@ -18,6 +18,11 @@ export const WHEEL_GESTURE_END_MS = 180;
 /** Jog bend per radian-per-second of platter speed, and its cap, so a flick stays a nudge. */
 const JOG_GAIN = 0.04;
 const JOG_MAX_BEND = 0.25;
+/**
+ * Jog search on a paused deck: track seconds per radian of platter turn. One turn is about 0.94 s (two
+ * beats at 128 BPM); a trackpad scroll moves it about 2.5 ms per pixel, fine enough to land on a kick.
+ */
+export const JOG_SEARCH_SEC_PER_RADIAN = 0.15;
 /** Bend changes smaller than this are not sent; the engine asks for jog-bend to be throttled. */
 const JOG_MIN_STEP = 0.005;
 /** At most one jog bend per frame (about 60 Hz). */
@@ -30,8 +35,7 @@ export interface ControllerSnapshot {
   /** Track position of each hot cue, null when the pad is empty. */
   readonly hotCues: Readonly<Record<DeckId, readonly (number | null)[]>>;
   readonly shiftHeld: Readonly<Record<DeckId, boolean>>;
-  /** Not modelled by the engine yet (no headphone level command); kept here so the knob still moves. */
-  readonly headphoneLevel: number;
+
   /** Heard BPM from the loaded track's grid and the tempo fader, null without a grid. */
   readonly bpm: Readonly<Record<DeckId, number | null>>;
 }
@@ -117,7 +121,7 @@ export class ControllerSession {
       mixer: engine.mixerState(),
       hotCues: { A: emptySlots(), B: emptySlots() },
       shiftHeld: { A: false, B: false },
-      headphoneLevel: continuousSpec("headphone-level").resetValue,
+
       bpm: { A: this.bpmOf("A", engine.deckState("A")), B: this.bpmOf("B", engine.deckState("B")) },
     };
   }
@@ -185,7 +189,7 @@ export class ControllerSession {
   }
 
   valueOf(id: ContinuousControlId): number {
-    const { mixer, decks, headphoneLevel } = this.current;
+    const { mixer, decks } = this.current;
     switch (id) {
       case "crossfader":
         return mixer.crossfader;
@@ -194,7 +198,7 @@ export class ControllerSession {
       case "cue-mix":
         return mixer.cueMix;
       case "headphone-level":
-        return headphoneLevel;
+        return mixer.headphoneLevel;
       default: {
         const deck: DeckId = id.startsWith("A.") ? "A" : "B";
         const part = id.slice(2) as Exclude<ContinuousControlId, "crossfader" | "master-level" | "cue-mix" | "headphone-level"> extends `${DeckId}.${infer P}` ? P : never;
@@ -212,11 +216,7 @@ export class ControllerSession {
 
   private sendValue(id: ContinuousControlId, value: number, input: CommandInput): void {
     const command = commandFor(id, value);
-    if (command === null) {
-      if (id === "headphone-level") this.update({ headphoneLevel: value });
-      return;
-    }
-    this.send(command, input);
+    if (command !== null) this.send(command, input);
   }
 
   beginDrag(id: ContinuousControlId, device: InputDevice): DragGesture | null {
@@ -285,27 +285,54 @@ export class ControllerSession {
 
   // ---- jog wheel -----------------------------------------------------------------------------
 
+  /**
+   * A jog turn. On a paused deck it searches (`jog-search`, needs `jog` unlocked); on a playing deck it
+   * bends pitch (`jog-bend`, needs `jog-bend` unlocked too). The mode is chosen per turn, so a deck that
+   * starts or stops mid-gesture switches with it.
+   */
   beginJog(deck: DeckId, device: InputDevice): JogGesture | null {
     const control = deckControl(deck, "jog");
     if (!this.isUnlocked(control)) return null;
     const key = `jog:${String(this.nextGestureId++)}`;
     let lastBend = 0;
+    let bent = false;
     let lastSentMs = Number.NEGATIVE_INFINITY;
+    // Search distance not yet sent (throttled): summed, never dropped.
+    let pendingSearchSec = 0;
+    let lastSearchMs = Number.NEGATIVE_INFINITY;
+    const flushSearch = (input: CommandInput) => {
+      if (pendingSearchSec === 0) return;
+      const value = pendingSearchSec;
+      pendingSearchSec = 0;
+      this.send({ control: "jog-search", deck, value }, input);
+    };
     this.open.set(key, {
       control,
       finish: (eventTimeMs) => {
-        this.send({ control: "jog-bend", deck, value: 0 }, withTime({ device, gestureEnd: true }, eventTimeMs));
+        flushSearch(withTime({ device, gestureEnd: true }, eventTimeMs));
+        if (bent) this.send({ control: "jog-bend", deck, value: 0 }, withTime({ device, gestureEnd: true }, eventTimeMs));
       },
     });
     return {
       turn: (angleRad, elapsedMs, timing) => {
+        if (!this.open.has(key)) return;
+        const state = this.current.decks[deck];
+        if (!state.playing) {
+          pendingSearchSec += angleRad * JOG_SEARCH_SEC_PER_RADIAN;
+          if (timing.eventTimeMs - lastSearchMs < JOG_MIN_INTERVAL_MS) return;
+          lastSearchMs = timing.eventTimeMs;
+          flushSearch({ device, eventTimeMs: timing.eventTimeMs, gestureEnd: false });
+          return;
+        }
+        if (!this.isUnlocked(deckControl(deck, "jog-bend"))) return;
         // Coalesced pointer events can arrive with no time between them; they carry no speed.
-        if (!this.open.has(key) || elapsedMs <= 0) return;
+        if (elapsedMs <= 0) return;
         if (timing.eventTimeMs - lastSentMs < JOG_MIN_INTERVAL_MS) return;
         const speed = (angleRad / elapsedMs) * 1000;
         const bend = Math.max(-JOG_MAX_BEND, Math.min(JOG_MAX_BEND, speed * JOG_GAIN));
         if (Math.abs(bend - lastBend) < JOG_MIN_STEP) return;
         lastBend = bend;
+        bent = true;
         lastSentMs = timing.eventTimeMs;
         this.send({ control: "jog-bend", deck, value: bend }, { device, eventTimeMs: timing.eventTimeMs, gestureEnd: false });
       },

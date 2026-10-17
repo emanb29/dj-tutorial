@@ -7,6 +7,7 @@
 
 import SignalsmithStretch, { type StretchNode } from "signalsmith-stretch";
 import { barBeatAt, beatAt, beatGridProblems } from "./beat-grid.ts";
+import { decibelsToGain, headphoneLevelToDecibels } from "./curves.ts";
 import { CONTROL_RANGES, type ChannelControl, type CommandInput, type EngineCommand } from "./commands.ts";
 import { Deck, type DeckSnapshot, type MasterTempoAvailability, type TrackInfo, type TrackRecord } from "./deck.ts";
 import { Emitter, type Unsubscribe } from "./events.ts";
@@ -56,6 +57,8 @@ export type ChannelSnapshot = Readonly<Record<ChannelControl, number>> & { reado
 export interface EngineMixerSnapshot extends Readonly<MixerState> {
   readonly channels: Readonly<Record<DeckId, ChannelSnapshot>>;
   readonly cueMix: number;
+  /** Headphone LEVEL, 0…1 (0.5 is unity). */
+  readonly headphoneLevel: number;
 }
 
 export interface EngineDeckSnapshot extends DeckSnapshot {
@@ -156,6 +159,7 @@ export class AudioEngine {
   private readonly stretchLeadSec: number;
   private readonly onStateChange: () => void;
   private cueMix = 0;
+  private headphoneLevel = 0.5;
   private follower: DeckId | null = null;
   private closed = false;
 
@@ -260,6 +264,7 @@ export class AudioEngine {
       ...this.mixer.snapshot(),
       channels: { A: { ...this.channelState.A, cue: this.cueOn.A }, B: { ...this.channelState.B, cue: this.cueOn.B } },
       cueMix: this.cueMix,
+      headphoneLevel: this.headphoneLevel,
     };
   }
 
@@ -368,6 +373,11 @@ export class AudioEngine {
         return this.setTempoRange(command.deck, command.value, when);
       case "master-tempo":
         return this.afterDeckChange(this.decks[command.deck].setMasterTempo(when, command.value));
+      case "jog-search":
+        if (!Number.isFinite(command.value)) {
+          return fail({ kind: "value-out-of-range", control: "jog-search", value: command.value, min: -Number.MAX_VALUE, max: Number.MAX_VALUE });
+        }
+        return this.afterDeckChange(this.decks[command.deck].search(when, command.value));
       case "jog-bend":
         return this.validated(command.control, command.value, () => this.afterDeckChange(this.decks[command.deck].setJogBend(when, command.value)));
       case "sync":
@@ -403,6 +413,12 @@ export class AudioEngine {
         return this.validated(command.control, command.value, () => {
           this.cueMix = command.value;
           this.monitor.setCueMix(command.value);
+          return OK;
+        });
+      case "headphone-level":
+        return this.validated(command.control, command.value, () => {
+          this.headphoneLevel = command.value;
+          this.monitor.setHeadphoneGain(decibelsToGain(headphoneLevelToDecibels(command.value)));
           return OK;
         });
       case "tap":

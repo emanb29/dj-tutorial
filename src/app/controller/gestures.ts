@@ -61,12 +61,11 @@ export function continuousSpec(id: ContinuousControlId): ContinuousSpec {
 /** The engine command that sets a control to `value`, or null when the engine has no such control. */
 export function commandFor(id: ContinuousControlId, value: number): EngineCommand | null {
   const { deck, part } = splitId(id);
-  if (part === "headphone-level") return null;
   if (deck === null) {
-    if (part === "crossfader" || part === "master-level" || part === "cue-mix") return { control: part, value };
+    if (part === "crossfader" || part === "master-level" || part === "cue-mix" || part === "headphone-level") return { control: part, value };
     return null;
   }
-  if (part === "crossfader" || part === "master-level" || part === "cue-mix") return null;
+  if (part === "crossfader" || part === "master-level" || part === "cue-mix" || part === "headphone-level") return null;
   return { control: part, deck, value };
 }
 

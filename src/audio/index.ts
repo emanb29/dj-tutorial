@@ -54,6 +54,7 @@ export {
   eqKnobToDecibels,
   filterKnobSettings,
   gainToDecibels,
+  headphoneLevelToDecibels,
   masterKnobToDecibels,
   toTimelineDecibels,
   trimKnobToDecibels,

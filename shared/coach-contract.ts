@@ -112,13 +112,31 @@ export interface WarmData {
 
 export type CoachData = CurriculumData | CheckLineData | WarmData;
 
+/** The model's Curriculum output. The enums come from the catalogue, so ids outside it cannot appear. */
+export const ElectiveIdSchema = z.enum(ELECTIVE_IDS);
+
+/** What the Curriculum job answers with (`CurriculumData`), for clients that read the response. */
+export const CurriculumDataSchema: z.ZodType<CurriculumData> = z.strictObject({
+  job: z.literal("curriculum"),
+  curriculum: z.array(LessonIdSchema),
+  missionTags: z.array(MissionTagSchema),
+  electiveNotes: z.partialRecord(ElectiveIdSchema, z.string()),
+});
+
+/** What the check-line job answers with (`CheckLineData`). */
+export const CheckLineDataSchema: z.ZodType<CheckLineData> = z.strictObject({ job: z.literal("checkLine"), line: z.string().min(1) });
+
+/** The success envelope around a job's data, as the server sends it (`CoachSuccess`), extras allowed. */
+export function coachSuccessSchema<Data extends z.ZodType>(data: Data) {
+  return z.object({ success: z.literal(true), source: z.enum(["llm", "fallback"]), data });
+}
+
+
 /** A late, failed or invalid model call is still a success: the deterministic data is the answer. */
 export type CoachSuccess<Data extends CoachData> =
   | { readonly success: true; readonly source: "llm"; readonly data: Data; readonly model: string; readonly latencyMs: number }
   | { readonly success: true; readonly source: "fallback"; readonly data: Data; readonly fallbackReason: FallbackReason };
 
-/** The model's Curriculum output. The enums come from the catalogue, so ids outside it cannot appear. */
-export const ElectiveIdSchema = z.enum(ELECTIVE_IDS);
 export const CurriculumOutputSchema = z.strictObject({
   missionTags: z.array(MissionTagSchema),
   electives: z.array(

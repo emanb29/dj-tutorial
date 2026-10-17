@@ -2,7 +2,8 @@
 import type { CriterionResult } from "@shared/check-result.ts";
 import { loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
-import { cueOnSeconds, entryActionTime, exitActionTime } from "../mix.ts";
+import { playPressTime } from "../deck-commands.ts";
+import { cueOnSeconds, entryActionTime, entryTime, exitActionTime } from "../mix.ts";
 import { loudJump, phraseOffsetSeconds } from "../phrasing.ts";
 import { beatSeconds, firstPlayStart, playRunStartAt } from "../timeline.ts";
 import { pointActionToleranceMs } from "../tolerance.ts";
@@ -19,16 +20,20 @@ export const cutOnPhrase: LessonCheck<TaskOf<"cut-on-phrase">> = {
     const deckA = loadedDeck(context, "A");
     const deckB = loadedDeck(context, "B");
     const inB = entryActionTime(attempt, "B", window);
-    // `t_play(B)`: the Play that brought B in, not an earlier CUE-hold preview in the headphones.
-    const playB =
-      deckB === null ? null : inB !== null ? playRunStartAt(deckB.playhead, inB) : firstPlayStart(deckB.playhead, window.from);
+    const heardB = entryTime(attempt, "B", window);
+    // The run that brought B in (not an earlier CUE-hold preview in the headphones), where its audio starts.
+    const runB =
+      deckB === null ? null : heardB !== null ? playRunStartAt(deckB.playhead, heardB) : firstPlayStart(deckB.playhead, window.from);
+    // `t_play(B)`: a point action, timed from the Play press (input leeway), on the same clock as A's beats.
+    const playB = runB === null ? null : playPressTime(attempt, "B", runB);
     const outA = exitActionTime(attempt, "A", window);
 
     const startOffset = deckA === null || playB === null ? null : phraseOffsetSeconds(deckA, playB);
     const tightBeats =
       deckA === null || playB === null || outA === null ? null : Math.abs(outA - playB) / beatSeconds(deckA.playhead, deckA.grid, playB);
     const cuedSeconds = inB === null ? null : cueOnSeconds(attempt, "B", { from: window.from, to: inB });
-    const jump = deckA === null || playB === null ? null : loudJump(context, deckA, playB);
+    // Loudness is about the sound, so it is measured around where B's audio starts.
+    const jump = deckA === null || runB === null ? null : loudJump(context, deckA, runB);
 
     const criteria: CriterionResult[] = [
       judge({

@@ -42,6 +42,23 @@ describe("split-cue monitor output", () => {
     expect(leftDb).toBeCloseTo(0, 1);
   });
 
+  it("headphone LEVEL scales the headphone (left) ear and leaves the master ear alone", async () => {
+    const { leftDb, rightDb } = await renderSplitCue([
+      { control: "headphone-cue", deck: "A", value: true },
+      { control: "headphone-level", value: 0.25 },
+    ]);
+    // A quarter turn is half way down the lower half of the knob: −12 dB.
+    expect(leftDb).toBeCloseTo(-12, 1);
+    expect(rightDb).toBeCloseTo(0, 1);
+  });
+
+  it("headphone LEVEL fully down silences the headphone ear; the centre is unity", async () => {
+    const down = await renderSplitCue([{ control: "headphone-cue", deck: "A", value: true }, { control: "headphone-level", value: 0 }]);
+    expect(down.leftDb).toBeLessThan(-100);
+    const centre = await renderSplitCue([{ control: "headphone-cue", deck: "A", value: true }, { control: "headphone-level", value: 0.5 }]);
+    expect(centre.leftDb).toBeCloseTo(0, 1);
+  });
+
   it("attaching twice to the same buses does not double the output", async () => {
     const monitor = new SplitCueMonitor();
     const { context, engine } = await engineWithTone(SECONDS, { frequency: 1000, peak: PEAK }, { monitor });

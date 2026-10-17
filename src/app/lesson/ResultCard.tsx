@@ -7,16 +7,9 @@ import { lessonById } from "@shared/catalogue.ts";
 import { RECENT_LINES_MAX } from "@shared/coach-contract.ts";
 import type { MissionTag } from "@shared/mission.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
+import type { SaveStatus } from "../save-queue.ts";
 import { coachLine } from "./api-client.ts";
-
-const VOID_WORDS = {
-  contextSuspended: "the sound stopped",
-  tabHidden: "the tab was hidden",
-  gridUntrusted: "this track's beat grid is too uneven to grade",
-  abandoned: "it was left early",
-  sectionNotHeard: "the deck never played all of the part being graded. Let the music run until the Check ends by itself, then go again",
-  recordingFailed: "it could not be recorded",
-} as const;
+import { voidLine } from "./void-line.ts";
 
 interface ResultCardProps {
   readonly phase: Extract<LessonPhase, { kind: "result" } | { kind: "void" }>;
@@ -25,6 +18,9 @@ interface ResultCardProps {
   /** From the Learner's record (set by the Curriculum job); sent with the line request. */
   readonly missionTags: readonly MissionTag[];
   readonly attemptToday: number;
+  /** A failed save shows "not saved — retry" instead of a silent pass and unlock. */
+  readonly saveStatus: SaveStatus;
+  readonly onRetrySave: () => void;
   /** The last lines shown this session, so the Coach does not repeat itself. Owned by the player. */
   readonly recentLines: RefObject<string[]>;
   readonly onRetry: () => void;
@@ -41,9 +37,7 @@ export function ResultCard(props: ResultCardProps) {
         <h2>
           <span aria-hidden="true">–</span> Didn&apos;t count
         </h2>
-        <p>
-          Not graded: {VOID_WORDS[phase.reason]}.{phase.message === null ? "" : ` ${phase.message}`}
-        </p>
+        <p>{voidLine(phase.reason, phase.message)}</p>
         <Actions onRetry={onRetry} onPractice={onPractice} />
       </section>
     );
@@ -64,9 +58,10 @@ function Actions({ onRetry, onPractice }: { readonly onRetry: () => void; readon
   );
 }
 
-function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, recentLines, onRetry, onPractice, onDeclineReview, onOpenLesson }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
+function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, recentLines, saveStatus, onRetrySave, onRetry, onPractice, onDeclineReview, onOpenLesson }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
   const { result, review, tip, firstPass } = phase;
   const passed = result.outcome.kind === "passed";
+  const unsaved = saveStatus.kind === "failed";
   const line = useCoachLine(phase, definition, learnerId, missionTags, attemptToday, recentLines);
   const wording = useWording();
   const shown = result.criteria.filter((criterion) => criterion.status !== "notApplicable");
@@ -76,7 +71,16 @@ function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, r
     <section className={`result-card lesson-overlay ${passed ? "passed" : "failed"}`} aria-label="Result" data-outcome={result.outcome.kind}>
       <h2>
         <span aria-hidden="true">{passed ? "✓" : "✗"}</span> {passed ? "Passed" : "Not yet"}
+        {unsaved ? <span className="result-unsaved"> (not saved)</span> : null}
       </h2>
+      {unsaved ? (
+        <div className="save-problem" role="alert">
+          <span>Not saved: {passed ? "this pass isn't stored yet." : "this attempt isn't stored yet."}</span>
+          <button type="button" className="btn btn-primary" onClick={onRetrySave}>
+            Retry save
+          </button>
+        </div>
+      ) : null}
       <ul className="result-criteria">
         {shown.map((criterion) => (
           <li key={criterion.id} data-status={criterion.status}>
@@ -101,7 +105,7 @@ function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, r
           </button>
         </div>
       )}
-      {firstPass && next !== undefined ? (
+      {firstPass && next !== undefined && !unsaved ? (
         <div className="unlock-badge" role="status">
           Unlocked: <strong>{next.title}</strong>
           {next.unlocks.length > 0 ? <span> (new on the controller: {next.unlocks.join(", ")})</span> : null}

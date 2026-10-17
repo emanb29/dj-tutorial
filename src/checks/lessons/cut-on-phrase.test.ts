@@ -9,6 +9,7 @@ import {
   attempt,
   channel,
   cutScenario,
+  engineCommand,
   event,
   frames,
   playing,
@@ -46,6 +47,42 @@ describe("cut-on-phrase", () => {
     expect(byId(check({ playB: 32.12 }), "cut-on-phrase.cut-start")?.status).toBe("met");
     expect(byId(check({ playB: 31.88 }), "cut-on-phrase.cut-start")?.status).toBe("met");
     expect(byId(check({ playB: 32.121 }), "cut-on-phrase.cut-start")?.status).toBe("notMet");
+  });
+
+  it("times B's Play from the press, so output latency and the engine's lookahead never count against the Learner", () => {
+    // Bluetooth headphones and the lookahead: B's audio starts 250 ms after the press heard on the 1.
+    const lateAudio = (pressedAt: number) => ({
+      ...cutScenario({ playB: pressedAt + 0.25, closeA: [event(pressedAt, "channelFader", 0, "A")], extraEvents: [event(20, "channelFader", 1, "B")] }),
+      engineEvents: [{ ...engineCommand(pressedAt + 0.25, "play", "B", true), heardCtx: pressedAt }],
+    });
+    const graded = (recorded: ReturnType<typeof lateAudio>) =>
+      runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { passedLessons: ["deck-basics", "gain-staging"] }), recorded);
+
+    const onTheOne = graded(lateAudio(32));
+    if (!("criteria" in onTheOne)) throw new Error("expected a graded result");
+    expect(byId(onTheOne, "cut-on-phrase.cut-start")).toMatchObject({ status: "met" });
+    expect(byId(onTheOne, "cut-on-phrase.cut-start")?.measured).toBeCloseTo(0);
+    expect(byId(onTheOne, "cut-on-phrase.cut-tight")?.measured).toBeCloseTo(0);
+    expect(byId(onTheOne, "cut-on-phrase.cut-start")?.evidence).toEqual([{ from: 32, to: 32, label: "B plays" }]);
+
+    const late = graded(lateAudio(32.13));
+    if (!("criteria" in late)) throw new Error("expected a graded result");
+    expect(byId(late, "cut-on-phrase.cut-start")).toMatchObject({ status: "notMet" });
+    expect(byId(late, "cut-on-phrase.cut-start")?.measured).toBeCloseTo(130);
+  });
+
+  it("ignores a Play that did not start B's run (refused, or on deck A): then B's audio start is all there is", () => {
+    const scenario = cutScenario({ playB: 32.25 });
+    const recorded = {
+      ...scenario,
+      engineEvents: [
+        { ...engineCommand(32.25, "play", "B", true, { rejected: true }), heardCtx: 32 },
+        { ...engineCommand(32.25, "play", "A", true), heardCtx: 32 },
+      ],
+    };
+    const result = runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { passedLessons: ["gain-staging"] }), recorded);
+    if (!("criteria" in result)) throw new Error("expected a graded result");
+    expect(byId(result, "cut-on-phrase.cut-start")?.measured).toBeCloseTo(250);
   });
 
   it("fails a cut on a bar that is not a phrase start", () => {

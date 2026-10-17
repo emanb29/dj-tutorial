@@ -16,6 +16,8 @@ export interface MonitorOutput {
   attach(buses: MonitorBuses): void;
   /** Cue/master mix knob: 0 is cue only, 1 is master only. */
   setCueMix(mix: number): void;
+  /** Headphone LEVEL as an amplitude gain (1 is unity) on the headphone path; outputs without one ignore it. */
+  setHeadphoneGain(gain: number): void;
   detach(): void;
 }
 
@@ -39,6 +41,10 @@ export class MasterOnlyMonitor implements MonitorOutput {
     // No headphone path to mix.
   }
 
+  setHeadphoneGain(): void {
+    // No headphone path to scale.
+  }
+
   detach(): void {
     if (this.attached === null) return;
     this.attached.master.disconnect(this.attached.context.destination);
@@ -55,13 +61,15 @@ interface SplitCueNodes {
 }
 
 /**
- * Split cue on one stereo output. Left = mono (cue × (1 − mix) + master × mix); right = mono master.
+ * Split cue on one stereo output. Left (the headphone ear) = mono (cue × (1 − mix) + master × mix) × the
+ * headphone gain; right = mono master.
  * Mono is the speaker down-mix (L + R) / 2.
  */
 export class SplitCueMonitor implements MonitorOutput {
   readonly kind = "split-cue";
   private nodes: SplitCueNodes | null = null;
   private cueMix = 0;
+  private headphoneGain = 1;
 
   attach(buses: MonitorBuses): void {
     if (sameBuses(this.nodes?.buses ?? null, buses)) return;
@@ -88,6 +96,11 @@ export class SplitCueMonitor implements MonitorOutput {
     this.applyCueMix();
   }
 
+  setHeadphoneGain(gain: number): void {
+    this.headphoneGain = gain;
+    this.applyCueMix();
+  }
+
   detach(): void {
     const nodes = this.nodes;
     if (nodes === null) return;
@@ -101,7 +114,7 @@ export class SplitCueMonitor implements MonitorOutput {
   private applyCueMix(): void {
     if (this.nodes === null) return;
     const now = this.nodes.buses.context.currentTime;
-    this.nodes.cueLevel.gain.setTargetAtTime(1 - this.cueMix, now, 0.003);
-    this.nodes.masterInLeft.gain.setTargetAtTime(this.cueMix, now, 0.003);
+    this.nodes.cueLevel.gain.setTargetAtTime((1 - this.cueMix) * this.headphoneGain, now, 0.003);
+    this.nodes.masterInLeft.gain.setTargetAtTime(this.cueMix * this.headphoneGain, now, 0.003);
   }
 }

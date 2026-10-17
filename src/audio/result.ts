@@ -6,6 +6,7 @@ export type AudioEngineError =
   | { kind: "tempo-out-of-range"; requestedRate: number; rangePercent: number }
   | { kind: "value-out-of-range"; control: string; value: number; min: number; max: number }
   | { kind: "no-track-loaded"; deck: DeckId }
+  | { kind: "deck-playing"; deck: DeckId }
   | { kind: "deck-loading"; deck: DeckId }
   | { kind: "invalid-track"; problems: readonly string[] }
   | { kind: "track-load-failed"; deck: DeckId; reason: string }
@@ -40,6 +41,8 @@ export function describeError(error: AudioEngineError): string {
       return `${error.control} = ${String(error.value)} is outside [${String(error.min)}, ${String(error.max)}]; send a value inside the range.`;
     case "no-track-loaded":
       return `Deck ${error.deck} has no track; load one before using the transport.`;
+    case "deck-playing":
+      return `Deck ${error.deck} is playing; jog search works on a paused deck (pause it first, or bend with jog-bend).`;
     case "deck-loading":
       return `Deck ${error.deck} is still loading a track; wait for load() to resolve.`;
     case "invalid-track":

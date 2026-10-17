@@ -39,6 +39,15 @@ export function masterKnobToDecibels(knob: CentredKnob): number {
   return levelKnobToDecibels(knob, -24, 6);
 }
 
+/**
+ * Headphone LEVEL, 0…1: silent at 0, a fader-like curve up to unity at the centre (0.25 is about −12 dB),
+ * then up to +6 dB at the top.
+ */
+export function headphoneLevelToDecibels(level: FaderPosition): number {
+  if (level <= 0) return Number.NEGATIVE_INFINITY;
+  return level <= 0.5 ? 40 * Math.log10(2 * level) : 6 * (2 * level - 1);
+}
+
 /** Channel fader gain (amplitude), from the curve the Checks use: amplitude = position². */
 export function channelFaderGain(position: FaderPosition): number {
   return decibelsToGain(channelFaderGainDb(position));

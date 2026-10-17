@@ -177,6 +177,56 @@ function taps(label: string, criterion: CriterionResult, need: number): string {
   return `${label}: ${String(matched)} of ${String(targets)} on time (need ${String(need)})${extra}${wrongText}`;
 }
 
+/** A number with a true minus sign (−3.2), as on the meters. */
+function signed(value: number, digits: number): string {
+  const text = Math.abs(value).toFixed(digits);
+  return value < 0 && Number(text) !== 0 ? `−${text}` : text;
+}
+
+const round = (value: number) => String(Math.round(value));
+
+function peakLine(deck: "A" | "B", criterion: CriterionResult): string {
+  const zone = criterion.threshold?.value;
+  const need = zone === undefined || typeof zone === "number" ? "need the zone" : `need ${signed(zone[0], 0)} to ${signed(zone[1], 1)}`;
+  return criterion.measured === null ? `Deck ${deck}: no Ready (R) with 8 bars after it` : `Deck ${deck} peak: ${signed(criterion.measured, 1)} dBFS (${need})`;
+}
+
+/** Lessons 4–7; null for criteria of other Lessons. */
+function describeMixing(criterion: CriterionResult): string | null {
+  const measured = criterion.measured;
+  const need = thresholdValue(criterion);
+  switch (criterion.id) {
+    case "gain-staging.trim-A":
+      return peakLine("A", criterion);
+    case "gain-staging.trim-B":
+      return peakLine("B", criterion);
+    case "gain-staging.loud-match":
+      return measured === null ? "A and B loudness: not measured (Ready both decks)" : `A and B loudness: ${measured.toFixed(1)} dB apart (need ${String(need)} or less)`;
+    case "headphone-cue.cued-taps":
+      return taps("B's beats", criterion, Math.ceil(need * (criterion.detail?.["targets"] ?? 0) - 1e-9));
+    case "headphone-cue.b-off-master": {
+      const cueOn = round((criterion.detail?.["cueOnFraction"] ?? 0) * 100);
+      return measured !== null && measured > need ? "B reached the speakers: fader B came up" : `B off the speakers: fader down, CUE on ${cueOn}% of the taps (need 95%)`;
+    }
+    case "cue-point.cue-on-downbeat": {
+      const wrong = criterion.detail?.["wrongBeat"] ?? 0;
+      const missing = criterion.detail?.["missing"] ?? 0;
+      const head = measured === null ? "Cue points: none set" : `Cue points: worst ${round(measured)} ms off the beat (need ${String(need)} or less)`;
+      return `${head}${wrong > 0 ? `, ${String(wrong)} not on a 1` : ""}${missing > 0 && measured !== null ? `, ${String(missing)} not set` : ""}`;
+    }
+    case "cut-on-phrase.cut-start":
+      return measured === null ? "Cut: B never came in" : `Cut: ${round(measured)} ms from the phrase start (need ${String(need)} or less)`;
+    case "cut-on-phrase.cut-tight":
+      return measured === null ? "A out: A never went out" : `A out ${measured.toFixed(2)} beats from B in (need ${String(need)} or less)`;
+    case "cut-on-phrase.cued-before":
+      return measured === null ? "CUE B: B never came in" : `CUE B on ${measured.toFixed(1)} s before the cut (need ${String(need)})`;
+    case "cut-on-phrase.loud-jump":
+      return measured === null ? "Level jump: not measured" : `Level jump at the cut: ${measured.toFixed(1)} dB (need ${String(need)} or less)`;
+    default:
+      return null;
+  }
+}
+
 /** One plain line per criterion for the result card: what was measured against what was needed. */
 export function describeCriterion(criterion: CriterionResult): string {
   const measured = criterion.measured;
@@ -198,6 +248,8 @@ export function describeCriterion(criterion: CriterionResult): string {
       return `Sections named: ${String(questions - (measured ?? questions))} of ${String(questions)} right`;
     }
     default: {
+      const mixing = describeMixing(criterion);
+      if (mixing !== null) return mixing;
       const name = criterionPlainName(criterion.id);
       const label = name.charAt(0).toUpperCase() + name.slice(1);
       return measured === null ? label : `${label}: ${String(Math.round(measured * 100) / 100)} ${criterion.unit}`;

@@ -11,6 +11,11 @@ describe("lessonKey: the Lesson's own keys", () => {
     expect(press("Escape")).toEqual({ kind: "exit" });
   });
 
+  it("maps R to Ready (a level set, a cue point final)", () => {
+    expect(press("KeyR")).toEqual({ kind: "ready" });
+    expect(press("KeyR", { repeat: true })).toBeNull();
+  });
+
   it("ignores a held key's repeats: holding Enter starts the Check once, not every 30 ms", () => {
     expect(press("Enter", { repeat: true })).toBeNull();
     expect(press("KeyP", { repeat: true })).toBeNull();

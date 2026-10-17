@@ -116,6 +116,11 @@ export const LearnerRecordSchema = z
     missionTags: z.array(MissionTagSchema),
     /** `null` until the first Curriculum is built. */
     curriculum: z.array(LessonIdSchema).nullable(),
+    /**
+     * The one-time headphones check (split cue needs stereo headphones, not OS mono): when it passed.
+     * Absent in records from before it existed.
+     */
+    headphones: z.strictObject({ checkedAt: IsoTimeSchema }).nullable().optional(),
     skillProfile: SkillProfileSchema,
   })
   .superRefine((record, context) => {
@@ -141,6 +146,11 @@ export function emptyLearnerRecord(learnerId: LearnerId): LearnerRecord {
     curriculum: null,
     skillProfile: { schemaVersion: 1, learnerId, lessons: {}, criteria: {}, courseCompletedAt: null },
   };
+}
+
+/** The record after the headphones check passed at `checkedAt` (wall clock). */
+export function withHeadphonesChecked(record: LearnerRecord, checkedAt: string): LearnerRecord {
+  return { ...record, headphones: { checkedAt } };
 }
 
 /**

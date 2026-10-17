@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CheckResult, CriterionResult, VoidAttempt } from "@shared/check-result.ts";
+import type { CheckResult, CriterionResult } from "@shared/check-result.ts";
 import { lessonDefinition } from "./catalogue.ts";
 import { initialLessonState, lessonReducer, type LessonEvent, type LessonState } from "./runtime.ts";
 import type { Observation } from "./types.ts";
@@ -54,9 +54,9 @@ function result(failed: readonly CriterionResult["id"][]): CheckResult {
   };
 }
 
-const graded = (outcome: CheckResult | VoidAttempt, extra: Partial<Extract<LessonEvent, { type: "graded" }>> = {}): LessonEvent => ({
+const graded = (outcome: CheckResult, extra: Partial<Extract<LessonEvent, { type: "graded" }>> = {}): LessonEvent => ({
   type: "graded",
-  outcome,
+  result: outcome,
   reviewTriggers: [],
   firstPass: false,
   lineFacts: { focusHistory: [], bestMarginBefore: null, retentionChange: null },
@@ -70,21 +70,21 @@ describe("the hook", () => {
   });
 
   it("names the concept only after the Learner has done it, then moves to the next step", () => {
-    const state = run(deckBasics, [{ type: "track-ready" }, seen({ kind: "play", playing: true })]);
+    const state = run(deckBasics, [{ type: "track-ready" }, seen({ kind: "play", deck: "A", playing: true })]);
     expect(state.phase).toEqual({ kind: "hook", step: 1, progress: 0, named: "That's PLAY. The deck spins, but it's silent." });
   });
 
   it("ignores what the step does not ask for", () => {
-    const state = run(deckBasics, [{ type: "track-ready" }, seen({ kind: "fader", value: 1 })]);
+    const state = run(deckBasics, [{ type: "track-ready" }, seen({ kind: "fader", deck: "A", value: 1 })]);
     expect(state.phase).toMatchObject({ kind: "hook", step: 0 });
   });
 
   it("flows into practice after the last step, keeping the last concept on screen", () => {
     const state = run(deckBasics, [
       { type: "track-ready" },
-      seen({ kind: "play", playing: true }),
-      seen({ kind: "fader", value: 1 }),
-      seen({ kind: "fader", value: 0 }),
+      seen({ kind: "play", deck: "A", playing: true }),
+      seen({ kind: "fader", deck: "A", value: 1 }),
+      seen({ kind: "fader", deck: "A", value: 0 }),
     ]);
     expect(state.phase).toEqual({ kind: "practice", reps: [], ready: false, fadeOpen: false, named: "Fade out. That's a deck." });
   });
@@ -118,7 +118,7 @@ describe("practice", () => {
 
   it("counts a fade in and out as one deck-basics rep", () => {
     const practising = run(deckBasics, [{ type: "track-ready" }, { type: "skip-hook" }]);
-    const state = run(deckBasics, [seen({ kind: "fader", value: 1 }), seen({ kind: "fader", value: 0 })], practising);
+    const state = run(deckBasics, [seen({ kind: "fader", deck: "A", value: 1 }), seen({ kind: "fader", deck: "A", value: 0 })], practising);
     expect(state.phase).toMatchObject({ kind: "practice", reps: [true], ready: true });
   });
 });
@@ -151,8 +151,7 @@ describe("the Check loop", () => {
   });
 
   it("does not count a void attempt and says why", () => {
-    const voided: VoidAttempt = { ...identity, outcome: { kind: "void", reason: "tabHidden" } };
-    const state = run(deckBasics, [{ type: "start-check" }, { type: "audio-ended" }, graded(voided)], practising);
+    const state = run(deckBasics, [{ type: "start-check" }, { type: "audio-ended" }, { type: "voided", reason: "tabHidden" }], practising);
     expect(state.phase).toEqual({ kind: "void", reason: "tabHidden", message: null });
     expect(state.attempts).toBe(0);
   });
@@ -191,6 +190,13 @@ describe("the Check loop", () => {
     expect(state.phase).toEqual({ kind: "void", reason: "recordingFailed", message: "No meters." });
     expect(state.attempts).toBe(0);
     expect(run(deckBasics, [{ type: "start-check" }], state).phase).toEqual({ kind: "check", attempt: 2 });
+  });
+
+  it("tells a result the profile refused apart from a recording failure: the attempt was recorded and graded", () => {
+    const state = run(deckBasics, [{ type: "start-check" }, { type: "audio-ended" }, { type: "profile-refused", message: "criteria.x: bad id" }], practising);
+    expect(state.phase).toEqual({ kind: "void", reason: "profileRefused", message: "criteria.x: bad id" });
+    expect(state.attempts).toBe(0);
+    expect(run(deckBasics, [{ type: "profile-refused", message: "late" }], practising).phase).toEqual(practising.phase);
   });
 
   it("keeps the last 3 margins of each graded criterion this session, for the Coach line", () => {

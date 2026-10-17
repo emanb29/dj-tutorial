@@ -1,6 +1,7 @@
-// The jog wheel. In v1 it only bends pitch (research §3): turning it while playing speeds the deck up
-// (clockwise) or slows it down, by how fast it turns. Dragging round the platter or scrolling over it
-// both work. The platter's marker turns with the playhead at 33⅓ rpm, so a playing deck visibly spins.
+// The jog wheel (research §3). On a paused deck, turning it searches: the playhead moves with the
+// platter, to find a cue point. On a playing deck it bends pitch: the deck speeds up (clockwise) or slows
+// down, by how fast it turns (once the nudge-phase Lesson unlocks it). Dragging round the platter or
+// scrolling over it both work. The platter's marker turns with the playhead at 33⅓ rpm.
 
 import { useEffect, useRef, type PointerEvent } from "react";
 import type { DeckId } from "@audio";
@@ -110,8 +111,8 @@ export function JogWheel({ deck, captionSide }: { readonly deck: DeckId; readonl
         className="jog-surface"
         role="group"
         aria-roledescription="jog wheel"
-        aria-label={`Deck ${deck} jog wheel: drag round or scroll to nudge the tempo`}
-        title="Jog wheel: turn it (drag round, or scroll) to nudge the deck faster or slower."
+        aria-label={`Deck ${deck} jog wheel: drag round or scroll; paused it searches, playing it nudges`}
+        title="Jog wheel: turn it (drag round, or scroll). Paused: moves the playhead. Playing: nudges the deck faster or slower."
         onPointerDown={(event) => {
           if (event.button !== 0 || turning.current !== null) return;
           const gesture = session.beginJog(deck, session.devices.fromPointer(event.pointerType));

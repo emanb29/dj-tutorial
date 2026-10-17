@@ -54,6 +54,11 @@ export function playRunStartAt(model: PlayheadModel, t: CtxTime): CtxTime | null
   return starts.at(-1)?.fromCtx ?? null;
 }
 
+/** `t` when the deck plays then, else the start of its next play run (`t` when there is none). */
+export function playingFrom(model: PlayheadModel, t: CtxTime): CtxTime {
+  return isPlaying(model, t) ? t : (firstPlayStart(model, t) ?? t);
+}
+
 /** Beat phase φ at `t`, in beats from the grid's beat 0; `null` before the deck starts. */
 export function beatPhase(model: PlayheadModel, grid: BeatGrid, t: CtxTime): number | null {
   const pos = positionAt(model, t);

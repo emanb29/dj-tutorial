@@ -25,8 +25,9 @@ export type StandingId = (typeof STANDING_IDS)[number];
 
 export type CriterionId = `${(typeof LESSON_IDS)[number]}.${string}` | `standing.${StandingId}`;
 
+// Kebab-case names; capitals allowed after the first character for deck letters (`gain-staging.trim-A`).
 const criterionIdPattern = new RegExp(
-  `^(?:(?:${LESSON_IDS.join("|")})\\.[a-z0-9][a-z0-9-]{0,63}|standing\\.(?:${STANDING_IDS.join("|")}))$`,
+  `^(?:(?:${LESSON_IDS.join("|")})\\.[a-z0-9][a-zA-Z0-9-]{0,63}|standing\\.(?:${STANDING_IDS.join("|")}))$`,
 );
 
 export function isCriterionId(value: string): value is CriterionId {
@@ -37,7 +38,7 @@ export const CriterionIdSchema = z
   .string()
   .refine(isCriterionId, {
     message:
-      'Expected a criterion id such as "cut-on-phrase.play-on-phrase" (a Lesson id, a dot, a kebab-case name) or "standing.no-clip".',
+      'Expected a criterion id such as "cut-on-phrase.play-on-phrase" (a Lesson id, a dot, a kebab-case name; deck letters may be capitals) or "standing.no-clip".',
   });
 
 export const CHECK_MODES = ["lesson", "placement", "cold", "warmup", "bonus"] as const;

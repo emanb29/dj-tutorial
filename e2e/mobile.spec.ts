@@ -24,21 +24,29 @@ interface Box {
   readonly height: number;
 }
 
-async function openLesson(page: Page, lessonId: string, options: { readonly touch: boolean; readonly passed?: readonly string[] }): Promise<void> {
+async function openLesson(page: Page, lessonId: string, options: { readonly touch: boolean; readonly passed?: readonly string[]; readonly headphones?: boolean }): Promise<void> {
   const learnerId = `e2e-mobile-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
   const passed = options.passed ?? [];
   if (passed.length > 0) {
     // Earlier Lessons passed, through the app's own API (from the page, so it sees the app's Origin).
     await page.goto(`/?learner=${learnerId}`);
     const status = await page.evaluate(
-      async ({ id, lessonIds }) => {
+      async ({ id, lessonIds, headphones }) => {
         const at = new Date().toISOString();
         const lessons = Object.fromEntries(lessonIds.map((lesson) => [lesson, { lessonId: lesson, passedAt: at, passedVia: "lesson", attempts: 1, reviewSuggestedAt: null, reviewDeclinedAt: null }]));
-        const record = { schemaVersion: 1, learnerId: id, mission: "", missionTags: [], curriculum: null, skillProfile: { schemaVersion: 1, learnerId: id, lessons, criteria: {}, courseCompletedAt: null } };
+        const record = {
+          schemaVersion: 1,
+          learnerId: id,
+          mission: "",
+          missionTags: [],
+          curriculum: null,
+          ...(headphones ? { headphones: { checkedAt: at } } : {}),
+          skillProfile: { schemaVersion: 1, learnerId: id, lessons, criteria: {}, courseCompletedAt: null },
+        };
         const response = await fetch(`/api/learners/${id}/profile`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) });
         return response.status;
       },
-      { id: learnerId, lessonIds: passed },
+      { id: learnerId, lessonIds: passed, headphones: options.headphones === true },
     );
     expect(status).toBe(200);
   }
@@ -207,6 +215,65 @@ test.describe("Lesson 2 on a phone", () => {
     const box = await tap.boundingBox();
     expect(box?.width).toBeGreaterThanOrEqual(TOUCH_TARGET_PX);
     expect(box?.height).toBeGreaterThanOrEqual(TOUCH_TARGET_PX);
+  });
+});
+
+/** An engine command from the test, standing in for a knob turn the touch tests cannot drag. */
+async function command(page: Page, sent: Record<string, unknown>): Promise<void> {
+  const ok = await page.evaluate(
+    (payload) => (window as unknown as { learnToDjLesson?: { engine: { command(c: unknown, i: { device: string }): { ok: boolean } } } }).learnToDjLesson?.engine.command(payload, { device: "touch" }).ok,
+    sent,
+  );
+  expect(ok, JSON.stringify(sent)).toBe(true);
+}
+
+async function expectFingerSized(page: Page, locator: Locator): Promise<void> {
+  await expect(locator).toBeInViewport();
+  const box = await settledBox(page, locator);
+  expect(box.width).toBeGreaterThanOrEqual(TOUCH_TARGET_PX);
+  expect(box.height).toBeGreaterThanOrEqual(TOUCH_TARGET_PX);
+}
+
+test.describe("Ready (R) on a phone", () => {
+  test.use(phone(412, 915));
+  const phase = (page: Page) => page.locator("main.lesson");
+  const ready = (page: Page) => page.getByRole("button", { name: "Ready", exact: true });
+
+  test("gain-staging: Ready is a finger-sized button in practice and the Check, and it marks the deck Ready", async ({ page }) => {
+    await openLesson(page, "gain-staging", { touch: true, passed: ["deck-basics"] });
+    const caption = page.getByRole("status", { name: "Lesson caption" });
+    // The hook, with the trims turned from the test: A into the zone, PLAY B, B into the zone.
+    await command(page, { control: "trim", deck: "A", value: 1 / 3 });
+    await expect(caption).toContainText("Tap PLAY on deck B", { timeout: 5000 });
+    await command(page, { control: "play", deck: "B" });
+    await command(page, { control: "trim", deck: "B", value: 1 / 3 });
+    await expect(phase(page)).toHaveAttribute("data-phase", "practice", { timeout: 5000 });
+    await expect(caption).toContainText("then Ready");
+    await expect(caption).not.toContainText("(R)");
+    await expectFingerSized(page, ready(page));
+
+    await page.getByRole("button", { name: "Start the Check" }).tap();
+    await expect(phase(page)).toHaveAttribute("data-phase", "check");
+    await expect(page.locator(".lesson-cue")).toHaveText("Trim A into the zone, then Ready");
+    await expectFingerSized(page, ready(page));
+    await ready(page).tap();
+    await expect(page.locator(".lesson-cue")).toHaveText("Hands off A. Trim B to match, then Ready");
+  });
+
+  test("cue-point: no Ready in practice (a cue point is the rep), a finger-sized Ready in the Check", async ({ page }) => {
+    await openLesson(page, "cue-point", { touch: true, passed: ["deck-basics", "beats-and-bars", "headphone-cue"], headphones: true });
+    // The hook from the test: search, set a cue point, hold CUE on it to preview, let go.
+    await command(page, { control: "jog-search", deck: "A", value: 0.1 });
+    await command(page, { control: "deck-cue", deck: "A", value: true });
+    await command(page, { control: "deck-cue", deck: "A", value: false });
+    await command(page, { control: "deck-cue", deck: "A", value: true });
+    await command(page, { control: "deck-cue", deck: "A", value: false });
+    await expect(phase(page)).toHaveAttribute("data-phase", "practice", { timeout: 5000 });
+    await expect(ready(page)).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Start the Check" }).tap();
+    await expect(page.locator(".lesson-cue")).toHaveText("Cue 1 of 3: a 1, by ear. Ready when happy");
+    await expectFingerSized(page, ready(page));
   });
 });
 

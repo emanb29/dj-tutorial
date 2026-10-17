@@ -3,11 +3,10 @@
 // line (coach-design §4, no-key mode), so a Lesson never waits on the network.
 import { z } from "zod";
 import type { CurriculumAnswer } from "@lessons";
-import { LessonIdSchema } from "@shared/check-types.ts";
-import { learnerPaths, type CheckLineRequest, type CurriculumRequest } from "@shared/coach-contract.ts";
+import { CheckLineDataSchema, coachSuccessSchema, CurriculumDataSchema, learnerPaths, type CheckLineRequest, type CurriculumRequest } from "@shared/coach-contract.ts";
 import { deterministicLine } from "@shared/coach-deterministic.ts";
 import { emptyLearnerRecord, LearnerRecordSchema, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
-import { MissionTagSchema } from "@shared/mission.ts";
+
 
 export type ApiProblem = { readonly kind: "offline"; readonly message: string } | { readonly kind: "refused"; readonly status: number; readonly message: string };
 
@@ -67,16 +66,7 @@ export async function saveLearner(record: LearnerRecord): Promise<Loaded<Learner
 /** A background re-plan may take the server's whole retry budget (coach-design §3: ~95 s). */
 export const CURRICULUM_DEADLINE_MS = 120_000;
 
-const CurriculumEnvelope = z.object({
-  success: z.literal(true),
-  source: z.enum(["llm", "fallback"]),
-  data: z.object({
-    job: z.literal("curriculum"),
-    curriculum: z.array(LessonIdSchema),
-    missionTags: z.array(MissionTagSchema),
-    electiveNotes: z.record(z.string(), z.string()),
-  }),
-});
+const CurriculumEnvelope = coachSuccessSchema(CurriculumDataSchema);
 
 /**
  * Asks the Coach for a new Curriculum. Null when the API is unreachable or refuses: the old
@@ -107,7 +97,7 @@ export async function requestCurriculum(learnerId: LearnerId, request: Curriculu
 /** The line fills at min(Coach answers, this) and never changes after it appears (coach-design §2.3). */
 export const COACH_LINE_DEADLINE_MS = 1200;
 
-const LineEnvelope = z.object({ success: z.literal(true), data: z.object({ job: z.literal("checkLine"), line: z.string().min(1) }) });
+const LineEnvelope = coachSuccessSchema(CheckLineDataSchema);
 
 /**
  * The post-Check line: the Coach's if it answers within the deadline, else the deterministic one,
@@ -115,6 +105,8 @@ const LineEnvelope = z.object({ success: z.literal(true), data: z.object({ job: 
  */
 export async function coachLine(learnerId: LearnerId, request: CheckLineRequest, signal: AbortSignal): Promise<string> {
   const fallback = deterministicLine(request);
+  // The result this line was for is already gone: asking would only spend the Coach's budget.
+  if (signal.aborted) return fallback;
   const deadline = new AbortController();
   const abort = () => {
     deadline.abort();
@@ -129,9 +121,16 @@ export async function coachLine(learnerId: LearnerId, request: CheckLineRequest,
       signal: deadline.signal,
       credentials: "same-origin",
     });
-    if (!response.ok) return fallback;
-    const parsed = LineEnvelope.safeParse(await response.json());
-    return parsed.success ? parsed.data.data.line : fallback;
+    if (!response.ok) {
+      console.warn(`[coach] the Coach line was refused (HTTP ${String(response.status)}); showing the built-in line. The server log says why.`);
+      return fallback;
+    }
+    const parsed = LineEnvelope.safeParse(await jsonOrUndefined(response));
+    if (!parsed.success) {
+      console.warn("[coach] the Coach line answer has the wrong shape; showing the built-in line. Check that the server and app versions match.");
+      return fallback;
+    }
+    return parsed.data.data.line;
   } catch {
     // Late, offline or aborted: the built-in line is the answer (an expected condition, not an error).
     return fallback;

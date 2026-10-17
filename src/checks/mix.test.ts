@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MUSIC, SILENT, attempt, channel, event, frames, playing } from "./testing/synthetic.ts";
+import { MUSIC, SILENT, attempt, channel, engineCommand, event, frames, playing } from "./testing/synthetic.ts";
 import { audibleSpans, channelGainDb, entryActionTime, entryTime, exitActionTime, exitTime, isAudible } from "./mix.ts";
 
 const window = { from: 0, to: 40 };
@@ -99,6 +99,16 @@ describe("entry and exit", () => {
 
     expect(exitTime(recorded, "A", window)).toBeCloseTo(30.4);
     expect(exitActionTime(recorded, "A", window)).toBeCloseTo(30);
+  });
+
+  it("time the entry of a deck already open on the master from its Play press, not its audio a latency later", () => {
+    const recorded = {
+      ...twoDecks(5, 30),
+      engineEvents: [{ ...engineCommand(10, "play", "B", true), heardCtx: 9.8 }],
+    };
+
+    expect(entryTime(recorded, "B", window)).toBeCloseTo(10);
+    expect(entryActionTime(recorded, "B", window)).toBeCloseTo(9.8);
   });
 
   it("never put the entry before the deck starts playing, even when the fader opened just before Play", () => {

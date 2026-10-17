@@ -1,0 +1,44 @@
+/* A save that did not reach the server: never a silent pass. */
+.save-problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--fail);
+  border-radius: var(--radius-sm);
+  color: var(--fail);
+}
+
+.result-unsaved {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--fail);
+}
+
+/* The one-time headphones check, over the controller. */
+.headphones-gate {
+  border-top: 6px solid var(--cue);
+}
+
+.headphones-gate h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+}
+
+.headphones-gate p {
+  margin: 0 0 var(--space-4);
+  color: var(--ink-dim);
+}
+
+.headphones-answers {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.headphones-answers .btn {
+  min-width: 96px;
+  font-size: var(--text-md);
+}

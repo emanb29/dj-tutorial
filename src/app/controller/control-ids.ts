@@ -10,6 +10,8 @@ const DECK_PARTS = [
   "sync",
   "shift",
   "jog",
+  /** Turning the jog on a playing deck bends pitch (the nudge-phase Lesson); `jog` alone is search while paused. */
+  "jog-bend",
   "hot-cue",
   "tempo",
   "tempo-range",

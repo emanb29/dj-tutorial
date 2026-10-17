@@ -194,6 +194,16 @@ export class Deck {
     return OK;
   }
 
+  /** Jog search on a paused deck: moves the playhead by `deltaSec`, stopping at the track's ends. */
+  search(when: CtxTime, deltaSec: number): Result {
+    const track = this.requireTrack();
+    if (!track.ok) return track;
+    if (this.playing) return fail({ kind: "deck-playing", deck: this.id });
+    const { durationSec, playhead } = track.track.record;
+    const target = Math.min(durationSec, Math.max(0, playhead.positionAt(when) + deltaSec));
+    return playhead.seek(when, target);
+  }
+
   /** Deck CUE pressed. Returns the new cue point when the press set one. */
   cuePress(when: CtxTime): Result<{ cuePointSet: number | null }> {
     const track = this.requireTrack();

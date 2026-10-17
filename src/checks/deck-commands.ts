@@ -74,3 +74,23 @@ export function filterAt(attempt: GradedAttempt, deck: DeckId, t: CtxTime): numb
 export function isSyncedAt(attempt: GradedAttempt, syncedAtStart: readonly DeckId[], deck: DeckId, t: CtxTime): boolean {
   return deckCommandValueAt(deckCommands(attempt, "sync", deck), t, syncedAtStart.includes(deck) ? 1 : 0) > 0;
 }
+
+/**
+ * When the Learner pressed the button that started the deck's play run at `runStart` (the playhead
+ * segment where it went from stopped to playing): the heard time of that Play, or of the deck CUE
+ * press that started a preview. A point action is timed from the action (check-design, "Input
+ * leeway"), so the output latency and the engine's lookahead between the press and the audio never
+ * count against the Learner. A contract attempt without engine events has only the run start.
+ */
+export function playPressTime(attempt: GradedAttempt, deck: DeckId, runStart: CtxTime): CtxTime {
+  const press = (attempt.engineEvents ?? []).find(
+    ({ command, device, heardCtx, appliedCtx, rejected }) =>
+      rejected === null &&
+      device !== "engine" &&
+      heardCtx !== null &&
+      command.deck === deck &&
+      (command.control === "play" || (command.control === "deck-cue" && command.value === true)) &&
+      Math.abs(appliedCtx - runStart) <= TIME_EPSILON,
+  );
+  return Math.min(press?.heardCtx ?? runStart, runStart);
+}

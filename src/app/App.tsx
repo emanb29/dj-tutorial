@@ -6,6 +6,7 @@ import { HealthIndicator } from "./HealthIndicator.tsx";
 import { loadLearner, requestCurriculum, saveLearner } from "./lesson/api-client.ts";
 import { LessonList } from "./lesson/LessonList.tsx";
 import type { TrackPreference } from "./lesson/track-loader.ts";
+import { SaveQueue, type SaveStatus } from "./save-queue.ts";
 
 // The dev playground and the Lesson player load the audio engine and the controller: separate chunks.
 const Playground = lazy(() => import("./playground/Playground.tsx").then((module) => ({ default: module.Playground })));
@@ -58,6 +59,9 @@ export function App() {
   const [learner, setLearner] = useState<LearnerState>({ kind: "loading" });
   /** The record as last set, for answers that arrive after a render (the Curriculum re-plan). */
   const latestRecord = useRef<LearnerRecord | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "saved" });
+  // One owner for saving: grading and the Curriculum re-plan both save through it, in order.
+  const [saves] = useState(() => new SaveQueue(saveLearner, setSaveStatus));
 
   useEffect(() => {
     const onPop = () => {
@@ -94,10 +98,18 @@ export function App() {
   const exit = useCallback(() => {
     navigate("/");
   }, [navigate]);
-  const changeLearner = useCallback((record: LearnerRecord) => {
-    latestRecord.current = record;
-    setLearner((current) => ({ kind: "ready", record, offline: current.kind === "ready" ? current.offline : null }));
-  }, []);
+  /** Keeps a new record and saves it (one save at a time; the newest wins). */
+  const changeLearner = useCallback(
+    (record: LearnerRecord) => {
+      latestRecord.current = record;
+      setLearner((current) => ({ kind: "ready", record, offline: current.kind === "ready" ? current.offline : null }));
+      saves.save(record);
+    },
+    [saves],
+  );
+  const retrySave = useCallback(() => {
+    saves.retry();
+  }, [saves]);
   // In the App, not the Lesson: the answer may come after the Learner has left the Lesson.
   const replanCurriculum = useCallback(
     (result: CheckResult) => {
@@ -106,11 +118,7 @@ export function App() {
       void requestCurriculum(record.learnerId, curriculumRequest(record, result, crypto.randomUUID())).then((answer) => {
         const current = latestRecord.current;
         if (answer === null || current?.learnerId !== record.learnerId) return;
-        const next = withCurriculum(current, answer);
-        changeLearner(next);
-        void saveLearner(next).then((saved) => {
-          if (!saved.ok) console.warn(`[app] ${saved.problem.message}`);
-        });
+        changeLearner(withCurriculum(current, answer));
       });
     },
     [changeLearner],
@@ -141,6 +149,8 @@ export function App() {
           lessonId={lessonId}
           learner={learner.record}
           onLearnerChange={changeLearner}
+          saveStatus={saveStatus}
+          onRetrySave={retrySave}
           onSkipGroupPassed={replanCurriculum}
           trackPreference={options.trackPreference}
           onExit={exit}

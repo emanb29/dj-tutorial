@@ -1,28 +1,49 @@
 // One Lesson, end to end: the controller fills the screen, one caption line sits above it, a compact
 // strip gives live feedback, and the result card follows each Check. Hook → practice → Check → result
 // → Check again is one loop driven by the pure runtime; Enter always goes (back) into the Check.
-import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
-import { createAudioEngine, describeError, type AudioEngine } from "@audio";
-import { applyCheckResult } from "@checks";
-import { initialLessonState, lessonDefinition, lineFacts, NO_LINE_FACTS, skipGroupsPassed, lessonReducer, unlocksAfter, type BuiltLessonId, type ControlId, type LessonPhase, type LessonTrack, type Observation } from "@lessons";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
+import { createAudioEngine, describeError, MasterOnlyMonitor, SplitCueMonitor, type AudioEngine } from "@audio";
+import { applyCheckResult, CUE_PLACEMENT_TOLERANCE_MS } from "@checks";
+import {
+  initialLessonState,
+  lessonDefinition,
+  lineFacts,
+
+  peakDbfsOf,
+  readyUsedIn,
+  skipGroupsPassed,
+  lessonReducer,
+  unlocksAfter,
+  type BuiltLessonId,
+  type ControlId,
+  type DeckId,
+  type LessonPhase,
+  type LessonTrack,
+  type Observation,
+} from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
-import { withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
+import { withHeadphonesChecked, withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
 import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
 import { inputWording, useWording } from "../controller/wording.ts";
-import { saveLearner } from "./api-client.ts";
+import type { SaveStatus } from "../save-queue.ts";
 import { FeedbackStrip, type TapMark } from "./FeedbackStrip.tsx";
+import { needsHeadphonesCheck } from "./headphones-check.ts";
+import { HeadphonesGate } from "./HeadphonesGate.tsx";
 import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
 import { ResultCard } from "./ResultCard.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
 import "./lesson.css";
+import "./lesson-extras.css";
 
 export interface LessonHandle {
   readonly engine: AudioEngine;
   readonly track: LessonTrack;
   readonly phase: () => LessonPhase["kind"];
+  /** The track on a deck now: the Lesson track, or a cue-point slice. */
+  readonly deckTrack: (deck: DeckId) => LessonTrack | null;
 }
 
 declare global {
@@ -35,7 +56,11 @@ declare global {
 export interface LessonPlayerProps {
   readonly lessonId: BuiltLessonId;
   readonly learner: LearnerRecord;
+  /** A new record to keep and save (the App saves it, one save at a time). */
   readonly onLearnerChange: (record: LearnerRecord) => void;
+  /** Whether the last save reached the server; a failure shows "not saved — retry". */
+  readonly saveStatus: SaveStatus;
+  readonly onRetrySave: () => void;
   /** A graded result completed a skip group: the app re-plans the Curriculum in the background. */
   readonly onSkipGroupPassed: (result: CheckResult) => void;
   readonly trackPreference: TrackPreference;
@@ -60,8 +85,16 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }
 
-export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPassed, trackPreference, onExit, onOpenLesson }: LessonPlayerProps) {
+function tapMark(observation: Observation): TapMark | null {
+  if (observation.kind === "tap") return { offsetMs: observation.offsetMs, good: observation.onBeat };
+  if (observation.kind === "cue-set") return { offsetMs: observation.offsetMs, good: observation.onDownbeat && Math.abs(observation.offsetMs) <= CUE_PLACEMENT_TOLERANCE_MS };
+  return null;
+}
+
+export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, onRetrySave, onSkipGroupPassed, trackPreference, onExit, onOpenLesson }: LessonPlayerProps) {
   const definition = useMemo(() => lessonDefinition(lessonId), [lessonId]);
+  // Asked once per Learner, before the first headphone-cue Lesson; read at mount only.
+  const [headphonesGate, setHeadphonesGate] = useState(() => needsHeadphonesCheck(definition, learner));
   const reducer = useMemo(() => lessonReducer(definition), [definition]);
   const [state, dispatch] = useReducer(reducer, lessonId, initialLessonState);
   const [setup, setSetup] = useState<Setup>({ kind: "loading", status: "Getting the deck ready…" });
@@ -99,11 +132,13 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
     };
     const observed = (observation: Observation) => {
       dispatch({ type: "observed", observation });
-      if (observation.kind === "tap") setTaps((marks) => [...marks, { offsetMs: observation.offsetMs, good: observation.onBeat }].slice(-TAP_MARKS_KEPT));
+      const mark = tapMark(observation);
+      if (mark !== null) setTaps((marks) => [...marks, mark].slice(-TAP_MARKS_KEPT));
     };
     void (async () => {
       try {
-        engine = await createAudioEngine({ masterTempo: false });
+        // Headphone Lessons use split cue: cue in the left ear, master in the right.
+        engine = await createAudioEngine({ masterTempo: false, monitor: definition.headphones === true ? new SplitCueMonitor() : new MasterOnlyMonitor() });
         const ready = await loadLessonTrack(definition, {
           preference: trackPreference,
           signal: abort.signal,
@@ -113,22 +148,35 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
           },
         });
         if (cancelled()) return;
-        const loaded = await engine.load("A", ready.audio, { trackId: ready.track.trackId, grid: ready.track.grid });
-        if (!loaded.ok) throw new Error(`deck A refused the track: ${describeError(loaded.error)}`);
+        const channels = Array.from({ length: ready.audio.numberOfChannels }, (_, channel) => ready.audio.getChannelData(channel));
+        const track: LessonTrack = { ...ready.track, peakDbfs: peakDbfsOf(channels) };
+        const withDeckB = LessonSession.usesDeckB(definition, track);
+        for (const deck of withDeckB ? (["A", "B"] as const) : (["A"] as const)) {
+          const loaded = await engine.load(deck, ready.audio, { trackId: track.trackId, grid: track.grid });
+          if (!loaded.ok) throw new Error(`deck ${deck} refused the track: ${describeError(loaded.error)}`);
+        }
         if (cancelled()) return;
-        session = new LessonSession(engine, definition, ready.track, learnerRef.current.learnerId, {
-          observed,
-          audioEnded: () => {
-            dispatch({ type: "audio-ended" });
+        const created = new LessonSession(
+          engine,
+          definition,
+          track,
+          ready.audio,
+          learnerRef.current.learnerId,
+          {
+            observed,
+            audioEnded: () => {
+              dispatch({ type: "audio-ended" });
+            },
+            checkFailed: (message) => {
+              dispatch({ type: "check-failed", message });
+            },
           },
-          checkFailed: (message) => {
-            dispatch({ type: "check-failed", message });
-          },
-        });
+          withDeckB,
+        );
+        session = created;
         const running = engine;
-        window.learnToDjLesson = { engine: running, track: ready.track, phase: () => phaseRef.current.kind };
-        setSetup({ kind: "ready", engine: running, session });
-        dispatch({ type: "track-ready" });
+        window.learnToDjLesson = { engine: running, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck) };
+        setSetup({ kind: "ready", engine: running, session: created });
       } catch (error) {
         if (abort.signal.aborted) return;
         const message = `The deck could not start: ${error instanceof Error ? error.message : String(error)}. Reload to try again.`;
@@ -148,6 +196,16 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
 
   const engine = setup.kind === "ready" ? setup.engine : null;
   const session = setup.kind === "ready" ? setup.session : null;
+
+  // The hook starts once the deck is ready and, for headphone Lessons, the headphones check passed.
+  const deckReady = session !== null;
+  useEffect(() => {
+    if (deckReady && !headphonesGate) dispatch({ type: "track-ready" });
+  }, [deckReady, headphonesGate]);
+  const headphonesPassed = useCallback(() => {
+    onLearnerChange(withHeadphonesChecked(learnerRef.current, new Date().toISOString()));
+    setHeadphonesGate(false);
+  }, [onLearnerChange]);
 
   // Browsers start audio only after a gesture; the click that opened the Lesson usually was one.
   useEffect(() => {
@@ -197,25 +255,24 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
       }
       const { outcome } = graded;
       if (!isGraded(outcome)) {
-        dispatch({ type: "graded", outcome, reviewTriggers: [], firstPass: false, lineFacts: NO_LINE_FACTS });
+        dispatch({ type: "voided", reason: outcome.outcome.reason });
         return;
       }
       const result = outcome;
       const update = applyCheckResult(before.skillProfile, result);
       const written = withSkillProfile(before, update.profile);
       if (!written.ok) {
-        dispatch({ type: "grading-failed", message: `The Skill profile update is invalid (${written.issues.join("; ")}).` });
+        console.warn("[lesson] the Skill profile refused the graded result", written.issues);
+        dispatch({ type: "profile-refused", message: written.issues.join("; ") });
         return;
       }
       const { record } = written;
       const firstPass = before.skillProfile.lessons[lessonId]?.passedAt == null && update.profile.lessons[lessonId]?.passedAt != null;
+      // Saved by the App, one save at a time; the re-plan below saves after this record.
       onLearnerChange(record);
-      void saveLearner(record).then((saved) => {
-        if (!saved.ok) console.warn(`[lesson] ${saved.problem.message}`);
-      });
       if (skipGroupsPassed(before.skillProfile, record.skillProfile).length > 0) onSkipGroupPassed(result);
       const facts = lineFacts(result, { profileBefore: before.skillProfile, retentionChanges: update.retentionChanges, marginHistory: marginsRef.current });
-      dispatch({ type: "graded", outcome: result, reviewTriggers: update.reviewTriggers, firstPass, lineFacts: facts });
+      dispatch({ type: "graded", result, reviewTriggers: update.reviewTriggers, firstPass, lineFacts: facts });
     });
     return () => {
       cancelled = true;
@@ -258,6 +315,9 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
         case "practice":
           dispatch({ type: "practice-again" });
           break;
+        case "ready":
+          session?.ready();
+          break;
         case "exit":
           onExit();
           break;
@@ -272,7 +332,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [answering, definition, onExit]);
+  }, [answering, definition, onExit, session]);
 
   // The controller: earlier Lessons' controls, plus this Lesson's as the hook reaches them.
   const before = useMemo(() => passedLessons(learner).filter((id) => id !== lessonId), [learner, lessonId]);
@@ -298,9 +358,10 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
 
       <div className="lesson-stage">
         <p className="lesson-caption" role="status" aria-live="polite" aria-label="Lesson caption">
-          <Caption phase={phase} definition={definition} setupStatus={setup.kind === "loading" ? setup.status : null} cueLine={cueLine} />
+          <Caption phase={phase} definition={definition} setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null} cueLine={cueLine} />
         </p>
         {wording === "touch" ? <TouchGo phase={phase} dispatch={dispatch} /> : null}
+        {wording === "touch" && session !== null ? <TouchReady phase={phase} session={session} definition={definition} /> : null}
         {session === null ? null : <FeedbackStrip session={session} taps={taps} showBeat={phase.kind !== "check"} practice={phase.kind === "practice" ? phase : null} />}
       </div>
 
@@ -330,9 +391,13 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
           </section>
         ) : null}
 
+        {headphonesGate && engine !== null ? <HeadphonesGate context={engine.context} onPassed={headphonesPassed} /> : null}
+
         {phase.kind === "result" || phase.kind === "void" ? (
           <ResultCard
             phase={phase}
+            saveStatus={saveStatus}
+            onRetrySave={onRetrySave}
             definition={definition}
             learnerId={learner.learnerId}
             missionTags={learner.missionTags}
@@ -451,6 +516,23 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
 }
 
 /** On a touchscreen there is no Enter key: the way into the Check (and to restart it) is a button. */
+/** R without a keyboard: Ready, while practice or the Check uses it (gain-staging, cue-point). */
+function TouchReady({ phase, session, definition }: { readonly phase: LessonPhase; readonly session: LessonSession; readonly definition: ReturnType<typeof lessonDefinition> }) {
+  const used = useMemo(() => readyUsedIn(definition, session.track), [definition, session]);
+  if (!(phase.kind === "practice" ? used.practice : phase.kind === "check" && used.check)) return null;
+  return (
+    <button
+      type="button"
+      className="btn btn-primary lesson-touch-go"
+      onClick={() => {
+        session.ready();
+      }}
+    >
+      Ready
+    </button>
+  );
+}
+
 function TouchGo({ phase, dispatch }: { readonly phase: LessonPhase; readonly dispatch: (action: { type: "start-check" }) => void }) {
   if (phase.kind !== "practice" && phase.kind !== "check") return null;
   return (

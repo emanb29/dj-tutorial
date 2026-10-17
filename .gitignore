@@ -13,3 +13,4 @@ __screenshots__/
 *.tsbuildinfo
 # Model files are fetched or exported, never committed (src/analysis/index.ts).
 public/models/
+.vitest/

@@ -71,16 +71,18 @@ async function harness(options: {
   const context = new OfflineAudioContext({ numberOfChannels: 2, length: Math.round(options.renderSec * sampleRate), sampleRate });
   const running = await createAudioEngine({ context, masterTempo: false });
   engine = running;
-  expect(await running.load("A", options.audio(context), { trackId: track.trackId, grid: track.grid })).toEqual({ ok: true });
+  const audio = options.audio(context);
+  expect(await running.load("A", audio, { trackId: track.trackId, grid: track.grid })).toEqual({ ok: true });
   const definition = lessonDefinition(options.lessonId);
   let ended = 0;
-  const session = new LessonSession(running, definition, track, "learner-1", {
+  const listener = {
     observed: () => undefined,
     audioEnded: () => (ended += 1),
-    checkFailed: (message) => {
+    checkFailed: (message: string) => {
       throw new Error(message);
     },
-  });
+  };
+  const session = new LessonSession(running, definition, track, audio, "learner-1", listener, false);
   const quantum = 128 / sampleRate;
   let started = false;
   const renderTo = async (ctx: number) => {

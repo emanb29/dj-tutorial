@@ -49,12 +49,16 @@ function touchWords(binding: KeyBinding): TouchWords | null {
   }
 }
 
-const WORDS_BY_LABEL: ReadonlyMap<string, TouchWords> = new Map(
-  KEY_BINDINGS.flatMap((binding) => {
+/** The Lesson's own Ready key (lesson-keys.ts, not a controller key): the Ready button on a touchscreen. */
+const READY_WORDS: TouchWords = { press: "Tap Ready", aside: null, bare: "Ready" };
+
+const WORDS_BY_LABEL: ReadonlyMap<string, TouchWords> = new Map([
+  ...KEY_BINDINGS.flatMap((binding) => {
     const words = touchWords(binding);
     return words === null ? [] : [[binding.label, words] as const];
   }),
-);
+  ["R", READY_WORDS] as const,
+]);
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const anyLabel = [...WORDS_BY_LABEL.keys()].map(escape).join("|");

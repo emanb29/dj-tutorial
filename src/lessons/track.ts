@@ -116,3 +116,36 @@ export function heardTimeOf(playhead: PlayheadModel, pos: number, notBefore: Ctx
 export function cuedAt(playhead: PlayheadModel, pos: number, notBefore: CtxTime = Number.NEGATIVE_INFINITY): CtxTime | null {
   return playhead.segments.find((segment) => segment.fromCtx >= notBefore && Math.abs(segment.pos - pos) < 1e-6)?.fromCtx ?? null;
 }
+
+/** Sample peak of some audio channels, dBFS; −Infinity for silence. */
+export function peakDbfsOf(channels: readonly Float32Array[]): number {
+  let peak = 0;
+  for (const channel of channels) for (const sample of channel) peak = Math.max(peak, Math.abs(sample));
+  return peak === 0 ? Number.NEGATIVE_INFINITY : 20 * Math.log10(peak);
+}
+
+/**
+ * The trim knob (−1…1) that adds `decibels`: the inverse of the engine's trim curve (+9 dB fully right,
+ * linear down to −24 dB just before silence). Clamped to the knob's audible range.
+ */
+export function trimKnobFor(decibels: number): number {
+  return decibels >= 0 ? Math.min(1, decibels / 9) : Math.max(-0.95, decibels / 24);
+}
+
+/**
+ * A piece of a Lesson track as a track of its own (the cue-point Check loads three in turn). Its grid is
+ * the parent's, shifted so position 0 is `fromSec`; it has no phrases or sections.
+ */
+export function sliceTrack(track: LessonTrack, slice: { readonly fromSec: number; readonly lengthSec: number }, index: number): LessonTrack {
+  const beat = beatSec(track.grid);
+  const firstInSlice = Math.ceil((slice.fromSec - track.grid.firstBeat) / beat - 1e-9);
+  const downbeatIndex = (((track.grid.downbeatIndex - firstInSlice) % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR;
+  return {
+    ...track,
+    trackId: `${track.trackId}#cue-${String(index + 1)}`,
+    durationSec: slice.lengthSec,
+    grid: { ...track.grid, firstBeat: track.grid.firstBeat + firstInSlice * beat - slice.fromSec, downbeatIndex },
+    phraseStarts: [],
+    sections: [],
+  };
+}

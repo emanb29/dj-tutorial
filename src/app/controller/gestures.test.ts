@@ -28,8 +28,8 @@ describe("commandFor", () => {
     expect(commandFor("cue-mix", 1)).toEqual({ control: "cue-mix", value: 1 });
   });
 
-  it("sends nothing for the headphone level, which the engine does not model yet", () => {
-    expect(commandFor("headphone-level", 0.3)).toBeNull();
+  it("sends the headphone level to the engine's monitor output", () => {
+    expect(commandFor("headphone-level", 0.3)).toEqual({ control: "headphone-level", value: 0.3 });
   });
 });
 

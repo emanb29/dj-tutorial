@@ -6,7 +6,7 @@ import { scoreTaps, tapDetail, tapsFor } from "../taps.ts";
 import { beatSeconds, heardTimesOf } from "../timeline.ts";
 
 const LIMITS: Readonly<Record<CheckVariant, { matched: number; extras: number; questions: readonly ("breakdown" | "drop")[] }>> = {
-  full: { matched: 5, extras: 1, questions: ["breakdown", "drop"] },
+  full: { matched: 6, extras: 1, questions: ["breakdown", "drop"] },
   short: { matched: 3, extras: 0, questions: ["drop"] },
 };
 

@@ -66,7 +66,7 @@ export function Mixer() {
           <div className="headphones-group">
             <span className="group-label">HEADPHONES</span>
             <Knob id="cue-mix" label="MIXING" size="small" title="MIXING: left is the cued channels, right is the master." />
-            <Knob id="headphone-level" label="LEVEL" size="small" title="Headphone level (not wired to the audio yet)." />
+            <Knob id="headphone-level" label="LEVEL" size="small" title="Headphone LEVEL: how loud your headphone ear is." />
           </div>
         </div>
         <ChannelStrip deck="B" />

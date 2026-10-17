@@ -80,6 +80,13 @@ export interface RecorderStartOptions {
    * controls in motion at once × coalesceHz × headroom) and its meter capacity, in place of `capacity`.
    */
   readonly expectedDurationSec?: number;
+  /**
+   * Allow tracks to be loaded on a deck during the attempt (a Check that runs on several tracks in turn,
+   * e.g. `cue-point`). The deck's recording is then its last track's playhead, and `grids` holds every
+   * track loaded during the attempt, so cue points (which carry their track id) grade on the right grid.
+   * Off by default: v1 attempts have one track per deck.
+   */
+  readonly allowTrackChanges?: boolean;
 }
 
 /** How full the current attempt is. */
@@ -195,6 +202,7 @@ interface Recording {
   readonly initialMixer: MixerSnapshot;
   readonly initialTracks: Readonly<Record<DeckId, TrackRecord | null>>;
   readonly loadedDuring: Record<DeckId, TrackRecord[]>;
+  readonly allowTrackChanges: boolean;
   readonly recorded: Recorded[];
   readonly held: Map<string, Recorded>;
   readonly lastKeptCtx: Map<string, CtxTime>;
@@ -260,6 +268,7 @@ export class AttemptRecorder {
       initialMixer: contractMixer(this.engine.mixerState()),
       initialTracks: { A: this.engine.trackHistory("A").at(-1) ?? null, B: this.engine.trackHistory("B").at(-1) ?? null },
       loadedDuring: { A: [], B: [] },
+      allowTrackChanges: options.allowTrackChanges ?? false,
       recorded: [],
       held: new Map(),
       lastKeptCtx: new Map(),
@@ -374,11 +383,11 @@ export class AttemptRecorder {
     for (const deck of DECK_IDS) {
       const initial = recording.initialTracks[deck];
       const loaded = recording.loadedDuring[deck];
-      if (loaded.length > (initial === null ? 1 : 0)) return fail({ kind: "recorder-track-changed", deck });
-      const track = loaded[0] ?? initial;
+      if (!recording.allowTrackChanges && loaded.length > (initial === null ? 1 : 0)) return fail({ kind: "recorder-track-changed", deck });
+      const track = loaded.at(-1) ?? initial;
       if (track === null) continue;
       decks[deck] = { trackId: track.trackId, playhead: { segments: track.playhead.segments() } };
-      if (track.grid !== null) grids[track.trackId] = track.grid;
+      for (const each of [initial, ...loaded]) if (each?.grid != null) grids[each.trackId] = each.grid;
     }
     return { ok: true, decks, grids };
   }
