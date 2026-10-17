@@ -11,3 +11,5 @@ blob-report/
 .vitest-attachments/
 __screenshots__/
 *.tsbuildinfo
+# Model files are fetched or exported, never committed (src/analysis/index.ts).
+public/models/

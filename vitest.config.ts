@@ -5,6 +5,18 @@ const outsideTheBuild = ["prototypes/**", "spikes/**", "node_modules/**", "dist/
 
 export default defineConfig({
   resolve: { tsconfigPaths: true },
+  optimizeDeps: {
+    // Declared up front: if Vite discovers a dependency mid-run it re-optimizes and reloads the
+    // browser tests, which fails them in CI ("Vite unexpectedly reloaded a test").
+    include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"],
+    // onnxruntime-web finds its WASM threads relative to its own module, which pre-bundling breaks.
+    exclude: ["onnxruntime-web"],
+  },
+  worker: { format: "es" },
+  // Cross-origin isolation, as in vite.config.ts, so the analysis worker gets its 4 WASM threads.
+  server: {
+    headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "credentialless" },
+  },
   test: {
     projects: [
       {
@@ -12,7 +24,7 @@ export default defineConfig({
         test: {
           name: "unit",
           environment: "node",
-          include: ["{src,shared,server}/**/*.test.{ts,tsx}"],
+          include: ["{src,shared,server,scripts}/**/*.test.{ts,tsx}"],
           exclude: [...outsideTheBuild, "**/*.browser.test.{ts,tsx}"],
         },
       },

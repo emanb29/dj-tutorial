@@ -36,5 +36,7 @@ export default defineConfig({
     headers: crossOriginIsolationHeaders,
     proxy,
   },
-  optimizeDeps: { entries: ["index.html"] },
+  // onnxruntime-web finds its WASM threads relative to its own module, which pre-bundling breaks.
+  optimizeDeps: { entries: ["index.html"], exclude: ["onnxruntime-web"] },
+  worker: { format: "es" },
 });

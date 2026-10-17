@@ -18,7 +18,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "vite build && playwright test"
+    "test:e2e": "vite build && playwright test",
+    "fetch-models": "tsx --tsconfig tsconfig.node.json scripts/fetch-models.ts",
+    "analyse-folder": "tsx --tsconfig tsconfig.node.json scripts/analyse-folder.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
@@ -43,6 +45,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
     "jiti": "^2.7.0",
+    "onnxruntime-node": "^1.30.0",
+    "onnxruntime-web": "^1.30.0",
     "playwright": "^1.64.1",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
