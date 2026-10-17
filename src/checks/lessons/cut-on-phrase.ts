@@ -1,0 +1,70 @@
+// Lesson 7, `cut-on-phrase`: start B on A's phrase start and cut the faders (check-design §4).
+import type { CriterionResult } from "@shared/check-result.ts";
+import { loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";
+import { judge } from "../criterion.ts";
+import { cueOnSeconds, entryTime, exitTime } from "../mix.ts";
+import { loudJump, phraseOffsetSeconds } from "../phrasing.ts";
+import { beatSeconds, firstPlayStart, playRunStartAt } from "../timeline.ts";
+import { pointActionToleranceMs } from "../tolerance.ts";
+import { cueOnDownbeat } from "./cue-point.ts";
+
+/** CUE on the incoming deck for this long before it comes in (`cued-before`, `cued-first`). */
+export const CUED_BEFORE_S = 2;
+const LOUD_JUMP_DB = 2;
+
+export const cutOnPhrase: LessonCheck<TaskOf<"cut-on-phrase">> = {
+  situations: { transition: true },
+  run(context) {
+    const { attempt, window, spec } = context;
+    const deckA = loadedDeck(context, "A");
+    const deckB = loadedDeck(context, "B");
+    const inB = entryTime(attempt, "B", window);
+    // `t_play(B)`: the Play that brought B in, not an earlier CUE-hold preview in the headphones.
+    const playB =
+      deckB === null ? null : inB !== null ? playRunStartAt(deckB.playhead, inB) : firstPlayStart(deckB.playhead, window.from);
+    const outA = exitTime(attempt, "A", window);
+
+    const startOffset = deckA === null || playB === null ? null : phraseOffsetSeconds(deckA, playB);
+    const tightBeats =
+      deckA === null || playB === null || outA === null ? null : Math.abs(outA - playB) / beatSeconds(deckA.playhead, deckA.grid, playB);
+    const cuedSeconds = inB === null ? null : cueOnSeconds(attempt, "B", { from: window.from, to: inB });
+    const jump = deckA === null || playB === null ? null : loudJump(context, deckA, playB);
+
+    const criteria: CriterionResult[] = [
+      judge({
+        id: "cut-on-phrase.cut-start",
+        severity: "fail",
+        unit: "ms",
+        threshold: { op: "<=", value: pointActionToleranceMs("cut-on-phrase", context.lessonId), unit: "ms" },
+        measured: startOffset === null ? null : Math.abs(startOffset) * 1000,
+        ...(startOffset === null ? {} : { detail: { signedMs: startOffset * 1000 } }),
+        evidence: playB === null ? [] : [{ from: playB, to: playB, label: "B plays" }],
+      }),
+      judge({
+        id: "cut-on-phrase.cut-tight",
+        severity: "fail",
+        unit: "beats",
+        threshold: { op: "<=", value: 1, unit: "beats" },
+        measured: tightBeats,
+        evidence: outA === null ? [] : [{ from: outA, to: outA, label: "A out" }],
+      }),
+      judge({
+        id: "cut-on-phrase.cued-before",
+        severity: "fail",
+        unit: "s",
+        threshold: { op: ">=", value: CUED_BEFORE_S, unit: "s" },
+        measured: cuedSeconds,
+      }),
+      judge({
+        id: "cut-on-phrase.loud-jump",
+        severity: "fail",
+        unit: "dB",
+        threshold: { op: "<=", value: LOUD_JUMP_DB, unit: "dB" },
+        measured: jump,
+      }),
+    ];
+    const deckBTrack = spec.tracks.find((track) => track.deck === "B");
+    if (spec.mode === "placement" && deckBTrack !== undefined) criteria.push(cueOnDownbeat(context, [deckBTrack.trackId]));
+    return { criteria, metrics: {} };
+  },
+};

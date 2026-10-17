@@ -1,2 +1,25 @@
 // Checks: pure functions over a recorded attempt, shared by the client and the eval scripts (ADR 0001).
-export {};
+// Grading is `runCheck`; Skill profile writes are `applyCheckResult`; warm-ups are `scheduleWarmups`.
+export { runCheck, MAX_GRID_RESIDUAL_MS } from "./run-check.ts";
+export {
+  applyCheckResult,
+  criterionRecords,
+  FINAL_MIX_ROUTE,
+  isCourseComplete,
+  lessonOfCriterion,
+  lessonRetention,
+  RETENTION_LADDER_DAYS,
+  reviewsDue,
+  type ProfileUpdate,
+  type RetentionChange,
+  type ReviewTrigger,
+} from "./profile.ts";
+export { scheduleWarmups, WARMUP_LIMITS, type WarmupLimits, type WarmupPlan } from "./warmups.ts";
+export { standingSeverity } from "./standing.ts";
+export {
+  CUE_PLACEMENT_TOLERANCE_MS,
+  CUED_TAP_TOLERANCE_MS,
+  pointActionToleranceMs,
+  TAP_TOLERANCE_MS,
+} from "./tolerance.ts";
+export { matchTaps, type TapMatch } from "./measures.ts";
