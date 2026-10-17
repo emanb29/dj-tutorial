@@ -6,6 +6,7 @@ import { checkLineRequest, describeCriterion, LESSONS, type BuiltLessonId, type 
 import { lessonById } from "@shared/catalogue.ts";
 import { RECENT_LINES_MAX } from "@shared/coach-contract.ts";
 import type { MissionTag } from "@shared/mission.ts";
+import { inputWording, useWording } from "../controller/wording.ts";
 import { coachLine } from "./api-client.ts";
 
 const VOID_WORDS = {
@@ -66,6 +67,7 @@ function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, r
   const { result, review, tip, firstPass } = phase;
   const passed = result.outcome.kind === "passed";
   const line = useCoachLine(phase, definition, learnerId, missionTags, attemptToday, recentLines);
+  const wording = useWording();
   const shown = result.criteria.filter((criterion) => criterion.status !== "notApplicable");
   const next = LESSONS[LESSONS.findIndex((lesson) => lesson.id === definition.id) + 1];
 
@@ -84,7 +86,7 @@ function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, r
       <p className="coach-line" aria-label="Coach" aria-live="polite">
         {line ?? " "}
       </p>
-      {tip === null ? null : <p className="coach-tip">Tip: {tip}</p>}
+      {tip === null ? null : <p className="coach-tip">Tip: {inputWording(tip, wording)}</p>}
       {review === null ? null : (
         <div className="review-offer">
           <span>

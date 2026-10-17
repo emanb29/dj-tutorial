@@ -42,8 +42,17 @@ export function ControlFrame({ id, label, className, keyHint = null, captionSide
     };
   }, [locked]);
 
+  // On a phone the controller is taller than the screen: bring the control to touch next into view.
+  // "nearest" leaves a control that is already on screen where it is, so a desktop never scrolls.
+  const pulsing = pulse === id && !locked;
+  useEffect(() => {
+    if (!pulsing) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    element.current?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }, [pulsing]);
+
   const caption = captions.get(id);
-  const classes = ["control", className, locked ? "locked" : null, pulse === id && !locked ? "pulse" : null].filter(Boolean).join(" ");
+  const classes = ["control", className, locked ? "locked" : null, pulsing ? "pulse" : null].filter(Boolean).join(" ");
   return (
     <div ref={element} className={classes} data-control={id} data-locked={locked} inert={locked} aria-disabled={locked || undefined}>
       {children}

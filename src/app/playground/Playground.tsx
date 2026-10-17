@@ -13,6 +13,7 @@ import { createAudioEngine, MasterOnlyMonitor, SplitCueMonitor, type AudioEngine
 import { ALL_CONTROL_IDS, isControlId, parseControlIds, type ControlId } from "../controller/control-ids.ts";
 import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
+import { useWording } from "../controller/wording.ts";
 import { renderHouseLoop } from "./synthetic-loops.ts";
 import "./playground.css";
 
@@ -109,6 +110,7 @@ export function Playground() {
   const [audioRunning, setAudioRunning] = useState(false);
   const [unlocks, setUnlocks] = useState<ReadonlySet<ControlId>>(setup.unlocks ?? EVERYTHING);
   const lastCommand = useRef<HTMLSpanElement>(null);
+  const wording = useWording();
 
   useEffect(() => {
     let cancelled = false;
@@ -177,7 +179,7 @@ export function Playground() {
       <header className="playground-bar">
         <h1>Controller playground</h1>
         <span className={`audio-state${audioRunning ? " running" : ""}`} data-testid="audio-state">
-          {audioRunning ? "Audio on" : "Audio starts on your first click or key"}
+          {audioRunning ? "Audio on" : wording === "touch" ? "Audio starts on your first tap" : "Audio starts on your first click or key"}
         </span>
         <span className="last-command">
           Last input: <span ref={lastCommand} data-testid="last-command">–</span>

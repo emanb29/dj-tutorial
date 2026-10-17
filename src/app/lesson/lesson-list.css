@@ -125,3 +125,18 @@ li[data-standing="retained"] .lesson-number {
 li[data-standing="lapsed"] .lesson-standing {
   color: var(--warn);
 }
+
+/* A phone: a locked row's "pass … first" note goes under the title instead of squeezing it. */
+@media (max-width: 559px) {
+  .lesson-list li {
+    column-gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .lesson-list .lesson-needs {
+    grid-area: auto;
+    grid-column: 2 / -1;
+    max-width: none;
+    text-align: left;
+  }
+}

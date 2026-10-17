@@ -8,3 +8,5 @@ export type { ControlId, ControllerUnlocks, DeckControlId, DeckPart, SharedContr
 export { KEY_BINDINGS } from "./keymap.ts";
 export type { KeyAction, KeyBinding } from "./keymap.ts";
 export type { ControllerEngine } from "./session.ts";
+export { inputWording, useWording } from "./wording.ts";
+export type { Wording } from "./wording.ts";

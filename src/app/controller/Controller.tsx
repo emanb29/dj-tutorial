@@ -17,6 +17,7 @@ import { globalKeyAllowed, keyHintFor, type FocusedElement } from "./keymap.ts";
 import { KeyLegend } from "./KeyLegend.tsx";
 import { Mixer } from "./Mixer.tsx";
 import { ControllerSession, type ControllerEngine } from "./session.ts";
+import { inputWording, useWording } from "./wording.ts";
 import "./controller.css";
 
 export interface ControllerProps {
@@ -41,6 +42,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   const [frames] = useState(() => new FrameLoop());
   const [meters] = useState<MeterLevels>(() => new Map());
   const [legendOpen, setLegendOpen] = useState(defaultLegendOpen);
+  const wording = useWording();
 
   useEffect(() => {
     session.setUnlocks(unlocks);
@@ -89,7 +91,8 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
     };
   }, [session]);
 
-  const captionMap = useMemo(() => new Map(captions.map((caption) => [caption.control, caption.text])), [captions]);
+  // Captions are authored with keys ("Press X"); on a touchscreen they name the control instead.
+  const captionMap = useMemo(() => new Map(captions.map((caption) => [caption.control, inputWording(caption.text, wording)])), [captions, wording]);
   const context = useMemo<ControllerContextValue>(
     () => ({ session, engine, frames, meters, pulse, captions: captionMap, unlocks, legendOpen }),
     [session, engine, frames, meters, pulse, captionMap, unlocks, legendOpen],
@@ -97,7 +100,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
 
   return (
     <ControllerContext value={context}>
-      <div className="controller" data-legend-open={legendOpen}>
+      <div className="controller" data-legend-open={legendOpen} data-input={wording}>
         <header className="controller-display">
           <DeckReadout deck="A" />
           <div className="display-centre">

@@ -929,3 +929,263 @@
     padding: 8px;
   }
 }
+
+/* ---- touchscreens and narrow screens --------------------------------------------------------
+   The desktop layout above is the reference; these rules only apply below 1180 px wide or on a
+   touchscreen. Phones and tablets get 44 px touch targets; a key legend means nothing there. */
+
+.controller[data-input="touch"] .legend-toggle,
+.controller[data-input="touch"] .key-legend,
+.controller[data-input="touch"] kbd {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .controller {
+    --knob-hit: max(44px, clamp(36px, 5.4vh, 54px));
+  }
+  .hw-button,
+  .button-small .hw-button {
+    min-height: 44px;
+  }
+  .pad {
+    height: max(44px, clamp(30px, 5vh, 48px));
+  }
+  .range-readout {
+    min-height: 32px;
+  }
+}
+
+/* Mid-width (a phone on its side, a small laptop window): the same three columns, tightened so the
+   jog wheels, pads and tempo columns fit the decks instead of spilling under the mixer. */
+@media (min-width: 880px) and (max-width: 1179px) {
+  .controller {
+    --fader-length: clamp(100px, 17vh, 160px);
+  }
+  .controller-body {
+    gap: 8px;
+  }
+  .deck,
+  .mixer {
+    padding: 8px;
+  }
+  .deck {
+    gap: 8px;
+  }
+  .tempo-column {
+    width: 64px;
+  }
+  .tempo-column .hw-button {
+    width: 64px;
+    min-width: 0;
+    padding-inline: 4px;
+    white-space: normal;
+  }
+  .deck-main {
+    container-type: inline-size;
+    min-width: 0;
+  }
+  .jog-surface {
+    width: min(var(--jog), 100cqi);
+    height: min(var(--jog), 100cqi);
+  }
+  .pads {
+    max-width: none;
+  }
+  .mixer-channels {
+    gap: 8px;
+  }
+  .mixer-centre {
+    padding-inline: 8px;
+  }
+  .display-centre .phase-body {
+    width: 110px;
+  }
+  .deck-readout {
+    gap: 10px;
+    padding: 6px 10px;
+  }
+}
+
+/* A phone on its side: little height, so the tall parts shrink and less scrolling is needed. */
+@media (min-width: 880px) and (max-width: 1179px) and (max-height: 560px) {
+  .controller {
+    --jog: 150px;
+    --fader-length: 110px;
+
+    padding-top: 4px;
+  }
+  .deck-main {
+    gap: 8px;
+  }
+}
+
+/* Narrow (a phone upright): the FLX4 cut in half and stacked. The left half (deck A beside its
+   mixer channel) on top, the mixer's centre and the crossfader in the middle, the right half
+   (channel B beside deck B) below. Deck A's PLAY and channel fader sit side by side, as on the
+   hardware. The display row, body and mixer stop being boxes (display: contents) so their parts
+   can take places in one grid. */
+@media (max-width: 879px) {
+  .controller {
+    --knob-hit: 44px;
+    --knob-cap: 34px;
+    --jog: 220px;
+    --fader-length: 140px;
+
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "readout-a readout-a readout-a"
+      "display-centre display-centre display-centre"
+      "deck-a deck-a channel-a"
+      "mixer-centre mixer-centre mixer-centre"
+      "crossfader crossfader crossfader"
+      "readout-b readout-b readout-b"
+      "channel-b deck-b deck-b"
+      "legend legend legend";
+    gap: 8px;
+    padding: 8px 16px 16px;
+  }
+
+  .controller-display,
+  .controller-body,
+  .mixer,
+  .mixer-channels {
+    display: contents;
+  }
+
+  .controller-display > .deck-readout.deck-A {
+    grid-area: readout-a;
+  }
+  .controller-display > .deck-readout.deck-B {
+    grid-area: readout-b;
+  }
+  .display-centre {
+    grid-area: display-centre;
+    justify-content: center;
+  }
+  .deck.deck-A {
+    grid-area: deck-a;
+  }
+  .deck.deck-B {
+    grid-area: deck-b;
+  }
+  .channel-A {
+    grid-area: channel-a;
+  }
+  .channel-B {
+    grid-area: channel-b;
+  }
+  .mixer-centre {
+    grid-area: mixer-centre;
+  }
+  .crossfader {
+    grid-area: crossfader;
+  }
+  .key-legend {
+    grid-area: legend;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Readouts: one line each; the track name gives way first. */
+  .deck-readout {
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  .deck-letter {
+    font-size: 18px;
+  }
+  .readout-number {
+    font-size: 16px;
+  }
+  .readout-time {
+    min-width: 0;
+    font-size: 12px;
+  }
+  .display-centre .phase-body {
+    width: 120px;
+  }
+
+  /* Each half's parts are panels of their own now that the mixer box is gone. */
+  .channel,
+  .mixer-centre,
+  .crossfader {
+    border: 1px solid var(--panel-edge);
+    border-radius: 14px;
+    background: var(--panel);
+  }
+  .channel {
+    justify-content: space-between;
+    padding: 8px 6px;
+  }
+  .mixer-centre {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 8px 20px;
+    padding: 8px 12px;
+  }
+  .mixer-centre .meter-body {
+    height: 64px;
+  }
+  .headphones-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 12px;
+    margin-top: 0;
+  }
+  .headphones-group .group-label {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .crossfader {
+    padding: 8px 12px 6px;
+  }
+  .crossfader .fader-hit {
+    width: 100%;
+  }
+
+  .deck {
+    gap: 8px;
+    padding: 8px;
+  }
+  .tempo-column {
+    width: 60px;
+  }
+  .tempo-column .hw-button {
+    width: 60px;
+    min-width: 0;
+    padding-inline: 4px;
+    font-size: 10px;
+    white-space: normal;
+  }
+  .range-readout {
+    width: 60px;
+    min-width: 0;
+    padding-inline: 4px;
+  }
+  .deck-main {
+    container-type: inline-size;
+    min-width: 0;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+  .pads {
+    max-width: none;
+  }
+  .jog-surface {
+    width: min(var(--jog), 100cqi);
+    height: min(var(--jog), 100cqi);
+  }
+  .button-round .hw-button {
+    width: 56px;
+    height: 56px;
+  }
+  .transport,
+  .deck-B .transport {
+    gap: 8px 12px;
+    align-self: center;
+  }
+}

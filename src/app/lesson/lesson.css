@@ -247,6 +247,13 @@
   }
 }
 
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
 .lesson-question {
   display: flex;
   align-items: center;
@@ -397,6 +404,120 @@
   display: flex;
   gap: var(--space-3);
   margin-top: var(--space-4);
+}
+
+/* ---- touchscreens and small screens ------------------------------------------------------
+   A phone cannot fit the controller in one screen, so the page scrolls and the caption line stays
+   pinned at the top. Key caps mean nothing without a keyboard: touch shows buttons instead. */
+
+.lesson[data-input="touch"] kbd,
+.lesson[data-input="touch"] .lesson-hint {
+  display: none;
+}
+
+.lesson-touch-go {
+  flex: none;
+  min-height: 44px;
+}
+
+@media (max-width: 879px), (max-height: 560px) {
+  .lesson {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .lesson-bar {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+
+  .lesson-bar h1 {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lesson-audio-off {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .lesson-credit {
+    order: 4;
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+
+  .lesson-stage {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-2);
+    background: var(--body);
+    box-shadow: 0 6px 12px -6px rgb(0 0 0 / 60%);
+  }
+
+  .lesson-caption {
+    flex-wrap: wrap;
+    row-gap: 0;
+    font-size: var(--text-lg);
+    white-space: normal;
+  }
+
+  /* The pinned caption line must not cover the control a step scrolls into view. */
+  .lesson .control {
+    scroll-margin-top: 140px;
+  }
+
+  /* The caption gets the whole first line; the Check button and live feedback share the second. */
+  @media (max-width: 879px) {
+    .lesson-caption {
+      flex-basis: 100%;
+    }
+  }
+
+  /* Room for a caption under the lowest control (PLAY). */
+  .lesson-board {
+    flex: none;
+    padding-bottom: var(--space-5);
+  }
+
+  /* Questions and the result card: a sheet at the bottom of the screen, wherever the page is
+     scrolled, instead of the top of the controller (which may be off screen). */
+  .lesson-overlay {
+    position: fixed;
+    top: auto;
+    right: var(--space-4);
+    bottom: var(--space-4);
+    left: var(--space-4);
+    width: auto;
+    max-height: calc(100dvh - 2 * var(--space-4));
+    overflow-y: auto;
+    padding: var(--space-4);
+    transform: none;
+    animation-name: sheet-in;
+  }
+
+  .result-card h2 {
+    font-size: var(--text-lg);
+  }
+
+  .unlock-badge {
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  .lesson-question {
+    flex-wrap: wrap;
+  }
+
+  .lesson-question [role="group"] {
+    flex-wrap: wrap;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

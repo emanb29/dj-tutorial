@@ -10,6 +10,7 @@ import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
 import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
+import { inputWording, useWording } from "../controller/wording.ts";
 import { saveLearner } from "./api-client.ts";
 import { FeedbackStrip, type TapMark } from "./FeedbackStrip.tsx";
 import { lessonKey } from "./lesson-keys.ts";
@@ -72,6 +73,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
   const recentLines = useRef<string[]>([]);
   const marginsRef = useRef(state.margins);
   const { phase, margins } = state;
+  const wording = useWording();
   useEffect(() => {
     learnerRef.current = learner;
     phaseRef.current = phase;
@@ -227,7 +229,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
       const node = cueLine.current;
       if (node !== null) {
         const cue = session.checkCue();
-        const text = cue?.caption ?? definition.checkCaption;
+        const text = inputWording(cue?.caption ?? definition.checkCaption, wording);
         // Written only on change: the checkpoint tick's animation restarts when its attribute flips.
         if (node.textContent !== text) node.textContent = text;
         const checkpoint = String(cue?.checkpoint === true);
@@ -238,7 +240,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [session, attempt, definition]);
+  }, [session, attempt, definition, wording]);
 
   // Lesson keys: Enter = into the Check (again), P = practice, Escape = back to the list, 1–8 = answers.
   const answering = phase.kind === "answering" ? phase.answers : null;
@@ -284,13 +286,13 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
   const captions = useMemo<readonly ControllerCaption[]>(() => (step === undefined ? NO_CAPTIONS : [{ control: step.control, text: step.caption }]), [step]);
 
   return (
-    <main className="lesson" data-phase={phase.kind}>
+    <main className="lesson" data-phase={phase.kind} data-input={wording}>
       <header className="lesson-bar">
         <button type="button" className="btn btn-quiet lesson-back" onClick={onExit}>
           ← Lessons <kbd>Esc</kbd>
         </button>
         <h1>{definition.title}</h1>
-        {audioRunning ? null : <span className="lesson-audio-off">Click or press a key to start the sound</span>}
+        {audioRunning ? null : <span className="lesson-audio-off">{wording === "touch" ? "Tap to start the sound" : "Click or press a key to start the sound"}</span>}
         {setup.kind === "ready" ? <TrackCredit track={setup.session.track} /> : null}
       </header>
 
@@ -298,6 +300,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
         <p className="lesson-caption" role="status" aria-live="polite" aria-label="Lesson caption">
           <Caption phase={phase} definition={definition} setupStatus={setup.kind === "loading" ? setup.status : null} cueLine={cueLine} />
         </p>
+        {wording === "touch" ? <TouchGo phase={phase} dispatch={dispatch} /> : null}
         {session === null ? null : <FeedbackStrip session={session} taps={taps} showBeat={phase.kind !== "check"} practice={phase.kind === "practice" ? phase : null} />}
       </div>
 
@@ -393,6 +396,8 @@ interface CaptionProps {
 
 /** One line: what to do now. The concept just named sits before it, smaller. */
 function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
+  const wording = useWording();
+  const say = (text: string | undefined) => (text === undefined ? undefined : inputWording(text, wording));
   switch (phase.kind) {
     case "loading":
       return <span>{setupStatus ?? "Getting the deck ready…"}</span>;
@@ -402,7 +407,7 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
       return (
         <>
           {phase.named === null ? null : <span className="lesson-named">{phase.named}</span>}
-          <span className="lesson-do">{definition.hook[phase.step]?.caption}</span>
+          <span className="lesson-do">{say(definition.hook[phase.step]?.caption)}</span>
         </>
       );
     case "practice":
@@ -410,7 +415,7 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
         <>
           {phase.named === null ? null : <span className="lesson-named">{phase.named}</span>}
           <span className="lesson-do">
-            {phase.ready ? "Ready? This one counts." : definition.practice.caption}
+            {phase.ready ? "Ready? This one counts." : say(definition.practice.caption)}
             <span className="lesson-hint">
               <kbd>Enter</kbd> {phase.ready ? "to go" : "for the Check"}
             </span>
@@ -421,7 +426,7 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
       return (
         <span className="lesson-do" data-testid="check-cue">
           <span ref={cueLine} className="lesson-cue" data-checkpoint="false">
-            {definition.checkCaption}
+            {say(definition.checkCaption)}
           </span>
           <span className="lesson-hint">
             <kbd>Enter</kbd> restarts
@@ -443,4 +448,20 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
         </span>
       );
   }
+}
+
+/** On a touchscreen there is no Enter key: the way into the Check (and to restart it) is a button. */
+function TouchGo({ phase, dispatch }: { readonly phase: LessonPhase; readonly dispatch: (action: { type: "start-check" }) => void }) {
+  if (phase.kind !== "practice" && phase.kind !== "check") return null;
+  return (
+    <button
+      type="button"
+      className={`btn lesson-touch-go${phase.kind === "practice" ? " btn-primary" : " btn-quiet"}`}
+      onClick={() => {
+        dispatch({ type: "start-check" });
+      }}
+    >
+      {phase.kind === "practice" ? (phase.ready ? "Go" : "Start the Check") : "Restart"}
+    </button>
+  );
 }
