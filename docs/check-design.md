@@ -393,3 +393,12 @@ interface SkillProfile {
 - **C2:** the cold `final-mix` re-play, at least a day after the first pass, **is the recorded final project**. The app records the master bus to a downloadable file. The first pass is a rehearsal.
 - **C3:** the Pass / Merit / Distinction band is shown after `final-mix`.
 - **Lesson format (ISS-55):** controller-first and tuned for ADHD. Attempts last under a minute, practice runs straight into the Check with no screen in between, live feedback is instant, and the Coach says at most one line after a Check.
+
+### Input leeway (owner, 2026-10-16)
+
+The owner noted that on a MacBook trackpad, and on a simulated deck generally, leeway is needed. This amends the thresholds above until hardware controllers arrive:
+
+- **Keyboard for timing-critical actions.** Play, cue, tap, hot cues and "cut" (snap a channel fader fully open or closed) get key bindings, and Lessons teach them first. A key press is the most precise input a laptop has.
+- **Faders are judged on intent, not completion.** A channel-fader or crossfader move is timed from the moment it starts (first movement, or crossing 10% of travel), not when it finishes. A drag that starts on time passes even if it lands late.
+- **Wider timing in Lesson Checks, tightening toward `final-mix`.** Point-in-time actions (cut, hot-cue trigger, phrase-start Play) get ±120 ms in the Lesson that introduces them, ±80 ms in later Lessons, and ±60 ms in `final-mix`. Tap Checks keep ±40 ms, since they are keyboard taps. Continuous measures (phase error, levels, bass clash) are unchanged, because they don't depend on gesture speed.
+- **The input device is recorded with every attempt** (keyboard, trackpad, mouse, touch, and later MIDI), so these tolerances can be tuned per device once real attempts exist. There is still no per-Learner latency calibration.
