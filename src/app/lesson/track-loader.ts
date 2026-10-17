@@ -11,7 +11,7 @@ import {
   type LessonDefinition,
   type LessonTrack,
 } from "@lessons";
-import { createOriginalsSource, createStarterPackSource, type Track } from "@tracks";
+import { createOriginalsSource, createStarterPackSource, decoderAt, type Track } from "@tracks";
 
 export interface ReadyTrack {
   readonly track: LessonTrack;
@@ -24,25 +24,26 @@ export interface TrackLoadOptions {
   readonly preference: TrackPreference;
   readonly signal: AbortSignal;
   readonly onStatus: (status: string) => void;
+  /** The engine's sample rate: every buffer is decoded or synthesised at it, or the deck refuses it. */
+  readonly sampleRate: number;
 }
 
 /** How long a starter-pack download and analysis may take before the Lesson starts on the synthetic groove. */
 export const STARTER_PACK_BUDGET_MS = 12_000;
 const ORIGINALS_TRIED = 3;
-const SYNTHETIC_RATE = 44_100;
 
 const isHouse = (track: Track) => (track.genre ?? "").toLowerCase().includes("house");
 const meta = (track: Track) => ({ id: `${track.source}:${track.id}`, title: track.title, attribution: track.attribution });
 
-function syntheticTrack(): ReadyTrack {
-  const samples = synthesizeHouse(SYNTHETIC_HOUSE, SYNTHETIC_RATE);
-  const audio = new AudioBuffer({ length: samples.length, numberOfChannels: 1, sampleRate: SYNTHETIC_RATE });
+function syntheticTrack(sampleRate: number): ReadyTrack {
+  const samples = synthesizeHouse(SYNTHETIC_HOUSE, sampleRate);
+  const audio = new AudioBuffer({ length: samples.length, numberOfChannels: 1, sampleRate });
   audio.copyToChannel(samples, 0);
   return { track: syntheticLessonTrack(SYNTHETIC_HOUSE), audio };
 }
 
-async function fromOriginals(definition: LessonDefinition, signal: AbortSignal): Promise<ReadyTrack | null> {
-  const source = createOriginalsSource();
+async function fromOriginals(definition: LessonDefinition, signal: AbortSignal, sampleRate: number): Promise<ReadyTrack | null> {
+  const source = createOriginalsSource({ decode: decoderAt(sampleRate) });
   const listed = await source.list({ signal });
   if (!listed.ok) return null;
   for (const candidate of listed.value.filter(isHouse).slice(0, ORIGINALS_TRIED)) {
@@ -54,10 +55,15 @@ async function fromOriginals(definition: LessonDefinition, signal: AbortSignal):
   return null;
 }
 
-async function fromStarterPack(definition: LessonDefinition, signal: AbortSignal, onStatus: (status: string) => void): Promise<ReadyTrack | null> {
+async function fromStarterPack(
+  definition: LessonDefinition,
+  signal: AbortSignal,
+  onStatus: (status: string) => void,
+  sampleRate: number,
+): Promise<ReadyTrack | null> {
   // Without named sections the phrases Lesson cannot ask for the breakdown; skip the download.
   if (definition.questions.length > 0) return null;
-  const source = createStarterPackSource();
+  const source = createStarterPackSource({ decode: decoderAt(sampleRate) });
   const listed = await source.list();
   const candidate = listed.ok ? listed.value.find(isHouse) : undefined;
   if (candidate === undefined) return null;
@@ -93,13 +99,13 @@ function within<Value>(promise: Promise<Value>, ms: number): Promise<Value | nul
 }
 
 export async function loadLessonTrack(definition: LessonDefinition, options: TrackLoadOptions): Promise<ReadyTrack> {
-  if (options.preference === "synthetic") return syntheticTrack();
+  if (options.preference === "synthetic") return syntheticTrack(options.sampleRate);
   options.onStatus("Looking for a house track…");
-  const original = await within(fromOriginals(definition, options.signal), STARTER_PACK_BUDGET_MS);
+  const original = await within(fromOriginals(definition, options.signal, options.sampleRate), STARTER_PACK_BUDGET_MS);
   if (original !== null) return original;
   // The analysis is not aborted when the budget runs out: it finishes in the background and is cached.
-  const starter = await within(fromStarterPack(definition, options.signal, options.onStatus), STARTER_PACK_BUDGET_MS);
+  const starter = await within(fromStarterPack(definition, options.signal, options.onStatus, options.sampleRate), STARTER_PACK_BUDGET_MS);
   if (starter !== null) return starter;
   console.warn("[lesson] no Original or analysed starter-pack track was ready; using the synthetic practice groove");
-  return syntheticTrack();
+  return syntheticTrack(options.sampleRate);
 }

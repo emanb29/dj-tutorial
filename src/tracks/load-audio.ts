@@ -11,8 +11,17 @@ export type AudioDecoder = (bytes: ArrayBuffer) => Promise<AudioBuffer>;
 const FETCH_SHARE = 0.8;
 const DECODE_DONE = 0.95;
 
-/** Decodes through an OfflineAudioContext: nothing can reach the speakers. */
-export const decodeOffline: AudioDecoder = (bytes) => new OfflineAudioContext(2, 1, 44_100).decodeAudioData(bytes);
+/**
+ * Decodes through an OfflineAudioContext at `sampleRate`, so nothing can reach the speakers.
+ * `decodeAudioData` resamples to the context's rate; pass the engine's rate (often 48 kHz on a Mac),
+ * because the engine refuses buffers at any other rate.
+ */
+export function decoderAt(sampleRate: number): AudioDecoder {
+  return (bytes) => new OfflineAudioContext(2, 1, sampleRate).decodeAudioData(bytes);
+}
+
+/** Decodes at 44.1 kHz. Only for callers with no engine; anything played on a deck uses `decoderAt`. */
+export const decodeOffline: AudioDecoder = decoderAt(44_100);
 
 export function abortedError(): TrackError {
   return { kind: "aborted", message: "Loading the track was cancelled.", fix: "Load it again when you want it." };

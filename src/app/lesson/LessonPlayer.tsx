@@ -2,7 +2,7 @@
 // strip gives live feedback, and the result card follows each Check. Hook → practice → Check → result
 // → Check again is one loop driven by the pure runtime; Enter always goes (back) into the Check.
 import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
-import { createAudioEngine, type AudioEngine } from "@audio";
+import { createAudioEngine, describeError, type AudioEngine } from "@audio";
 import { applyCheckResult } from "@checks";
 import { initialLessonState, lessonDefinition, lineFacts, NO_LINE_FACTS, skipGroupsPassed, lessonReducer, unlocksAfter, type BuiltLessonId, type ControlId, type LessonPhase, type LessonTrack, type Observation } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
@@ -105,13 +105,14 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPa
         const ready = await loadLessonTrack(definition, {
           preference: trackPreference,
           signal: abort.signal,
+          sampleRate: engine.context.sampleRate,
           onStatus: (status) => {
             if (!abort.signal.aborted) setSetup({ kind: "loading", status });
           },
         });
         if (cancelled()) return;
         const loaded = await engine.load("A", ready.audio, { trackId: ready.track.trackId, grid: ready.track.grid });
-        if (!loaded.ok) throw new Error(`deck A refused the track (${loaded.error.kind})`);
+        if (!loaded.ok) throw new Error(`deck A refused the track: ${describeError(loaded.error)}`);
         if (cancelled()) return;
         session = new LessonSession(engine, definition, ready.track, learnerRef.current.learnerId, {
           observed,

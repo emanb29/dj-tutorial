@@ -44,7 +44,7 @@
  */
 export { AUDIUS_API_TERMS_URL, AUDIUS_PRIVACY_POLICY_URL, createAudiusSource, type AudiusOptions, type AudiusSource } from "./audius.ts";
 export { describeLicence, type LicenceInfo } from "./licence.ts";
-export { decodeOffline, type AudioDecoder } from "./load-audio.ts";
+export { decodeOffline, decoderAt, type AudioDecoder } from "./load-audio.ts";
 export {
   createLocalFileSource,
   indexedDbHandleStore,

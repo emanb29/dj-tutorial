@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { decoderAt } from "./load-audio.ts";
 import { createLocalFileSource, indexedDbHandleStore, memoryHandleStore, type DirectoryHandleLike } from "./local-files.ts";
 
 // Decodes a real file through the browser's decoder (an OfflineAudioContext: nothing is played,
@@ -53,6 +54,21 @@ describe("local file source in the browser", () => {
     expect(loaded.value.contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(loaded.value.track.analysisCacheKey).toBe(loaded.value.contentHash);
     expect(fractions.at(-1)).toBe(1);
+  });
+
+  it("decodes at the engine's rate so a 48 kHz engine accepts the track (a Mac's usual rate)", async () => {
+    const { createAudioEngine } = await import("@audio");
+    const engine = await createAudioEngine({ context: new OfflineAudioContext(2, 48_000, 48_000), masterTempo: false });
+    const source = createLocalFileSource({ handleStore: memoryHandleStore(), showDirectoryPicker: null, decode: decoderAt(48_000) });
+    const [track] = source.addFiles([new File([sineWav(0.25)], "Test Artist - Tiny Tone.wav", { type: "audio/wav" })]);
+    if (track === undefined) throw new Error("the WAV was not added");
+
+    const loaded = await source.load(track);
+    if (!loaded.ok) throw new Error(loaded.error.message);
+    expect(loaded.value.audio.sampleRate).toBe(48_000);
+    const onDeck = await engine.load("A", loaded.value.audio, { trackId: "tiny-tone", grid: { bpm: 120, firstBeat: 0, downbeatIndex: 0, rmsResidualMs: 1 } });
+
+    expect(onDeck).toEqual({ ok: true });
   });
 
   it("returns decode-failed for a file that is not really audio", async () => {
