@@ -1,7 +1,8 @@
 /**
  * `/api/originals`: serves the generator's Originals (contract in shared/originals.ts) to the app.
  *
- * - `GET /api/originals` lists index.jsonl entries (bad lines are skipped with a WARN log).
+ * - `GET /api/originals` lists index.jsonl entries (bad lines are skipped with a WARN log). It re-reads
+ *   index.jsonl on every request (`no-store`), so new tracks appear on the next poll.
  * - `GET /api/originals/:id/audio` streams the track's track.mp3, with single byte ranges.
  * - `GET /api/originals/:id/meta` returns its meta.json, including the exact grid and phrases.
  *
@@ -121,11 +122,13 @@ export function originalsRoutes(root: string, logger: Logger): Hono {
     return { path };
   }
 
-  routes.get("/", async (context) =>
-    context.json({ success: true, data: (await readIndex(root, logger)).map((entry) => entry.summary) } satisfies ApiSuccess<
+  // Read from disk on every request, never cached, so a track the generator just finished is listed.
+  routes.get("/", async (context) => {
+    context.header("cache-control", "no-store");
+    return context.json({ success: true, data: (await readIndex(root, logger)).map((entry) => entry.summary) } satisfies ApiSuccess<
       OriginalSummary[]
-    >),
-  );
+    >);
+  });
 
   routes.get("/:id/meta", async (context) => {
     const located = await locate(context, "meta.json");

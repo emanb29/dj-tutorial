@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { playgroundEnabled } from "./App.tsx";
+import { isOriginalsPage, playgroundEnabled } from "./App.tsx";
 
 describe("playgroundEnabled (M6)", () => {
   it("is always on at /playground on the dev server", () => {
@@ -14,5 +14,14 @@ describe("playgroundEnabled (M6)", () => {
 
   it("is off on any other path", () => {
     expect(playgroundEnabled({ pathname: "/", search: "?playground" }, true)).toBe(false);
+  });
+});
+
+describe("isOriginalsPage", () => {
+  it("matches /originals, with or without a trailing slash, and nothing else", () => {
+    expect(isOriginalsPage("/originals")).toBe(true);
+    expect(isOriginalsPage("/originals/")).toBe(true);
+    expect(isOriginalsPage("/originals/001")).toBe(false);
+    expect(isOriginalsPage("/")).toBe(false);
   });
 });

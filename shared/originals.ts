@@ -26,6 +26,8 @@ export const OriginalIdSchema = z
 const summaryFields = {
   id: OriginalIdSchema,
   title: z.string().min(1),
+  /** One line on what the track is about, e.g. "a 1920s speakeasy where the password changes". */
+  topic: z.string().optional(),
   genre: z.string().min(1),
   subgenre: z.string().optional(),
   bpm: z.number().positive(),

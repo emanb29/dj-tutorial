@@ -10,8 +10,16 @@ import type { TrackPreference } from "./lesson/track-loader.ts";
 // The dev playground and the Lesson player load the audio engine and the controller: separate chunks.
 const Playground = lazy(() => import("./playground/Playground.tsx").then((module) => ({ default: module.Playground })));
 const LessonPlayer = lazy(() => import("./lesson/LessonPlayer.tsx").then((module) => ({ default: module.LessonPlayer })));
+// The Originals player is its own small page, and its own chunk.
+const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
+/** The player for the generator's Originals: it needs no Learner. */
+export const ORIGINALS_PAGE_PATH = "/originals";
+
+export function isOriginalsPage(pathname: string): boolean {
+  return pathname.replace(/\/$/, "") === ORIGINALS_PAGE_PATH;
+}
 
 /**
  * The playground is a developer tool: on the dev server (including the owner's tunnel) it is always
@@ -112,6 +120,14 @@ export function App() {
     return (
       <Suspense fallback={null}>
         <Playground />
+      </Suspense>
+    );
+  }
+
+  if (isOriginalsPage(path)) {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening the Originals…</p>}>
+        <OriginalsPlayer />
       </Suspense>
     );
   }

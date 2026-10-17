@@ -11,6 +11,13 @@ const previewUrl = `http://127.0.0.1:${String(PREVIEW_PORT)}`;
 const isCi = process.env["CI"] !== undefined;
 // The API keeps profiles in a throwaway folder (never the owner's .local/data) and serves no Originals.
 const e2eData = join(tmpdir(), `learn-to-dj-e2e-${String(process.pid)}`);
+// The Originals player has its own API and preview (4182/4181), serving a tiny fixture folder that
+// e2e/originals.spec.ts writes and changes, so the Lessons never pick up those tracks. Set once, in
+// the runner, so the workers (which re-read this file) inherit the same folder.
+const ORIGINALS_PREVIEW_PORT = 4181;
+const ORIGINALS_API_PORT = 4182;
+process.env["E2E_ORIGINALS_DIR"] ??= join(tmpdir(), `learn-to-dj-e2e-originals-${String(process.pid)}`);
+const e2eOriginals = process.env["E2E_ORIGINALS_DIR"];
 
 export default defineConfig({
   testDir: "e2e",
@@ -42,6 +49,23 @@ export default defineConfig({
       command: `npx vite preview --port ${String(PREVIEW_PORT)} --strictPort`,
       env: { API_PORT: String(API_PORT) },
       url: previewUrl,
+      reuseExistingServer: false,
+    },
+    {
+      command: "npm run start:api",
+      env: {
+        API_PORT: String(ORIGINALS_API_PORT),
+        ALLOWED_ORIGINS: `http://127.0.0.1:${String(ORIGINALS_PREVIEW_PORT)}`,
+        DATA_DIR: join(e2eOriginals, "data"),
+        ORIGINALS_DIR: join(e2eOriginals, "originals"),
+      },
+      url: `http://127.0.0.1:${String(ORIGINALS_API_PORT)}/api/health`,
+      reuseExistingServer: false,
+    },
+    {
+      command: `npx vite preview --port ${String(ORIGINALS_PREVIEW_PORT)} --strictPort`,
+      env: { API_PORT: String(ORIGINALS_API_PORT) },
+      url: `http://127.0.0.1:${String(ORIGINALS_PREVIEW_PORT)}`,
       reuseExistingServer: false,
     },
   ],

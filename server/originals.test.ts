@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -83,6 +83,21 @@ describe("GET /api/originals", () => {
     expect(body.data[0]).toMatchObject({ id: "001", title: "Lamplight Moths", bpm: 123, camelot: "8A", durationSec: 343.414626 });
     expect(JSON.stringify(body)).not.toContain("/somewhere/else");
     expect(logger.events.some((event) => event.level === "warn" && event.event === "originals.badIndexLine")).toBe(true);
+  });
+
+  it("re-reads the folder on every request, so a track added later is listed next time", async () => {
+    const before = (await (await appRequest(app(), "/api/originals")).json()) as { data: { id: string }[] };
+    expect(before.data.map((entry) => entry.id)).toEqual(["001", "002"]);
+
+    await mkdir(join(root, "003-new-one"));
+    await writeFile(join(root, "003-new-one", "track.mp3"), MP3_BYTES);
+    await appendFile(join(root, "index.jsonl"), `${JSON.stringify({ ...JSON.parse(indexLine("003", "New One", "003-new-one")), topic: "a new one" })}\n`);
+    const response = await appRequest(app(), "/api/originals");
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const after = (await response.json()) as { data: { id: string; topic?: string }[] };
+    expect(after.data.map((entry) => entry.id)).toEqual(["001", "002", "003"]);
+    expect(after.data[2]?.topic).toBe("a new one");
   });
 
   it("answers an empty list when no originals have been generated", async () => {

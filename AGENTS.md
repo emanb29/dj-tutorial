@@ -24,7 +24,7 @@ The stack is in `docs/adr/0001-v1-stack.md`. Node 24 (`.nvmrc`).
 - `npm run build`: builds the app into `dist/`.
 - `npm run typecheck`, `npm run lint`: TypeScript (strict) and ESLint.
 - `npm test`: Vitest. `*.test.ts` runs in Node; `*.browser.test.ts` runs in Chromium (Vitest browser mode), for Web Audio and `OfflineAudioContext`.
-- `npm run test:e2e`: builds, then runs Playwright against `vite preview` on 4179 and the API on 4180, so it never clashes with a dev server.
+- `npm run test:e2e`: builds, then runs Playwright against `vite preview` on 4179 and the API on 4180, so it never clashes with a dev server. The Originals player (`/originals`) is tested on its own pair, 4181 and 4182, over a tiny fixture folder the spec writes.
 
 The API reads `API_HOST` and `API_PORT` (defaults `127.0.0.1`, `5180`). It also reads, from the environment or a `.env` file at the repo root (the owner's mounted 1Password Environment; gitignored, never commit it): `ANTHROPIC_API_KEY` (optional; unset = no-key mode, the deterministic Coach answers everything), `COACH_MONTHLY_CAP_USD` (default `5`), `COACH_LOG_PAYLOADS` (`1` logs Coach payloads; default off), `DATA_DIR` (profile store and spend ledger; default `.local/data`), `ORIGINALS_DIR` (the generator's Originals served under `/api/originals`; default `.local/tracks/originals`) and `ALLOWED_ORIGINS` (comma-separated; default the dev app, the tunnel and the e2e preview). Tests never call the Anthropic API: they inject a client with faked HTTP (`server/test-support.ts`). Tests never play sound: Chromium runs with `--mute-audio` and audio tests render through `OfflineAudioContext`. `prototypes/` and `spikes/` are outside the build, the lint and the tests.
 
