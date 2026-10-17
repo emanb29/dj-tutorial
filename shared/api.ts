@@ -9,9 +9,14 @@ export interface ApiSuccess<Data> {
   readonly data: Data;
 }
 
+export type ApiErrorCode = "badRequest" | "forbidden" | "notFound" | "tooLarge" | "internal";
+
 export interface ApiFailure {
   readonly success: false;
   readonly error: string;
+  readonly code?: ApiErrorCode;
+  /** Every validation problem, not only the first. */
+  readonly issues?: readonly string[];
 }
 
 export interface HealthData {

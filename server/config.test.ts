@@ -1,5 +1,60 @@
 import { describe, expect, it } from "vitest";
-import { loadServerConfig } from "./config.ts";
+import { DEFAULT_ALLOWED_ORIGINS, loadRuntimeConfig, loadServerConfig } from "./config.ts";
+
+describe("loadRuntimeConfig", () => {
+  it("runs in no-key mode with a $5 cap and data under .local/data when nothing is set", () => {
+    expect(loadRuntimeConfig({})).toEqual({
+      ok: true,
+      config: {
+        dataDir: ".local/data",
+        anthropicApiKey: null,
+        coachMonthlyCapUsd: 5,
+        coachLogPayloads: false,
+        allowedOrigins: DEFAULT_ALLOWED_ORIGINS,
+      },
+    });
+  });
+
+  it("treats a blank ANTHROPIC_API_KEY as no key", () => {
+    const result = loadRuntimeConfig({ ANTHROPIC_API_KEY: "  " });
+    expect(result.ok && result.config.anthropicApiKey).toBeNull();
+  });
+
+  it("reads every variable", () => {
+    const result = loadRuntimeConfig({
+      DATA_DIR: "/tmp/dj",
+      ANTHROPIC_API_KEY: "test-key-not-real",
+      COACH_MONTHLY_CAP_USD: "2.5",
+      COACH_LOG_PAYLOADS: "1",
+      ALLOWED_ORIGINS: "http://127.0.0.1:5179, https://example.test",
+    });
+    expect(result).toEqual({
+      ok: true,
+      config: {
+        dataDir: "/tmp/dj",
+        anthropicApiKey: "test-key-not-real",
+        coachMonthlyCapUsd: 2.5,
+        coachLogPayloads: true,
+        allowedOrigins: ["http://127.0.0.1:5179", "https://example.test"],
+      },
+    });
+  });
+
+  it("reports every problem at once, without echoing the key", () => {
+    const result = loadRuntimeConfig({
+      ANTHROPIC_API_KEY: "test-key-not-real",
+      DATA_DIR: "",
+      COACH_MONTHLY_CAP_USD: "-1",
+      COACH_LOG_PAYLOADS: "yes",
+      ALLOWED_ORIGINS: "http://127.0.0.1:5179/app",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problems).toHaveLength(4);
+    expect(result.problems.join("\n")).not.toContain("test-key-not-real");
+  });
+});
 
 describe("loadServerConfig", () => {
   it("defaults to 127.0.0.1:5180 when the environment sets nothing", () => {
