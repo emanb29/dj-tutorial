@@ -5,7 +5,7 @@ import type { CriterionResult, Severity, StandingId } from "@shared/check-result
 import { barSeconds, framesWhere, loadedDeck, type CheckContext, type Situations } from "./context.ts";
 import { judge } from "./criterion.ts";
 import { TIME_EPSILON } from "./measures.ts";
-import { cueOnSeconds, entryTime, exitTime, frameAt, framesIn, isAudible, MAX_FRAME_AGE_S, overlapSpans } from "./mix.ts";
+import { cueOnSeconds, entryActionTime, entryTime, exitTime, frameAt, framesIn, isAudible, MAX_FRAME_AGE_S, overlapSpans } from "./mix.ts";
 import { phraseOffsetBeats } from "./phrasing.ts";
 import { CUED_BEFORE_S } from "./lessons/cut-on-phrase.ts";
 import { CLIP_DBFS } from "./lessons/deck-basics.ts";
@@ -103,8 +103,9 @@ function noDeadAir(context: CheckContext, severity: Severity): CriterionResult {
   });
 }
 
+/** A point action, timed on intent from the start of the move that brought B in (as `blend-start`). */
 function onPhrase(context: CheckContext, severity: Severity): CriterionResult {
-  const inAt = entryTime(context.attempt, INCOMING, context.window);
+  const inAt = entryActionTime(context.attempt, INCOMING, context.window, "firstMove");
   const master = loadedDeck(context, OUTGOING);
   const incoming = loadedDeck(context, INCOMING);
   const masterBeats = inAt === null || master === null ? null : phraseOffsetBeats(master, inAt);
@@ -137,8 +138,9 @@ function levelMatch(context: CheckContext, severity: Severity): CriterionResult 
   });
 }
 
+/** CUE time up to the action that brought B in, as `cut-on-phrase.cued-before`, so the two agree. */
 function cuedFirst(context: CheckContext, severity: Severity): CriterionResult {
-  const inAt = entryTime(context.attempt, INCOMING, context.window);
+  const inAt = entryActionTime(context.attempt, INCOMING, context.window);
   return judge({
     id: "standing.cued-first",
     severity,

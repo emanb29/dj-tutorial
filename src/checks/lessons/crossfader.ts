@@ -2,27 +2,30 @@
 import type { CtxSpan, DeckId } from "@shared/attempt.ts";
 import type { CriterionResult } from "@shared/check-result.ts";
 import { blendLength, blendStart, handover, loudSteady } from "../blend.ts";
-import type { CheckContext, LessonCheck, TaskOf } from "../context.ts";
+import { loadedDeck, type CheckContext, type LessonCheck, type TaskOf } from "../context.ts";
 import { allOf, judge } from "../criterion.ts";
-import { channelFaderAt } from "../mix.ts";
-import { phraseOffsetSeconds } from "../phrasing.ts";
+import { channelFaderAt, cueOnSeconds, entryActionTime, exitActionTime } from "../mix.ts";
+import { loudJump, phraseOffsetSeconds } from "../phrasing.ts";
 import { beatSeconds, controlEvents } from "../timeline.ts";
 import { pointActionToleranceMs } from "../tolerance.ts";
+import { CUED_BEFORE_S, LOUD_JUMP_DB } from "./cut-on-phrase.ts";
 import { SYNC_BLEND_BARS } from "./sync-blend.ts";
 
 const FADERS_UP = 0.95;
 
 /**
- * `xf-cut`, as `cut-on-phrase`: the incoming deck in within the point-action tolerance of the
- * outgoing deck's phrase start (its `t_in`, so either Play or the crossfader slam can be the cut),
- * and the outgoing deck out within 1 beat of it.
+ * `xf-cut`, as `cut-on-phrase` (cut-start, cut-tight, cued-before, loud-jump). Point actions, so
+ * timed on intent: the incoming deck's action time (its Play, or the start of the crossfader move
+ * that opened it, whichever is later) and the start of the move that silenced the outgoing deck.
  */
 function crossfaderCut(context: CheckContext, span: CtxSpan, incoming: DeckId): CriterionResult {
+  const { attempt } = context;
   const outgoing: DeckId = incoming === "A" ? "B" : "A";
-  const move = handover(context, outgoing, incoming, span);
-  const { inAt, outAt } = move;
-  const startOffset = move.outgoing === null || inAt === null ? null : phraseOffsetSeconds(move.outgoing, inAt);
-  const beat = move.outgoing === null || inAt === null ? null : beatSeconds(move.outgoing.playhead, move.outgoing.grid, inAt);
+  const outDeck = loadedDeck(context, outgoing);
+  const inAt = entryActionTime(attempt, incoming, span);
+  const outAt = exitActionTime(attempt, outgoing, span);
+  const startOffset = outDeck === null || inAt === null ? null : phraseOffsetSeconds(outDeck, inAt);
+  const beat = outDeck === null || inAt === null ? null : beatSeconds(outDeck.playhead, outDeck.grid, inAt);
   return allOf("crossfader.xf-cut", [
     judge({
       id: "crossfader.xf-cut",
@@ -39,6 +42,20 @@ function crossfaderCut(context: CheckContext, span: CtxSpan, incoming: DeckId): 
       threshold: { op: "<=", value: 1, unit: "beats" },
       measured: inAt === null || outAt === null || beat === null ? null : Math.abs(outAt - inAt) / beat,
       evidence: outAt === null ? [] : [{ from: outAt, to: outAt, label: `${outgoing} out` }],
+    }),
+    judge({
+      id: "crossfader.xf-cut",
+      severity: "fail",
+      unit: "s",
+      threshold: { op: ">=", value: CUED_BEFORE_S, unit: "s" },
+      measured: inAt === null ? null : cueOnSeconds(attempt, incoming, { from: span.from, to: inAt }),
+    }),
+    judge({
+      id: "crossfader.xf-cut",
+      severity: "fail",
+      unit: "dB",
+      threshold: { op: "<=", value: LOUD_JUMP_DB, unit: "dB" },
+      measured: outDeck === null || inAt === null ? null : loudJump(context, outDeck, inAt),
     }),
   ]);
 }
@@ -62,7 +79,7 @@ export const crossfader: LessonCheck<TaskOf<"crossfader">> = {
     const blend = handover(context, "A", "B", task.blendSection);
     const xfBlend = allOf("crossfader.xf-blend", [
       blendStart("crossfader.xf-blend", blend),
-      blendLength("crossfader.xf-blend", blend, SYNC_BLEND_BARS.full),
+      blendLength("crossfader.xf-blend", blend, SYNC_BLEND_BARS[context.spec.variant]),
       loudSteady("crossfader.xf-blend", context, blend),
     ]);
     const cut = task.cutSection;

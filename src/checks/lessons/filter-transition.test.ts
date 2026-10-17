@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CheckVariant } from "@shared/attempt.ts";
+import type { CheckVariant, ControlEvent } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import type { EngineCommandRecord } from "../deck-commands.ts";
 import { runCheck } from "../run-check.ts";
-import { BAR, BLEND_WINDOW, LESSON_AIDS, blendScenario, engineCommand, spec } from "../testing/synthetic.ts";
+import { BAR, BLEND_WINDOW, LESSON_AIDS, blendScenario, engineCommand, event, ramp, spec } from "../testing/synthetic.ts";
 
 /** A's high-pass: on at `from`, at `depth` by 50 s, back to centre at `backAt` (A's fader closes at 56 s). */
 function sweep({ from = 40, depth = 0.8, backAt = 57 }: { from?: number; depth?: number; backAt?: number | null } = {}): EngineCommandRecord[] {
@@ -14,10 +14,14 @@ function sweep({ from = 40, depth = 0.8, backAt = 57 }: { from?: number; depth?:
   ];
 }
 
-function check(engineEvents: readonly EngineCommandRecord[], variant: CheckVariant = "full"): CheckResult {
+function check(
+  engineEvents: readonly EngineCommandRecord[],
+  variant: CheckVariant = "full",
+  faderEvents?: readonly ControlEvent[],
+): CheckResult {
   const result = runCheck(
     spec({ lessonId: "filter-transition" }, BLEND_WINDOW, { variant, aids: { ...LESSON_AIDS, sync: true } }),
-    blendScenario({ engineEvents }),
+    blendScenario({ engineEvents, ...(faderEvents === undefined ? {} : { faderEvents }) }),
   );
   if (!("criteria" in result)) throw new Error("expected a graded result");
   return result;
@@ -56,6 +60,26 @@ describe("filter-transition", () => {
     expect(byId(check(sweep({ backAt: 56 + BAR })), "filter-transition.cfx-back")?.status).toBe("met");
     expect(byId(check(sweep({ backAt: 56 + BAR + 0.1 })), "filter-transition.cfx-back")?.status).toBe("notMet");
     expect(byId(check(sweep({ backAt: null })), "filter-transition.cfx-back")).toMatchObject({ status: "notMet", measured: null });
+  });
+
+  it("times the filter from the move that starts the sustained sweep, ignoring an earlier nudge back to centre", () => {
+    const nudgeFirst = [engineCommand(20, "filter", "A", 0.3), engineCommand(20.3, "filter", "A", 0), ...sweep()];
+    expect(byId(check(nudgeFirst), "filter-transition.filter-length")).toMatchObject({ status: "met" });
+    expect(byId(check(nudgeFirst), "filter-transition.filter-length")?.measured).toBeCloseTo(8);
+    // A brief dip to centre inside the sweep does not restart it.
+    const dip = [...sweep(), engineCommand(45, "filter", "A", 0), engineCommand(45.2, "filter", "A", 0.5)].sort((a, b) => a.appliedCtx - b.appliedCtx);
+    expect(byId(check(dip), "filter-transition.filter-length")?.measured).toBeCloseTo(8);
+  });
+
+  it("measures depth, length and reset from the first frame A is not audible, not from the start of its fader drag", () => {
+    // A's fader dragged down at 50 Hz from 52 s; it drops under −24 dB at 56 s. The sweep reaches 0.75 at 55 s.
+    const result = check(
+      [engineCommand(40, "filter", "A", 0.06), engineCommand(55, "filter", "A", 0.75), engineCommand(57, "filter", "A", 0)],
+      "full",
+      [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 52, to: 57.34 }, 1, 0)],
+    );
+    expect(byId(result, "filter-transition.hpf-depth")?.status).toBe("met");
+    expect(byId(result, "filter-transition.filter-length")?.measured).toBeCloseTo(8, 1);
   });
 
   it("ignores filter moves the engine refused", () => {

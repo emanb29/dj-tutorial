@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MUSIC, SILENT, attempt, channel, event, frames, playing } from "./testing/synthetic.ts";
-import { audibleSpans, channelGainDb, entryTime, exitTime, isAudible } from "./mix.ts";
+import { audibleSpans, channelGainDb, entryActionTime, entryTime, exitActionTime, exitTime, isAudible } from "./mix.ts";
 
 const window = { from: 0, to: 40 };
 
@@ -81,13 +81,24 @@ describe("entry and exit", () => {
     expect(exitTime(recorded, "A", window)).toBeCloseTo(30);
   });
 
-  it("time a slow fader drag from its start (10% of travel), not when it becomes audible", () => {
+  it("stay on the audible frames for a slow fader drag; the action time is its start (10% of travel, or first move)", () => {
     const drag = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.5, 1].map((value, index) =>
       event(20 + index * 0.1, "channelFader", value, "B"),
     );
     const recorded = { ...twoDecks(99, 30), events: [...drag, event(30, "channelFader", 0, "A")] };
 
-    expect(entryTime(recorded, "B", window)).toBeCloseTo(20.1);
+    // Audible once the fader passes −24 dB (0.25 of travel is just under it): 20.5 s.
+    expect(entryTime(recorded, "B", window)).toBeCloseTo(20.5);
+    expect(entryActionTime(recorded, "B", window)).toBeCloseTo(20.1);
+    expect(entryActionTime(recorded, "B", window, "firstMove")).toBeCloseTo(20);
+  });
+
+  it("time the exit action from the start of the move that silenced the deck", () => {
+    const drag = [0.9, 0.7, 0.5, 0.3, 0.2, 0].map((value, index) => event(30 + index * 0.1, "channelFader", value, "A"));
+    const recorded = { ...twoDecks(20, 99), events: [event(20, "channelFader", 1, "B"), ...drag] };
+
+    expect(exitTime(recorded, "A", window)).toBeCloseTo(30.4);
+    expect(exitActionTime(recorded, "A", window)).toBeCloseTo(30);
   });
 
   it("never put the entry before the deck starts playing, even when the fader opened just before Play", () => {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { CheckVariant } from "@shared/attempt.ts";
+import type { CheckVariant, MeterFrame } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { runCheck } from "../run-check.ts";
-import { BAR, BEAT, BLEND_WINDOW, LESSON_AIDS, blendScenario, event, spec, type BlendScenario } from "../testing/synthetic.ts";
+import { BAR, BEAT, BLEND_WINDOW, LESSON_AIDS, blendScenario, event, ramp, spec, type BlendScenario } from "../testing/synthetic.ts";
 
 function check(scenario: BlendScenario = {}, variant: CheckVariant = "full"): CheckResult {
   const result = runCheck(
@@ -57,12 +57,36 @@ describe("sync-blend", () => {
     expect(byId(check({ masterLufs: (t) => (t >= 66 ? -20 : -14) }), "sync-blend.loud-steady")?.status).toBe("met");
   });
 
+  it("checks loudness only up to the end of the attempt when it ends within 4 bars of A leaving, but fails a meter gap inside it", () => {
+    const endsAt = 58; // "Done" 1 bar after A left at 56 s; the meters stop with the attempt.
+    const recorded = (keep: (t: number) => boolean) => {
+      const scenario = blendScenario();
+      const cut = (frames: readonly MeterFrame[] | undefined) => (frames ?? []).filter((frame) => frame.ctx < endsAt && keep(frame.ctx));
+      return { ...scenario, meters: { master: cut(scenario.meters.master), A: cut(scenario.meters.A), B: cut(scenario.meters.B) } };
+    };
+    const grade = (keep: (t: number) => boolean) => {
+      const result = runCheck(spec({ lessonId: "sync-blend" }, { from: 0, to: endsAt }, { aids: { ...LESSON_AIDS, sync: true } }), recorded(keep));
+      if (!("criteria" in result)) throw new Error("expected a graded result");
+      return byId(result, "sync-blend.loud-steady");
+    };
+
+    expect(grade(() => true)).toMatchObject({ status: "met" });
+    expect(grade((t) => t < 40 || t >= 42)).toMatchObject({ status: "notMet", measured: null });
+  });
+
   it("fails a trim move while both decks are audible, not one after", () => {
     expect(byId(check({ extraEvents: [event(40, "trim", -2, "B")] }), "sync-blend.trim-untouched")).toMatchObject({
       status: "notMet",
       measured: 1,
     });
     expect(byId(check({ extraEvents: [event(70, "trim", -2, "B")] }), "sync-blend.trim-untouched")?.status).toBe("met");
+  });
+
+  it("measures the blend to the first frame A is not audible, not to the start of a slow fader drag", () => {
+    // A's fader dragged down at 50 Hz from 62 s; it drops under −24 dB at 70 s, 19 bars after B came in.
+    const nineteenBars = check({ faderEvents: [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 62, to: 72.68 }, 1, 0)] });
+    expect(byId(nineteenBars, "sync-blend.blend-length")).toMatchObject({ status: "notMet" });
+    expect(byId(nineteenBars, "sync-blend.blend-length")?.measured).toBeCloseTo(19, 1);
   });
 
   it("fails everything when A never leaves", () => {

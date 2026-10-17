@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CheckVariant, PlayheadSegment } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { runCheck } from "../run-check.ts";
-import { BAR, BLEND_WINDOW, LESSON_AIDS, blendScenario, event, spec, type BlendScenario } from "../testing/synthetic.ts";
+import { BAR, BLEND_WINDOW, LESSON_AIDS, blendScenario, event, ramp, spec, type BlendScenario } from "../testing/synthetic.ts";
 
 const BY_EAR_AIDS = { ...LESSON_AIDS, bpmDisplay: false, phaseMeter: false };
 
@@ -53,6 +53,13 @@ describe("blend-by-ear", () => {
     expect(byId(check(blend({ outA: 32 + 15.75 * BAR })), "blend-by-ear.blend-length")?.status).toBe("met");
     expect(byId(check(blend({ outA: 32 + 15.5 * BAR })), "blend-by-ear.blend-length")?.status).toBe("notMet");
     expect(byId(check(blend({ outA: 32 + 8 * BAR }), "short"), "blend-by-ear.blend-length")?.status).toBe("met");
+  });
+
+  it("passes a 17-bar blend whose outgoing fader is dragged slowly: the blend lasts until A is not audible", () => {
+    // A's fader dragged down at 50 Hz from 60 s (14 bars in); it drops under −24 dB at about 66 s, 17 bars in.
+    const result = check(blend({ faderEvents: [event(32, "channelFader", 1, "B"), ...ramp("channelFader", "A", { from: 60, to: 68 }, 1, 0)] }));
+    expect(byId(result, "blend-by-ear.blend-length")?.measured).toBeCloseTo(17, 1);
+    expect(result.outcome).toEqual({ kind: "passed" });
   });
 
   it("fails drift over 60 ms for more than 1 bar, even with the hold fraction met", () => {

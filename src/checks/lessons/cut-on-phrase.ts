@@ -2,7 +2,7 @@
 import type { CriterionResult } from "@shared/check-result.ts";
 import { loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
-import { cueOnSeconds, entryTime, exitTime } from "../mix.ts";
+import { cueOnSeconds, entryActionTime, exitActionTime } from "../mix.ts";
 import { loudJump, phraseOffsetSeconds } from "../phrasing.ts";
 import { beatSeconds, firstPlayStart, playRunStartAt } from "../timeline.ts";
 import { pointActionToleranceMs } from "../tolerance.ts";
@@ -10,7 +10,7 @@ import { cueOnDownbeat } from "./cue-point.ts";
 
 /** CUE on the incoming deck for this long before it comes in (`cued-before`, `cued-first`). */
 export const CUED_BEFORE_S = 2;
-const LOUD_JUMP_DB = 2;
+export const LOUD_JUMP_DB = 2;
 
 export const cutOnPhrase: LessonCheck<TaskOf<"cut-on-phrase">> = {
   situations: { transition: true },
@@ -18,11 +18,11 @@ export const cutOnPhrase: LessonCheck<TaskOf<"cut-on-phrase">> = {
     const { attempt, window, spec } = context;
     const deckA = loadedDeck(context, "A");
     const deckB = loadedDeck(context, "B");
-    const inB = entryTime(attempt, "B", window);
+    const inB = entryActionTime(attempt, "B", window);
     // `t_play(B)`: the Play that brought B in, not an earlier CUE-hold preview in the headphones.
     const playB =
       deckB === null ? null : inB !== null ? playRunStartAt(deckB.playhead, inB) : firstPlayStart(deckB.playhead, window.from);
-    const outA = exitTime(attempt, "A", window);
+    const outA = exitActionTime(attempt, "A", window);
 
     const startOffset = deckA === null || playB === null ? null : phraseOffsetSeconds(deckA, playB);
     const tightBeats =

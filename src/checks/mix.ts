@@ -10,7 +10,7 @@ import {
   type MeterFrame,
 } from "@shared/attempt.ts";
 import { TIME_EPSILON } from "./measures.ts";
-import { controlValueAt, faderGestureStart, isPlaying, playRunStartAt } from "./timeline.ts";
+import { controlValueAt, faderGesture, isPlaying, playRunStartAt } from "./timeline.ts";
 
 /** A deck counts as in the mix above this gain (check-design §10). */
 export const AUDIBLE_GAIN_DB = -24;
@@ -124,30 +124,67 @@ export function overlapSpans(attempt: Attempt, window: CtxSpan): CtxSpan[] {
   );
 }
 
-/**
- * Faders are judged on intent (check-design, input leeway): when a fader move caused the change,
- * the change is timed from the start of that move.
- */
-function gestureAdjusted(attempt: Attempt, deck: DeckId, t: CtxTime): CtxTime {
+// Two kinds of time (check-design §2 and "Input leeway"):
+// - `entryTime` / `exitTime` are `t_in` / `t_out` exactly as §2 defines them, on the audible frames.
+//   Durations and measurement windows (blend length, loudness spans, filter length) use only these.
+// - `*ActionTime` are point-in-time actions judged on intent: a fader or crossfader move is timed
+//   from its start. Only point-action criteria (cut timing, phrase-start entries) use them.
+
+/** Which point of a fader gesture an action is timed from. */
+export type GesturePoint = "travelStart" | "firstMove";
+
+/** The start of the fader or crossfader gesture that leads up to `t`, if one moved 10% of travel. */
+function gestureStartBefore(attempt: Attempt, deck: DeckId, t: CtxTime, point: GesturePoint): CtxTime | null {
   const starts = [
-    faderGestureStart(attempt.events, "channelFader", deck, t, attempt.initialMixer[deck].channelFader),
-    faderGestureStart(attempt.events, "crossfader", undefined, t, attempt.initialMixer.crossfader),
-  ].filter((start) => start !== null);
-  return Math.min(t, ...starts);
+    faderGesture(attempt.events, "channelFader", deck, t, attempt.initialMixer[deck].channelFader),
+    faderGesture(attempt.events, "crossfader", undefined, t, attempt.initialMixer.crossfader),
+  ].flatMap((gesture) => (gesture === null ? [] : [gesture[point]]));
+  return starts.length === 0 ? null : Math.min(...starts);
 }
 
 /** `t_in`: the first audible frame of the deck in the window. */
 export function entryTime(attempt: Attempt, deck: DeckId, window: CtxSpan): CtxTime | null {
-  const first = audibleSpans(attempt, deck, window)[0];
-  if (first === undefined) return null;
-  const playhead = attempt.decks[deck]?.playhead;
-  const startedPlaying = playhead === undefined ? null : playRunStartAt(playhead, first.from);
-  return Math.max(gestureAdjusted(attempt, deck, first.from), startedPlaying ?? -Infinity);
+  return audibleSpans(attempt, deck, window)[0]?.from ?? null;
 }
 
 /** `t_out`: the first frame of the deck's final exit, when it stays inaudible to the window end. */
 export function exitTime(attempt: Attempt, deck: DeckId, window: CtxSpan): CtxTime | null {
   const last = audibleSpans(attempt, deck, window).at(-1);
-  if (last === undefined || last.to >= window.to - TIME_EPSILON) return null;
-  return gestureAdjusted(attempt, deck, last.to);
+  return last === undefined || last.to >= window.to - TIME_EPSILON ? null : last.to;
+}
+
+/** The last fader or crossfader event at or before `t` that took the deck's gain above the audible line. */
+function lastGainUp(attempt: Attempt, deck: DeckId, t: CtxTime): CtxTime | null {
+  const ups = attempt.events.filter(
+    (event) =>
+      ((event.control === "channelFader" && event.deck === deck) || event.control === "crossfader") &&
+      event.ctx <= t + TIME_EPSILON &&
+      channelGainDb(attempt, deck, event.ctx) > AUDIBLE_GAIN_DB &&
+      channelGainDb(attempt, deck, event.ctx - 1e-6) <= AUDIBLE_GAIN_DB,
+  );
+  return ups.at(-1)?.ctx ?? null;
+}
+
+/**
+ * When the Learner brought the deck in: the later of the Play that started it and the fader or
+ * crossfader move that opened its gain (timed from that move's start). So a deck already open on
+ * the master comes in at its Play, and a playing deck at the start of its fader move, even if its
+ * first audible frame is later (a quiet first beat). Never later than `t_in`. `travelStart` (10% of
+ * travel) suits a cut; `firstMove` suits a blend, whose slow move can take seconds to reach 10%.
+ */
+export function entryActionTime(attempt: Attempt, deck: DeckId, window: CtxSpan, point: GesturePoint = "travelStart"): CtxTime | null {
+  const inAt = entryTime(attempt, deck, window);
+  if (inAt === null) return null;
+  const playhead = attempt.decks[deck]?.playhead;
+  const startedPlaying = playhead === undefined ? null : playRunStartAt(playhead, inAt);
+  const gainUp = lastGainUp(attempt, deck, inAt);
+  const openedAt = gainUp === null ? null : Math.min(gainUp, gestureStartBefore(attempt, deck, gainUp, point) ?? gainUp);
+  const starts = [startedPlaying, openedAt].filter((start) => start !== null);
+  return starts.length === 0 ? inAt : Math.min(inAt, Math.max(...starts));
+}
+
+/** When the Learner took the deck out: the start of the fader move that silenced it (never later than `t_out`). */
+export function exitActionTime(attempt: Attempt, deck: DeckId, window: CtxSpan): CtxTime | null {
+  const outAt = exitTime(attempt, deck, window);
+  return outAt === null ? null : Math.min(outAt, gestureStartBefore(attempt, deck, outAt, "travelStart") ?? outAt);
 }

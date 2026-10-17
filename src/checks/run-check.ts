@@ -114,7 +114,7 @@ export function runCheck(spec: TaskSpec, attempt: GradedAttempt): CheckResult | 
   }
   const measured = [...own.criteria, ...standingCriteria(context, lessonCheckFor(spec.task).situations)];
   // Degraded recordings: see degraded.ts for why this grades with a warning instead of voiding.
-  const degraded = attempt.degraded === true ? gradeDegraded(measured) : null;
+  const degraded = attempt.degraded === true ? gradeDegraded(measured, attempt, spec.window) : null;
   const criteria = degraded?.criteria ?? measured;
   const failedCriteria = criteria
     .filter((criterion) => criterion.severity === "fail" && criterion.status === "notMet")

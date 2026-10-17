@@ -3,7 +3,7 @@ import type { CtxTime } from "@shared/attempt.ts";
 import { handover } from "../blend.ts";
 import type { LessonCheck, TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
-import { deckCommands, filterAt } from "../deck-commands.ts";
+import { deckCommands, filterAt, type DeckCommand } from "../deck-commands.ts";
 import { TIME_EPSILON } from "../measures.ts";
 
 const HPF_DEPTH = 0.7;
@@ -11,6 +11,25 @@ const HPF_DEPTH = 0.7;
 export const CFX_CENTRE_BAND = 0.05;
 /** `filter-length`: 8–16 bars ± 1 beat; the short form 8–9 bars. */
 const FILTER_BARS = { full: [8 - 0.25, 16 + 0.25], short: [8, 9] } as const;
+
+/**
+ * Where the filter-out starts: the CFX move that begins the high-pass sweep still on when A goes
+ * silent. Excursions that come back to centre earlier (a nudge) are not it; a dip to centre shorter
+ * than 1 beat inside the sweep does not restart it. `null` when no sweep reaches `t_out` (within 1 beat).
+ */
+function sustainedSweepStart(moves: readonly DeckCommand[], outAt: CtxTime, beat: number): CtxTime | null {
+  const spans: { from: CtxTime; to: CtxTime }[] = [];
+  moves.forEach((move, index) => {
+    if (move.value <= CFX_CENTRE_BAND) return;
+    const to = moves.slice(index + 1).find((next) => next.value <= CFX_CENTRE_BAND)?.ctx ?? outAt;
+    const last = spans.at(-1);
+    if (last !== undefined && move.ctx <= last.to + TIME_EPSILON) return;
+    if (last !== undefined && move.ctx - last.to < beat) last.to = to;
+    else spans.push({ from: move.ctx, to });
+  });
+  const sweep = spans.at(-1);
+  return sweep !== undefined && sweep.to >= outAt - beat - TIME_EPSILON ? sweep.from : null;
+}
 
 export const filterTransition: LessonCheck<TaskOf<"filter-transition">> = {
   situations: { transition: true },
@@ -21,7 +40,7 @@ export const filterTransition: LessonCheck<TaskOf<"filter-transition">> = {
     const filterMoves = deckCommands(attempt, "filter", "A").filter((change) => change.ctx >= window.from - TIME_EPSILON);
     const beforeOut = outAt === null ? [] : filterMoves.filter((change) => change.ctx < outAt);
     const depth = outAt === null ? null : beforeOut.reduce((most, change) => Math.max(most, change.value), 0);
-    const filterOn = beforeOut.find((change) => change.value > CFX_CENTRE_BAND)?.ctx ?? null;
+    const filterOn = outAt === null || bar === null ? null : sustainedSweepStart(beforeOut, outAt, bar / 4);
     const centredAt = (from: CtxTime): CtxTime | null =>
       Math.abs(filterAt(attempt, "A", from)) <= CFX_CENTRE_BAND
         ? from

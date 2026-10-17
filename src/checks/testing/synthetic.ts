@@ -140,6 +140,20 @@ export function engineCommand(
   };
 }
 
+/** A continuous move at 50 Hz (a trackpad drag as the recorder keeps it): linear from `fromValue` to `toValue`. */
+export function ramp(
+  control: ControlEvent["control"],
+  deck: DeckId | undefined,
+  span: CtxSpan,
+  fromValue: number,
+  toValue: number,
+): ControlEvent[] {
+  const steps = Math.round((span.to - span.from) / FRAME);
+  return Array.from({ length: steps + 1 }, (_, index) =>
+    event(span.from + index * FRAME, control, fromValue + ((toValue - fromValue) * index) / steps, deck),
+  );
+}
+
 export function taps(times: readonly number[]): ControlEvent[] {
   return times.map((ctx) => event(ctx, "tap", 1));
 }

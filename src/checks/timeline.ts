@@ -176,6 +176,28 @@ export function faderGestureStart(
   t: CtxTime,
   initial: number,
 ): CtxTime | null {
+  const start = faderGesture(events, control, deck, t, initial)?.travelStart ?? null;
+  return start !== null && start <= t + TIME_EPSILON ? start : null;
+}
+
+export interface FaderGesture {
+  /** The gesture's first movement. */
+  readonly firstMove: CtxTime;
+  /** The first event at which it had moved 10% of full travel. */
+  readonly travelStart: CtxTime;
+}
+
+/**
+ * The fader gesture leading up to `t` (see `faderGestureStart`), including its moves after `t`;
+ * `null` when it never moved 10% of travel. Its `travelStart` may be after `t`.
+ */
+export function faderGesture(
+  events: readonly ControlEvent[],
+  control: ControlId,
+  deck: DeckId | undefined,
+  t: CtxTime,
+  initial: number,
+): FaderGesture | null {
   const moves = events.filter((event) => matches(event, control, deck) && event.ctx <= t + TIME_EPSILON);
   const last = moves.at(-1);
   if (last === undefined || t - last.ctx > GESTURE_GAP_S) return null;
@@ -193,9 +215,17 @@ export function faderGestureStart(
   // The run may have started with a step in the other direction; the gesture starts after it.
   while (first < moves.length - 1 && Math.sign(at(moves, first).value - valueBefore(first)) === -direction) first += 1;
 
+  // The gesture may go on after `t` (a slow blend is audible long before it has moved 10%).
+  const all = events.filter((event) => matches(event, control, deck));
+  const later: ControlEvent[] = [];
+  for (const next of all.slice(moves.length)) {
+    const previous = later.at(-1) ?? last;
+    if (next.ctx - previous.ctx > GESTURE_GAP_S || Math.sign(next.value - previous.value) === -direction) break;
+    later.push(next);
+  }
   const origin = valueBefore(first);
-  const crossing = moves
-    .slice(first)
-    .find((event) => Math.abs(event.value - origin) >= GESTURE_START_TRAVEL - TIME_EPSILON);
-  return crossing?.ctx ?? null;
+  const crossing = [...moves.slice(first), ...later].find(
+    (event) => Math.abs(event.value - origin) >= GESTURE_START_TRAVEL - TIME_EPSILON,
+  );
+  return crossing === undefined ? null : { firstMove: at(moves, first).ctx, travelStart: crossing.ctx };
 }
