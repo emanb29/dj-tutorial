@@ -10,7 +10,7 @@ body:has(.playground) {
 .playground {
   min-height: 100vh;
   color: #e8e8ea;
-  font: 13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 13px/1.3 var(--font-sans);
 }
 
 .playground-bar {
@@ -49,7 +49,7 @@ body:has(.playground) {
   color: #8d9099;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .view-switch {

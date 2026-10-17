@@ -120,6 +120,31 @@ describe("phrases", () => {
     expect(result.outcome).toEqual({ kind: "passed" });
   });
 
+  it("splits the 64 bars into two 32-bar halves with a halfway checkpoint, and the music never stops", () => {
+    const halfway = phraseStart(track.grid, 6);
+    const checkpoints = plan.cues.filter((cue) => cue.checkpoint === true);
+    expect(checkpoints).toEqual([{ fromPos: halfway + BEAT, caption: "Halfway: keep tapping each phrase", checkpoint: true }]);
+    // After a few bars the caption goes back to the task; the attempt itself runs on to the end.
+    const afterCheckpoint = plan.cues.find((cue) => cue.fromPos > halfway + BEAT);
+    expect(afterCheckpoint).toEqual({ fromPos: halfway + 4 * 4 * BEAT, caption: "Tap each new phrase (Space)" });
+    expect(plan.endWhen).toEqual({ kind: "position", pos: phraseStart(track.grid, 10) + BEAT });
+    // Under a minute per half: the Learner gets a tick about every 62 s of a 124 s attempt.
+    expect(halfway - firstPhrase).toBeCloseTo(32 * 4 * BEAT);
+  });
+
+  it("grades both halves together as one Check: 5 of 8 phrase starts across the halves pass", () => {
+    const starts = Array.from({ length: 8 }, (_, index) => heard(plan, firstPhrase + index * 32 * BEAT));
+    const end = heard(plan, phraseStart(track.grid, 10) + BEAT);
+    // 3 in the first half, 2 in the second: neither half alone has 5.
+    const someTaps = [starts[0], starts[1], starts[2], starts[5], starts[6]].filter((t) => t !== undefined);
+    const passed = grade(definition, plan, recorded(track, plan, { events: taps(someTaps), answers: { breakdown: 4, drop: 6 } }), end);
+    expect(passed.outcome).toEqual({ kind: "passed" });
+    // One false tap in each half is two in the Check: too many.
+    const falseTaps = [heard(plan, firstPhrase + 16 * BEAT), heard(plan, firstPhrase + (4 * 32 + 16) * BEAT)];
+    const failed = grade(definition, plan, recorded(track, plan, { events: taps([...starts, ...falseTaps].sort((a, b) => a - b)), answers: { breakdown: 4, drop: 6 } }), end);
+    expect(failed.outcome).toEqual({ kind: "failed", failedCriteria: ["phrases.phrase-taps"] });
+  });
+
   it("cannot run on a track with no named breakdown and drop", () => {
     expect(definition.trackProblems({ ...track, sections: [] })).not.toEqual([]);
     expect(definition.trackProblems(track)).toEqual([]);

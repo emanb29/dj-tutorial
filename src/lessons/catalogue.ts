@@ -5,6 +5,8 @@ import { barStart, beatSec, heardTimeOf, phraseOf, phraseStart } from "./track.t
 import type { CheckPlan, ControlId, LessonDefinition, LessonTrack } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
+/** How long a checkpoint's tick and caption stay up. */
+const CHECKPOINT_BARS = 4;
 
 /** Lesson aids for Lessons 1–3: no sync or quantize to speak of, captions on. */
 export const LESSON_AIDS: Aids = { sync: false, quantize: false, bpmDisplay: false, phaseMeter: false, lessonText: true };
@@ -59,7 +61,6 @@ const deckBasics: LessonDefinition = {
     faderAtStart: 0,
     endWhen: { kind: "faded-out" },
     timeoutSec: 30,
-    questions: [],
     cues: [],
   }),
   taskFor: (): LessonTask => ({ lessonId: "deck-basics" }),
@@ -134,6 +135,9 @@ const phrases: LessonDefinition = {
   planCheck: (track): CheckPlan => {
     const first = phraseWindow(track)?.first ?? 2;
     const firstBar = (first - 1) * BARS_PER_PHRASE + 1;
+    // Two 32-bar halves, one Check: the tick lands a beat after the second half's first phrase start.
+    const halfway = phraseStart(track.grid, first + BARS_PER_PHRASE / 2);
+    const tapCaption = "Tap each new phrase (Space)";
     return {
       startPos: barStart(track.grid, firstBar - 2),
       autoPlay: true,
@@ -142,7 +146,9 @@ const phrases: LessonDefinition = {
       timeoutSec: 150,
       cues: [
         { fromPos: barStart(track.grid, firstBar - 2), caption: "Get ready: phrase 1 is coming" },
-        { fromPos: barStart(track.grid, firstBar) - beatSec(track.grid), caption: "Tap each new phrase (Space)" },
+        { fromPos: barStart(track.grid, firstBar) - beatSec(track.grid), caption: tapCaption },
+        { fromPos: halfway + beatSec(track.grid), caption: "Halfway: keep tapping each phrase", checkpoint: true },
+        { fromPos: halfway + CHECKPOINT_BARS * 4 * beatSec(track.grid), caption: tapCaption },
       ],
     };
   },

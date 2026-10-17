@@ -1,56 +1,124 @@
-/* The Lesson screen: caption line, feedback strip and result card above the controller. Captions,
-   not prose: one big line, with the concept just named smaller beside it. */
+/* The Lesson screen: a slim bar, one big caption line with live feedback beside it, and the
+   controller below. Questions and the result card float over the controller instead of pushing it
+   down, so the whole screen fits 1280×800 without scrolling. Tokens: src/app/theme.css. */
 
 .lesson {
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  height: 100dvh;
 }
 
 .lesson-bar,
-.lesson-caption,
-.feedback-strip,
-.lesson-credit {
-  max-width: 1440px;
-  width: 100%;
+.lesson-stage {
   box-sizing: border-box;
+  width: 100%;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
 }
 
 .lesson-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-top: 10px;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding-top: var(--space-2);
 }
 
 .lesson-bar h1 {
   margin: 0;
-  font-size: 15px;
+  color: var(--ink-dim);
+  font-size: var(--text-md);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .lesson-audio-off {
-  color: var(--lesson-warn);
-  font-size: 13px;
+  color: var(--warn);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.lesson-credit {
+  overflow: hidden;
+  max-width: 40%;
+  margin-left: auto;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lesson-credit a {
+  color: inherit;
+}
+
+/* ---- the caption line: one line, always ------------------------------------------------- */
+
+.lesson-stage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 56px;
 }
 
 .lesson-caption {
-  min-height: 2.2em;
   display: flex;
+  flex: 1;
   align-items: baseline;
-  gap: 14px;
-  flex-wrap: wrap;
-  font-size: 22px;
-  font-weight: 650;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.lesson-caption > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lesson-named {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--lesson-good);
+  flex-shrink: 2;
+  color: var(--pass);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: 0;
   animation: named-in 400ms ease-out;
+}
+
+.lesson-do {
+  flex-shrink: 1;
+}
+
+.lesson-hint {
+  margin-left: var(--space-3);
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* A checkpoint in a long Check ("halfway"): a tick pops in, the music keeps playing. */
+.lesson-cue[data-checkpoint="true"] {
+  color: var(--pass);
+}
+
+.lesson-cue[data-checkpoint="true"]::before {
+  content: "✓";
+  display: inline-grid;
+  place-items: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: var(--space-3);
+  border-radius: 50%;
+  color: var(--body);
+  background: var(--pass);
+  font-size: 0.9em;
+  animation: checkpoint-pop 500ms cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 
 @keyframes named-in {
@@ -60,56 +128,65 @@
   }
 }
 
+@keyframes checkpoint-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* ---- live feedback beside the caption --------------------------------------------------- */
+
 .feedback-strip {
-  min-height: 22px;
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 18px;
+  gap: var(--space-4);
 }
 
 .beat-pulse {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .beat-pulse span {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: var(--lesson-edge);
+  background: var(--panel-edge);
 }
 
 .beat-pulse span.one {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .beat-pulse[data-beat="1"] span:nth-child(1),
 .beat-pulse[data-beat="2"] span:nth-child(2),
 .beat-pulse[data-beat="3"] span:nth-child(3),
 .beat-pulse[data-beat="4"] span:nth-child(4) {
-  background: var(--lesson-accent);
+  background: var(--accent);
 }
 
 .tap-dots {
   position: relative;
-  list-style: none;
+  width: 200px;
+  height: 20px;
   margin: 0;
   padding: 0;
-  width: 220px;
-  height: 18px;
-  border-left: 1px solid var(--lesson-edge);
-  border-right: 1px solid var(--lesson-edge);
-  background: linear-gradient(90deg, transparent 49.5%, var(--lesson-edge) 49.5%, var(--lesson-edge) 50.5%, transparent 50.5%);
+  border-right: 1px solid var(--panel-edge);
+  border-left: 1px solid var(--panel-edge);
+  background: linear-gradient(90deg, transparent 49.5%, var(--panel-edge) 49.5%, var(--panel-edge) 50.5%, transparent 50.5%);
+  list-style: none;
 }
 
 .tap-dots li {
   position: absolute;
   top: 4px;
-  width: 10px;
-  height: 10px;
-  margin-left: -5px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
   border-radius: 50%;
   opacity: 0.35;
 }
@@ -120,137 +197,212 @@
 
 .tap-dots li.good,
 .practice-reps .good {
-  background: var(--lesson-good);
+  background: var(--pass);
 }
 
 .tap-dots li.off,
 .practice-reps .off {
-  background: var(--lesson-warn);
+  background: var(--warn);
 }
 
 .practice-reps {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .practice-reps span {
-  width: 8px;
-  height: 14px;
-  border-radius: 2px;
+  width: 10px;
+  height: 18px;
+  border-radius: 3px;
 }
 
-.lesson-questions,
-.result-card {
-  max-width: 1440px;
-  width: calc(100% - 32px);
+/* ---- the board: controller, with questions and results floating over it ----------------- */
+
+.lesson-board {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.lesson-overlay {
+  position: absolute;
+  top: var(--space-4);
+  left: 50%;
+  z-index: 20;
   box-sizing: border-box;
-  margin: 0 auto;
-  padding: 12px 16px;
-  border: 1px solid var(--lesson-edge);
-  border-radius: 8px;
-  background: var(--lesson-panel);
+  width: min(720px, calc(100% - 2 * var(--space-4)));
+  padding: var(--space-5);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-raised);
+  transform: translateX(-50%);
+  animation: overlay-in 220ms ease-out;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
 }
 
 .lesson-question {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 4px 0;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--text-lg);
+  font-weight: 650;
 }
 
-.lesson-question[data-answered="true"] {
-  opacity: 0.6;
+.lesson-question + .lesson-question {
+  margin-top: var(--space-4);
 }
 
-.lesson-question button[aria-pressed="true"] {
-  border-color: var(--lesson-good);
+.lesson-question [role="group"] {
+  display: flex;
+  gap: var(--space-2);
 }
 
-.result-card h2 {
-  margin: 0 0 6px;
-  font-size: 20px;
-}
-
-.result-card.passed h2 {
-  color: var(--lesson-good);
-}
-
-.result-card.failed h2,
-.result-card.void h2 {
-  color: var(--lesson-warn);
-}
-
-.result-criteria {
-  list-style: none;
-  margin: 0;
+.lesson-question .btn {
+  justify-content: center;
+  min-width: 44px;
   padding: 0;
 }
 
-.result-criteria li[data-status="met"] span {
-  color: var(--lesson-good);
+.lesson-question[data-answered="true"] {
+  color: var(--ink-dim);
 }
 
-.result-criteria li[data-status="notMet"] span {
-  color: var(--lesson-warn);
+.lesson-question .btn[aria-pressed="true"] {
+  border-color: var(--pass);
+  color: var(--body);
+  background: var(--pass);
+}
+
+/* ---- the result card: pass and fail differ in colour, symbol and word ------------------- */
+
+.result-card {
+  border-top: 6px solid var(--panel-edge);
+}
+
+.result-card.passed {
+  border-top-color: var(--pass);
+}
+
+.result-card.failed {
+  border-top-color: var(--fail);
+}
+
+.result-card.void {
+  border-top-color: var(--warn);
+}
+
+.result-card h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: 750;
+  line-height: 1.1;
+}
+
+.result-card.passed h2 {
+  color: var(--pass);
+}
+
+.result-card.failed h2 {
+  color: var(--fail);
+}
+
+.result-card.void h2 {
+  color: var(--warn);
+}
+
+.result-card p {
+  margin: 0;
+}
+
+.result-criteria {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-md);
+  list-style: none;
+}
+
+.result-criteria li > span {
+  display: inline-block;
+  width: 1.3em;
+  font-weight: 800;
+}
+
+.result-criteria li[data-status="met"] > span {
+  color: var(--pass);
+}
+
+.result-criteria li[data-status="notMet"] {
+  font-weight: 600;
+}
+
+.result-criteria li[data-status="notMet"] > span {
+  color: var(--fail);
 }
 
 /* Fixed height, so the line filling in never shifts the card. */
-.coach-line {
+.result-card .coach-line {
   min-height: 1.4em;
-  margin: 8px 0 4px;
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text-md);
   font-style: italic;
 }
 
-.coach-tip,
+.result-card .coach-tip,
 .review-offer {
-  margin: 4px 0;
-  color: var(--lesson-accent);
+  margin: var(--space-1) 0;
+  color: var(--accent);
 }
 
 .review-offer {
   display: flex;
-  align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .unlock-badge {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 8px 0;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--lesson-good) 18%, transparent);
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--pass) 16%, transparent);
   animation: unlock-pop 600ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.unlock-badge .btn {
+  flex: none;
+  margin-left: auto;
 }
 
 @keyframes unlock-pop {
   from {
-    transform: scale(0.92);
     opacity: 0;
+    transform: scale(0.92);
   }
 }
 
 .result-actions {
   display: flex;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.lesson-credit {
-  padding-bottom: 12px;
-  font-size: 12px;
-  color: var(--lesson-dim);
-}
-
-.lesson-credit a {
-  color: inherit;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lesson-named,
+  .lesson-overlay,
+  .lesson-cue[data-checkpoint="true"]::before,
   .unlock-badge {
     animation: none;
   }

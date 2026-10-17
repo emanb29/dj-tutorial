@@ -4,6 +4,7 @@
 import type { BuiltLessonId } from "./catalogue.ts";
 import type { CheckResult, CriterionId, VoidAttempt, VoidReason } from "@shared/check-result.ts";
 import type { ReviewTrigger } from "@checks";
+import { FOCUS_HISTORY_MAX, type LineFacts } from "./coach.ts";
 import type { HookTrigger, LessonDefinition, Observation, PracticeConfig } from "./types.ts";
 
 export type LessonPhase =
@@ -31,6 +32,8 @@ export type LessonPhase =
       readonly tip: string | null;
       /** The Lesson was passed for the first time: the next Lesson unlocks. */
       readonly firstPass: boolean;
+      /** What the Coach line knows beyond the result (margin history, best before, retention). */
+      readonly lineFacts: LineFacts;
     }
   /** Not counted: a void attempt (check-design §6), or one the app could not record. */
   | { readonly kind: "void"; readonly reason: VoidReason | "recordingFailed"; readonly message: string | null };
@@ -46,6 +49,8 @@ export interface LessonState {
   readonly missStreaks: Readonly<Record<string, number | undefined>>;
   /** Criteria that already got their one tip this session. */
   readonly tipsShown: readonly CriterionId[];
+  /** The last few margins per graded criterion this session, oldest first, for the Coach line. */
+  readonly margins: Readonly<Partial<Record<string, readonly number[]>>>;
 }
 
 export type LessonEvent =
@@ -62,8 +67,12 @@ export type LessonEvent =
       /** From `applyCheckResult`: criteria that just reached the Review threshold. */
       readonly reviewTriggers: readonly ReviewTrigger[];
       readonly firstPass: boolean;
+      /** From `lineFacts`, computed with this state's `margins` (the history before this result). */
+      readonly lineFacts: LineFacts;
     }
   | { readonly type: "grading-failed"; readonly message: string }
+  /** The Check's audio part could not start recording: it would never end or grade. */
+  | { readonly type: "check-failed"; readonly message: string }
   | { readonly type: "practice-again" }
   | { readonly type: "review-declined" };
 
@@ -73,7 +82,12 @@ const FADER_UP = 0.9;
 const FADER_DOWN = 0.05;
 
 export function initialLessonState(lessonId: BuiltLessonId): LessonState {
-  return { lessonId, phase: { kind: "loading" }, attempts: 0, started: 0, missStreaks: {}, tipsShown: [] };
+  return { lessonId, phase: { kind: "loading" }, attempts: 0, started: 0, missStreaks: {}, tipsShown: [], margins: {} };
+}
+
+function withMargins(margins: LessonState["margins"], result: CheckResult): LessonState["margins"] {
+  const measured = result.criteria.flatMap((criterion) => (criterion.margin === null ? [] : [[criterion.id, criterion.margin] as const]));
+  return { ...margins, ...Object.fromEntries(measured.map(([id, margin]) => [id, [...(margins[id] ?? []), margin].slice(-FOCUS_HISTORY_MAX)])) };
 }
 
 /** How far an observation moves a hook trigger: +1, no change (0), or start over ("reset"). */
@@ -187,10 +201,18 @@ export function lessonReducer(definition: LessonDefinition): (state: LessonState
         const result = outcome as CheckResult;
         const review = event.reviewTriggers[0] ?? null;
         const { tip, ...memory } = afterGrade(definition, state, result, review);
-        return { ...state, ...memory, attempts: state.attempts + 1, phase: { kind: "result", result, review, tip, firstPass: event.firstPass } };
+        return {
+          ...state,
+          ...memory,
+          margins: withMargins(state.margins, result),
+          attempts: state.attempts + 1,
+          phase: { kind: "result", result, review, tip, firstPass: event.firstPass, lineFacts: event.lineFacts },
+        };
       }
       case "grading-failed":
         return phase.kind === "grading" ? { ...state, phase: { kind: "void", reason: "recordingFailed", message: event.message } } : state;
+      case "check-failed":
+        return phase.kind === "check" ? { ...state, phase: { kind: "void", reason: "recordingFailed", message: event.message } } : state;
       case "practice-again":
         return phase.kind === "result" || phase.kind === "void" || phase.kind === "check" ? { ...state, phase: practicePhase(null) } : state;
       case "review-declined":

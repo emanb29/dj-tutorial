@@ -1,9 +1,11 @@
 // The result card after a Check: passed or not, each criterion in plain words, the Coach's one line
 // (in a slot of fixed height, filled within 1.2 s and never rewritten), at most one tip or a Review
 // suggestion, and the unlock when the Lesson is passed for the first time.
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { checkLineRequest, describeCriterion, LESSONS, type BuiltLessonId, type LessonDefinition, type LessonPhase } from "@lessons";
 import { lessonById } from "@shared/catalogue.ts";
+import { RECENT_LINES_MAX } from "@shared/coach-contract.ts";
+import type { MissionTag } from "@shared/mission.ts";
 import { coachLine } from "./api-client.ts";
 
 const VOID_WORDS = {
@@ -18,6 +20,8 @@ interface ResultCardProps {
   readonly phase: Extract<LessonPhase, { kind: "result" } | { kind: "void" }>;
   readonly definition: LessonDefinition;
   readonly learnerId: string;
+  /** From the Learner's record (set by the Curriculum job); sent with the line request. */
+  readonly missionTags: readonly MissionTag[];
   readonly attemptToday: number;
   /** The last lines shown this session, so the Coach does not repeat itself. Owned by the player. */
   readonly recentLines: RefObject<string[]>;
@@ -31,8 +35,10 @@ export function ResultCard(props: ResultCardProps) {
   const { phase, onRetry, onPractice } = props;
   if (phase.kind === "void") {
     return (
-      <section className="result-card void" aria-label="Result">
-        <h2>Didn't count</h2>
+      <section className="result-card void lesson-overlay" aria-label="Result">
+        <h2>
+          <span aria-hidden="true">–</span> Didn&apos;t count
+        </h2>
         <p>
           Not graded: {VOID_WORDS[phase.reason]}.{phase.message === null ? "" : ` ${phase.message}`}
         </p>
@@ -46,26 +52,28 @@ export function ResultCard(props: ResultCardProps) {
 function Actions({ onRetry, onPractice }: { readonly onRetry: () => void; readonly onPractice: () => void }) {
   return (
     <div className="result-actions">
-      <button type="button" onClick={onRetry}>
+      <button type="button" className="btn btn-primary" onClick={onRetry}>
         Go again <kbd>Enter</kbd>
       </button>
-      <button type="button" onClick={onPractice}>
+      <button type="button" className="btn" onClick={onPractice}>
         Practice <kbd>P</kbd>
       </button>
     </div>
   );
 }
 
-function GradedCard({ phase, definition, learnerId, attemptToday, recentLines, onRetry, onPractice, onDeclineReview, onOpenLesson }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
+function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, recentLines, onRetry, onPractice, onDeclineReview, onOpenLesson }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
   const { result, review, tip, firstPass } = phase;
   const passed = result.outcome.kind === "passed";
-  const line = useCoachLine(phase, definition, learnerId, attemptToday, recentLines);
+  const line = useCoachLine(phase, definition, learnerId, missionTags, attemptToday, recentLines);
   const shown = result.criteria.filter((criterion) => criterion.status !== "notApplicable");
   const next = LESSONS[LESSONS.findIndex((lesson) => lesson.id === definition.id) + 1];
 
   return (
-    <section className={`result-card ${passed ? "passed" : "failed"}`} aria-label="Result" data-outcome={result.outcome.kind}>
-      <h2>{passed ? "Passed" : "Not yet"}</h2>
+    <section className={`result-card lesson-overlay ${passed ? "passed" : "failed"}`} aria-label="Result" data-outcome={result.outcome.kind}>
+      <h2>
+        <span aria-hidden="true">{passed ? "✓" : "✗"}</span> {passed ? "Passed" : "Not yet"}
+      </h2>
       <ul className="result-criteria">
         {shown.map((criterion) => (
           <li key={criterion.id} data-status={criterion.status}>
@@ -82,10 +90,10 @@ function GradedCard({ phase, definition, learnerId, attemptToday, recentLines, o
           <span>
             Want a quick replay of <em>{lessonById(review.lessonId).title}</em>? That's where it's taught.
           </span>
-          <button type="button" onClick={onPractice}>
+          <button type="button" className="btn btn-quiet" onClick={onPractice}>
             Replay
           </button>
-          <button type="button" onClick={onDeclineReview}>
+          <button type="button" className="btn btn-quiet" onClick={onDeclineReview}>
             Not now
           </button>
         </div>
@@ -96,6 +104,7 @@ function GradedCard({ phase, definition, learnerId, attemptToday, recentLines, o
           {next.unlocks.length > 0 ? <span> (new on the controller: {next.unlocks.join(", ")})</span> : null}
           <button
             type="button"
+            className="btn btn-quiet"
             onClick={() => {
               onOpenLesson(next.id);
             }}
@@ -114,11 +123,17 @@ function useCoachLine(
   phase: Extract<LessonPhase, { kind: "result" }>,
   definition: LessonDefinition,
   learnerId: string,
+  missionTags: readonly MissionTag[],
   attemptToday: number,
   recent: RefObject<string[]>,
 ): string | null {
   const [line, setLine] = useState<{ attemptId: string; text: string } | null>(null);
-  const { result } = phase;
+  const { result, lineFacts } = phase;
+  // Read when the request is built, not a dependency: a re-saved record must not ask for a new line.
+  const tags = useRef(missionTags);
+  useEffect(() => {
+    tags.current = missionTags;
+  }, [missionTags]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -127,16 +142,18 @@ function useCoachLine(
       lessonTitle: definition.title,
       attemptToday,
       recentLines: recent.current,
+      facts: lineFacts,
+      missionTags: tags.current,
     });
     void coachLine(learnerId, request, abort.signal).then((text) => {
       if (abort.signal.aborted) return;
-      recent.current = [...recent.current, text].slice(-5);
+      recent.current = [...recent.current, text].slice(-RECENT_LINES_MAX);
       setLine({ attemptId: result.attemptId, text });
     });
     return () => {
       abort.abort();
     };
-  }, [result, definition, learnerId, attemptToday, recent]);
+  }, [result, lineFacts, definition, learnerId, attemptToday, recent]);
 
   return line?.attemptId === result.attemptId ? line.text : null;
 }

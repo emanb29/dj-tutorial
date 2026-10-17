@@ -1,8 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { isBuiltLesson, type BuiltLessonId } from "@lessons";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { curriculumRequest, isBuiltLesson, withCurriculum, type BuiltLessonId } from "@lessons";
+import type { CheckResult } from "@shared/check-result.ts";
 import { DEFAULT_LEARNER_ID, emptyLearnerRecord, LearnerIdSchema, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
 import { HealthIndicator } from "./HealthIndicator.tsx";
-import { loadLearner } from "./lesson/api-client.ts";
+import { loadLearner, requestCurriculum, saveLearner } from "./lesson/api-client.ts";
 import { LessonList } from "./lesson/LessonList.tsx";
 import type { TrackPreference } from "./lesson/track-loader.ts";
 
@@ -47,6 +48,8 @@ export function App() {
   const [path, setPath] = useState(() => window.location.pathname);
   const [options] = useState(() => urlOptions(window.location.search));
   const [learner, setLearner] = useState<LearnerState>({ kind: "loading" });
+  /** The record as last set, for answers that arrive after a render (the Curriculum re-plan). */
+  const latestRecord = useRef<LearnerRecord | null>(null);
 
   useEffect(() => {
     const onPop = () => {
@@ -62,11 +65,10 @@ export function App() {
     const abort = new AbortController();
     void loadLearner(options.learnerId, abort.signal).then((loaded) => {
       if (abort.signal.aborted) return;
-      if (loaded.ok) setLearner({ kind: "ready", record: loaded.value, offline: null });
-      else {
-        console.warn(`[app] ${loaded.problem.message}`);
-        setLearner({ kind: "ready", record: emptyLearnerRecord(options.learnerId), offline: loaded.problem.message });
-      }
+      const record = loaded.ok ? loaded.value : emptyLearnerRecord(options.learnerId);
+      if (!loaded.ok) console.warn(`[app] ${loaded.problem.message}`);
+      latestRecord.current = record;
+      setLearner({ kind: "ready", record, offline: loaded.ok ? null : loaded.problem.message });
     });
     return () => {
       abort.abort();
@@ -85,8 +87,26 @@ export function App() {
     navigate("/");
   }, [navigate]);
   const changeLearner = useCallback((record: LearnerRecord) => {
+    latestRecord.current = record;
     setLearner((current) => ({ kind: "ready", record, offline: current.kind === "ready" ? current.offline : null }));
   }, []);
+  // In the App, not the Lesson: the answer may come after the Learner has left the Lesson.
+  const replanCurriculum = useCallback(
+    (result: CheckResult) => {
+      const record = latestRecord.current;
+      if (record === null) return;
+      void requestCurriculum(record.learnerId, curriculumRequest(record, result, crypto.randomUUID())).then((answer) => {
+        const current = latestRecord.current;
+        if (answer === null || current?.learnerId !== record.learnerId) return;
+        const next = withCurriculum(current, answer);
+        changeLearner(next);
+        void saveLearner(next).then((saved) => {
+          if (!saved.ok) console.warn(`[app] ${saved.problem.message}`);
+        });
+      });
+    },
+    [changeLearner],
+  );
 
   if (playgroundEnabled({ pathname: path, search: window.location.search }, import.meta.env.DEV)) {
     return (
@@ -105,6 +125,7 @@ export function App() {
           lessonId={lessonId}
           learner={learner.record}
           onLearnerChange={changeLearner}
+          onSkipGroupPassed={replanCurriculum}
           trackPreference={options.trackPreference}
           onExit={exit}
           onOpenLesson={openLesson}
@@ -115,8 +136,10 @@ export function App() {
 
   return (
     <main className="home">
-      <h1>Learn to DJ</h1>
-      <HealthIndicator />
+      <header className="home-head">
+        <h1>Learn to DJ</h1>
+        <HealthIndicator />
+      </header>
       {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} /> : <p>Loading your progress…</p>}
     </main>
   );

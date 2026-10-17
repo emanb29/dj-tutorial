@@ -4,6 +4,7 @@ import { lessonRetention } from "@checks";
 import { LESSONS, type BuiltLessonId } from "@lessons";
 import { lessonById } from "@shared/catalogue.ts";
 import type { LearnerRecord } from "@shared/learner.ts";
+import "./lesson-list.css";
 
 export type LessonStanding = "locked" | "ready" | "passed" | "retained" | "lapsed";
 
@@ -53,6 +54,7 @@ export function LessonList({ learner, offline, onStart }: LessonListProps) {
               ) : (
                 <button
                   type="button"
+                  className={standing === "ready" ? "btn btn-primary" : "btn"}
                   onClick={() => {
                     onStart(lesson.id);
                   }}

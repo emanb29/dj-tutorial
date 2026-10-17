@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
 import { createAudioEngine, type AudioEngine } from "@audio";
 import { applyCheckResult } from "@checks";
-import { initialLessonState, lessonDefinition, lessonReducer, unlocksAfter, type BuiltLessonId, type ControlId, type LessonPhase, type LessonTrack, type Observation } from "@lessons";
+import { initialLessonState, lessonDefinition, lineFacts, NO_LINE_FACTS, skipGroupsPassed, lessonReducer, unlocksAfter, type BuiltLessonId, type ControlId, type LessonPhase, type LessonTrack, type Observation } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
@@ -12,6 +12,7 @@ import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
 import { saveLearner } from "./api-client.ts";
 import { FeedbackStrip, type TapMark } from "./FeedbackStrip.tsx";
+import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
 import { ResultCard } from "./ResultCard.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
@@ -34,6 +35,8 @@ export interface LessonPlayerProps {
   readonly lessonId: BuiltLessonId;
   readonly learner: LearnerRecord;
   readonly onLearnerChange: (record: LearnerRecord) => void;
+  /** A graded result completed a skip group: the app re-plans the Curriculum in the background. */
+  readonly onSkipGroupPassed: (result: CheckResult) => void;
   readonly trackPreference: TrackPreference;
   readonly onExit: () => void;
   readonly onOpenLesson: (lessonId: BuiltLessonId) => void;
@@ -56,7 +59,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }
 
-export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreference, onExit, onOpenLesson }: LessonPlayerProps) {
+export function LessonPlayer({ lessonId, learner, onLearnerChange, onSkipGroupPassed, trackPreference, onExit, onOpenLesson }: LessonPlayerProps) {
   const definition = useMemo(() => lessonDefinition(lessonId), [lessonId]);
   const reducer = useMemo(() => lessonReducer(definition), [definition]);
   const [state, dispatch] = useReducer(reducer, lessonId, initialLessonState);
@@ -67,11 +70,13 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
   const phaseRef = useRef(state.phase);
   const cueLine = useRef<HTMLSpanElement>(null);
   const recentLines = useRef<string[]>([]);
-  const { phase } = state;
+  const marginsRef = useRef(state.margins);
+  const { phase, margins } = state;
   useEffect(() => {
     learnerRef.current = learner;
     phaseRef.current = phase;
-  }, [learner, phase]);
+    marginsRef.current = margins;
+  }, [learner, phase, margins]);
 
   // The engine, the track and the session, once per Lesson visit.
   useEffect(() => {
@@ -80,6 +85,16 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
     const cancelled = () => abort.signal.aborted;
     let engine: AudioEngine | null = null;
     let session: LessonSession | null = null;
+    let engineClosed = false;
+    // Once, from whichever comes last: the cleanup, or a set-up that finishes after the cleanup ran
+    // (StrictMode's first run, or Esc while the track loads). Otherwise its AudioContext would leak.
+    const closeEngine = () => {
+      if (engine === null || engineClosed) return;
+      engineClosed = true;
+      engine.close().catch((error: unknown) => {
+        console.warn("[lesson] the audio engine did not close cleanly", error);
+      });
+    };
     const observed = (observation: Observation) => {
       dispatch({ type: "observed", observation });
       if (observation.kind === "tap") setTaps((marks) => [...marks, { offsetMs: observation.offsetMs, good: observation.onBeat }].slice(-TAP_MARKS_KEPT));
@@ -103,6 +118,9 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
           audioEnded: () => {
             dispatch({ type: "audio-ended" });
           },
+          checkFailed: (message) => {
+            dispatch({ type: "check-failed", message });
+          },
         });
         const running = engine;
         window.learnToDjLesson = { engine: running, track: ready.track, phase: () => phaseRef.current.kind };
@@ -113,13 +131,15 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
         const message = `The deck could not start: ${error instanceof Error ? error.message : String(error)}. Reload to try again.`;
         setSetup({ kind: "failed", message });
         dispatch({ type: "track-failed", message });
+      } finally {
+        if (cancelled()) closeEngine();
       }
     })();
     return () => {
       abort.abort();
       session?.close();
       delete window.learnToDjLesson;
-      void engine?.close();
+      closeEngine();
     };
   }, [definition, trackPreference]);
 
@@ -174,7 +194,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
       }
       const { outcome } = graded;
       if (!isGraded(outcome)) {
-        dispatch({ type: "graded", outcome, reviewTriggers: [], firstPass: false });
+        dispatch({ type: "graded", outcome, reviewTriggers: [], firstPass: false, lineFacts: NO_LINE_FACTS });
         return;
       }
       const result = outcome;
@@ -190,18 +210,28 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
       void saveLearner(record).then((saved) => {
         if (!saved.ok) console.warn(`[lesson] ${saved.problem.message}`);
       });
-      dispatch({ type: "graded", outcome: result, reviewTriggers: update.reviewTriggers, firstPass });
+      if (skipGroupsPassed(before.skillProfile, record.skillProfile).length > 0) onSkipGroupPassed(result);
+      const facts = lineFacts(result, { profileBefore: before.skillProfile, retentionChanges: update.retentionChanges, marginHistory: marginsRef.current });
+      dispatch({ type: "graded", outcome: result, reviewTriggers: update.reviewTriggers, firstPass, lineFacts: facts });
     });
     return () => {
       cancelled = true;
     };
-  }, [session, grading, lessonId, onLearnerChange]);
+  }, [session, grading, lessonId, onLearnerChange, onSkipGroupPassed]);
 
   // The live caption during the Check follows the deck's position; drawn on animation frames.
   useEffect(() => {
     if (session === null || attempt === null) return;
     let frame = requestAnimationFrame(function draw() {
-      if (cueLine.current !== null) cueLine.current.textContent = session.checkCue() ?? definition.checkCaption;
+      const node = cueLine.current;
+      if (node !== null) {
+        const cue = session.checkCue();
+        const text = cue?.caption ?? definition.checkCaption;
+        // Written only on change: the checkpoint tick's animation restarts when its attribute flips.
+        if (node.textContent !== text) node.textContent = text;
+        const checkpoint = String(cue?.checkpoint === true);
+        if (node.dataset["checkpoint"] !== checkpoint) node.dataset["checkpoint"] = checkpoint;
+      }
       frame = requestAnimationFrame(draw);
     });
     return () => {
@@ -213,17 +243,26 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
   const answering = phase.kind === "answering" ? phase.answers : null;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (isTyping(event.target) || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.code === "Enter") {
-        event.preventDefault();
-        dispatch({ type: "start-check" });
-      } else if (event.code === "KeyP") {
-        dispatch({ type: "practice-again" });
-      } else if (event.code === "Escape") {
-        onExit();
-      } else if (answering !== null && /^Digit[1-8]$/.test(event.code)) {
-        const question = definition.questions.find((candidate) => !(candidate.id in answering));
-        if (question !== undefined) dispatch({ type: "answer", questionId: question.id, value: Number(event.code.slice(5)) });
+      if (isTyping(event.target)) return;
+      // A held Enter still must not reach a focused button as a click.
+      if (event.code === "Enter") event.preventDefault();
+      const key = lessonKey(event, { answering: answering !== null });
+      if (key === null) return;
+      switch (key.kind) {
+        case "check":
+          dispatch({ type: "start-check" });
+          break;
+        case "practice":
+          dispatch({ type: "practice-again" });
+          break;
+        case "exit":
+          onExit();
+          break;
+        case "answer": {
+          const question = definition.questions.find((candidate) => answering !== null && !(candidate.id in answering));
+          if (question !== undefined && key.value <= question.options) dispatch({ type: "answer", questionId: question.id, value: key.value });
+          break;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -246,83 +285,101 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, trackPreferen
   return (
     <main className="lesson" data-phase={phase.kind}>
       <header className="lesson-bar">
-        <button type="button" className="lesson-back" onClick={onExit}>
+        <button type="button" className="btn btn-quiet lesson-back" onClick={onExit}>
           ← Lessons <kbd>Esc</kbd>
         </button>
         <h1>{definition.title}</h1>
         {audioRunning ? null : <span className="lesson-audio-off">Click or press a key to start the sound</span>}
+        {setup.kind === "ready" ? <TrackCredit track={setup.session.track} /> : null}
       </header>
 
-      <p className="lesson-caption" role="status" aria-live="polite" aria-label="Lesson caption">
-        <Caption phase={phase} definition={definition} setupStatus={setup.kind === "loading" ? setup.status : null} cueLine={cueLine} />
-      </p>
+      <div className="lesson-stage">
+        <p className="lesson-caption" role="status" aria-live="polite" aria-label="Lesson caption">
+          <Caption phase={phase} definition={definition} setupStatus={setup.kind === "loading" ? setup.status : null} cueLine={cueLine} />
+        </p>
+        {session === null ? null : <FeedbackStrip session={session} taps={taps} showBeat={phase.kind !== "check"} practice={phase.kind === "practice" ? phase : null} />}
+      </div>
 
-      {session === null ? null : <FeedbackStrip session={session} taps={taps} showBeat={phase.kind !== "check"} practice={phase.kind === "practice" ? phase : null} />}
-
-      {phase.kind === "answering" ? (
-        <section className="lesson-questions" aria-label="Questions">
-          {definition.questions.map((question) => (
-            <div key={question.id} className="lesson-question" data-answered={question.id in phase.answers}>
-              <span>{question.caption}</span>
-              <div role="group" aria-label={question.caption}>
-                {Array.from({ length: question.options }, (_, index) => index + 1).map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    aria-pressed={phase.answers[question.id] === option}
-                    onClick={() => {
-                      dispatch({ type: "answer", questionId: question.id, value: option });
-                    }}
-                  >
-                    {option}
-                  </button>
-                ))}
+      <div className="lesson-board">
+        {phase.kind === "answering" ? (
+          <section className="lesson-questions lesson-overlay" aria-label="Questions">
+            {definition.questions.map((question) => (
+              <div key={question.id} className="lesson-question" data-answered={question.id in phase.answers}>
+                <span>{question.caption}</span>
+                <div role="group" aria-label={question.caption}>
+                  {Array.from({ length: question.options }, (_, index) => index + 1).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className="btn"
+                      aria-pressed={phase.answers[question.id] === option}
+                      onClick={() => {
+                        dispatch({ type: "answer", questionId: question.id, value: option });
+                      }}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </section>
-      ) : null}
+            ))}
+          </section>
+        ) : null}
 
-      {phase.kind === "result" || phase.kind === "void" ? (
-        <ResultCard
-          phase={phase}
-          definition={definition}
-          learnerId={learner.learnerId}
-          attemptToday={state.attempts}
-          recentLines={recentLines}
-          onRetry={() => {
-            dispatch({ type: "start-check" });
-          }}
-          onPractice={() => {
-            dispatch({ type: "practice-again" });
-          }}
-          onDeclineReview={() => {
-            dispatch({ type: "review-declined" });
-          }}
-          onOpenLesson={onOpenLesson}
-        />
-      ) : null}
+        {phase.kind === "result" || phase.kind === "void" ? (
+          <ResultCard
+            phase={phase}
+            definition={definition}
+            learnerId={learner.learnerId}
+            missionTags={learner.missionTags}
+            attemptToday={state.attempts}
+            recentLines={recentLines}
+            onRetry={() => {
+              dispatch({ type: "start-check" });
+            }}
+            onPractice={() => {
+              dispatch({ type: "practice-again" });
+            }}
+            onDeclineReview={() => {
+              dispatch({ type: "review-declined" });
+            }}
+            onOpenLesson={onOpenLesson}
+          />
+        ) : null}
 
-      {engine === null ? (
-        setup.kind === "failed" ? (
-          <p className="lesson-problem" role="alert">
-            {setup.message}
-          </p>
-        ) : null
-      ) : (
-        <Controller engine={engine} unlocks={unlocks} pulse={step?.control ?? null} captions={captions} />
-      )}
-
-      {setup.kind === "ready" ? <TrackCredit track={setup.session.track} /> : null}
+        {engine === null ? (
+          setup.kind === "failed" ? (
+            <p className="lesson-problem" role="alert">
+              {setup.message}
+            </p>
+          ) : null
+        ) : (
+          <Controller engine={engine} unlocks={unlocks} pulse={step?.control ?? null} captions={captions} />
+        )}
+      </div>
     </main>
   );
 }
 
+/** The URL when it is a web link; track metadata comes from manifests, so `javascript:` and the like never become links. */
+function webLink(url: string | null): string | null {
+  if (url === null || !URL.canParse(url)) return null;
+  const { protocol } = new URL(url);
+  return protocol === "https:" || protocol === "http:" ? url : null;
+}
+
 function TrackCredit({ track }: { readonly track: LessonTrack }) {
+  const link = webLink(track.attribution.url);
   return (
-    <footer className="lesson-credit">
-      {track.attribution.url === null ? track.attribution.text : <a href={track.attribution.url}>{track.attribution.text}</a>}
-    </footer>
+    <span className="lesson-credit">
+      {link === null ? (
+        track.attribution.text
+      ) : (
+        <a href={link} target="_blank" rel="noopener noreferrer">
+          {track.attribution.text}
+        </a>
+      )}
+    </span>
   );
 }
 
@@ -352,14 +409,22 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
         <>
           {phase.named === null ? null : <span className="lesson-named">{phase.named}</span>}
           <span className="lesson-do">
-            {phase.ready ? "Ready? This one counts." : definition.practice.caption} <kbd>Enter</kbd> {phase.ready ? "to go" : "for the Check"}
+            {phase.ready ? "Ready? This one counts." : definition.practice.caption}
+            <span className="lesson-hint">
+              <kbd>Enter</kbd> {phase.ready ? "to go" : "for the Check"}
+            </span>
           </span>
         </>
       );
     case "check":
       return (
         <span className="lesson-do" data-testid="check-cue">
-          <span ref={cueLine}>{definition.checkCaption}</span> <kbd>Enter</kbd> restarts
+          <span ref={cueLine} className="lesson-cue" data-checkpoint="false">
+            {definition.checkCaption}
+          </span>
+          <span className="lesson-hint">
+            <kbd>Enter</kbd> restarts
+          </span>
         </span>
       );
     case "answering":
@@ -368,6 +433,13 @@ function Caption({ phase, definition, setupStatus, cueLine }: CaptionProps) {
       return <span>Checking…</span>;
     case "result":
     case "void":
-      return <span className="lesson-do">{phase.kind === "result" && phase.result.outcome.kind === "passed" ? "Passed." : "Again?"} <kbd>Enter</kbd></span>;
+      return (
+        <span className="lesson-do">
+          {phase.kind === "result" && phase.result.outcome.kind === "passed" ? "Passed." : "Again?"}
+          <span className="lesson-hint">
+            <kbd>Enter</kbd> go · <kbd>P</kbd> practice
+          </span>
+        </span>
+      );
   }
 }

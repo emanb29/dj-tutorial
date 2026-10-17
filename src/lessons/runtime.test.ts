@@ -59,6 +59,7 @@ const graded = (outcome: CheckResult | VoidAttempt, extra: Partial<Extract<Lesso
   outcome,
   reviewTriggers: [],
   firstPass: false,
+  lineFacts: { focusHistory: [], bestMarginBefore: null, retentionChange: null },
   ...extra,
 });
 
@@ -190,6 +191,26 @@ describe("the Check loop", () => {
     expect(state.phase).toEqual({ kind: "void", reason: "recordingFailed", message: "No meters." });
     expect(state.attempts).toBe(0);
     expect(run(deckBasics, [{ type: "start-check" }], state).phase).toEqual({ kind: "check", attempt: 2 });
+  });
+
+  it("keeps the last 3 margins of each graded criterion this session, for the Coach line", () => {
+    const passed = [{ type: "start-check" }, { type: "audio-ended" }, graded(result([]))] as const;
+    const state = run(deckBasics, [...failFadeOut, ...failFadeOut, ...passed, ...passed], practising);
+    expect(state.margins["deck-basics.fade-out"]).toEqual([-1, 0.5, 0.5]);
+    expect(state.margins["deck-basics.fade-in"]).toEqual([0.5, 0.5, 0.5]);
+  });
+
+  it("keeps the Coach facts for the card it shows them on", () => {
+    const facts = { focusHistory: [-1], bestMarginBefore: 0.2, retentionChange: "passed, next in 1 day" };
+    const state = run(deckBasics, [{ type: "start-check" }, { type: "audio-ended" }, graded(result([]), { lineFacts: facts })], practising);
+    expect(state.phase).toMatchObject({ kind: "result", lineFacts: facts });
+  });
+
+  it("says so when the Check cannot record, instead of waiting in the Check forever", () => {
+    const checking = run(deckBasics, [{ type: "start-check" }], practising);
+    const state = run(deckBasics, [{ type: "check-failed", message: "The recorder did not start." }], checking);
+    expect(state.phase).toEqual({ kind: "void", reason: "recordingFailed", message: "The recorder did not start." });
+    expect(run(deckBasics, [{ type: "check-failed", message: "late" }], practising).phase).toEqual(practising.phase);
   });
 
   it("goes back to practice on request", () => {

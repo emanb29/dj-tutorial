@@ -96,6 +96,8 @@ export interface CheckQuestion {
 export interface PositionCue {
   readonly fromPos: number;
   readonly caption: string;
+  /** A checkpoint in a long attempt ("halfway ✓"): a quick tick on screen; the music keeps playing. */
+  readonly checkpoint?: true;
 }
 
 export interface LessonDefinition {

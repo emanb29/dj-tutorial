@@ -3,7 +3,7 @@
 // AttemptRecorder and grades it. The pure runtime (src/lessons/runtime.ts) decides what happens next.
 import { AttemptRecorder, type AudioEngine, type CommandEvent, type RecordedAttempt } from "@audio";
 import { runCheck } from "@checks";
-import { checkSpecFor, classifyTap, type CheckPlan, type LessonDefinition, type LessonTrack, type Observation } from "@lessons";
+import { checkSpecFor, classifyTap, type CheckPlan, type LessonDefinition, type LessonTrack, type Observation, type PositionCue } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 
@@ -48,6 +48,8 @@ export class LessonSession {
     private readonly listener: {
       readonly observed: (observation: Observation) => void;
       readonly audioEnded: () => void;
+      /** The Check could not start recording; it will not end or grade by itself. */
+      readonly checkFailed: (message: string) => void;
     },
   ) {
     this.recorder = new AttemptRecorder(engine);
@@ -69,9 +71,11 @@ export class LessonSession {
     } else if (command.control === "channel-fader" && command.deck === "A") {
       if (command.value >= FADER_UP) this.faderWasUp = true;
       this.listener.observed({ kind: "fader", value: command.value });
-      if (this.plan?.endWhen.kind === "faded-out" && this.faderWasUp && command.value <= FADER_DOWN) {
+      const plan = this.plan;
+      if (plan?.endWhen.kind === "faded-out" && this.faderWasUp && command.value <= FADER_DOWN) {
         setTimeout(() => {
-          this.endAudio();
+          // Only the attempt that faded out: a restart within the settle time is a new plan.
+          if (this.plan === plan) this.endAudio();
         }, FADE_OUT_SETTLE_MS);
       }
     } else if (command.control === "tap" && event.heardCtx !== null) {
@@ -122,6 +126,7 @@ export class LessonSession {
     const started = this.recorder.start({ expectedDurationSec: plan.timeoutSec + 30 });
     if (!started.ok) {
       console.warn("[lesson] the recorder did not start", started.error);
+      this.listener.checkFailed(`The attempt could not be recorded (${started.error.kind}). Try again with Enter.`);
       return;
     }
     this.plan = plan;
@@ -143,11 +148,11 @@ export class LessonSession {
   }
 
   /** The live caption for the stretch of the Check the deck is in now. */
-  checkCue(): string | null {
+  checkCue(): PositionCue | null {
     const plan = this.plan;
     const reading = this.engine.playhead("A");
     if (plan === null || !reading.ok) return null;
-    return plan.cues.filter((cue) => cue.fromPos <= reading.positionSec).at(-1)?.caption ?? null;
+    return plan.cues.findLast((cue) => cue.fromPos <= reading.positionSec) ?? null;
   }
 
   /** Where the next beat falls, for the beat pulse on screen. Null while the deck is stopped. */
