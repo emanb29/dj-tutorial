@@ -153,6 +153,15 @@ export const FinalProjectSchema = z.strictObject({
 });
 export type FinalProject = z.output<typeof FinalProjectSchema>;
 
+/** The optional "do it in rekordbox" cards (ISS-97): one per Lesson that has one, and the library set-up. */
+export const REKORDBOX_CARD_IDS = ["cut-on-phrase", "sync-blend", "blend-by-ear", "final-mix", "library"] as const;
+export const RekordboxCardIdSchema = z.enum(REKORDBOX_CARD_IDS);
+export type RekordboxCardId = z.infer<typeof RekordboxCardIdSchema>;
+
+/** What the Learner chose on a card, and when (wall clock). Never graded. */
+export const RekordboxCardChoiceSchema = z.strictObject({ choice: z.enum(["done", "notNow"]), at: IsoTimeSchema });
+export type RekordboxCardChoice = z.infer<typeof RekordboxCardChoiceSchema>;
+
 /** Everything the server keeps for one Learner. */
 export const LearnerRecordSchema = z
   .strictObject({
@@ -172,6 +181,8 @@ export const LearnerRecordSchema = z
     placements: z.array(PlacementResultSchema).max(PLACEMENTS_KEPT).optional(),
     /** The set the Learner kept as their final project; absent until one is kept. */
     finalProject: FinalProjectSchema.optional(),
+    /** The rekordbox cards answered so far; absent in records from before them. */
+    rekordbox: z.partialRecord(RekordboxCardIdSchema, RekordboxCardChoiceSchema).optional(),
     skillProfile: SkillProfileSchema,
   })
   .superRefine((record, context) => {
@@ -202,6 +213,11 @@ export function emptyLearnerRecord(learnerId: LearnerId): LearnerRecord {
 /** The record after the headphones check passed at `checkedAt` (wall clock). */
 export function withHeadphonesChecked(record: LearnerRecord, checkedAt: string): LearnerRecord {
   return { ...record, headphones: { checkedAt } };
+}
+
+/** The record with a rekordbox card answered at `at` (wall clock). */
+export function withRekordboxChoice(record: LearnerRecord, card: RekordboxCardId, choice: RekordboxCardChoice["choice"], at: string): LearnerRecord {
+  return { ...record, rekordbox: { ...record.rekordbox, [card]: { choice, at } } };
 }
 
 /**

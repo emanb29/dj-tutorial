@@ -3,7 +3,9 @@
 import { lessonRetention } from "@checks";
 import { COURSE, hasPlacement, startLesson, type CourseLessonId } from "@lessons";
 import { catalogueIndex, lessonById } from "@shared/catalogue.ts";
-import type { LearnerRecord } from "@shared/learner.ts";
+import { withRekordboxChoice, type LearnerRecord } from "@shared/learner.ts";
+import { RekordboxCard } from "../rekordbox/RekordboxCard.tsx";
+import { LIBRARY_CARD, showLibraryCard } from "../rekordbox/rekordbox-steps.ts";
 import "./lesson-list.css";
 
 export type LessonStanding = "locked" | "ready" | "passed" | "retained" | "lapsed";
@@ -32,9 +34,11 @@ interface LessonListProps {
   readonly onStart: (lessonId: CourseLessonId) => void;
   /** Placement again (placement-design §9): any time, it only adds credit. */
   readonly onRetakePlacement: () => void;
+  /** Keeps and saves a changed record (the rekordbox library card's answer). */
+  readonly onLearnerChange: (record: LearnerRecord) => void;
 }
 
-export function LessonList({ learner, offline, onStart, onRetakePlacement }: LessonListProps) {
+export function LessonList({ learner, offline, onStart, onRetakePlacement, onLearnerChange }: LessonListProps) {
   const startHere = startLesson(learner.skillProfile);
   return (
     <section className="lesson-list" aria-label="Lessons">
@@ -48,6 +52,14 @@ export function LessonList({ learner, offline, onStart, onRetakePlacement }: Les
           {hasPlacement(learner) ? "Re-take Placement" : "Show me what you can do"}
         </button>
       </p>
+      {showLibraryCard(learner) ? (
+        <RekordboxCard
+          card={LIBRARY_CARD}
+          onChoose={(choice) => {
+            onLearnerChange(withRekordboxChoice(learner, "library", choice, new Date().toISOString()));
+          }}
+        />
+      ) : null}
       <ol>
         {COURSE.map((lesson) => {
           const standing = lessonStanding(learner, lesson.id);

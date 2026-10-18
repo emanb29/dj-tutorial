@@ -27,7 +27,7 @@ import {
 } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
-import { withHeadphonesChecked, withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
+import { withHeadphonesChecked, withRekordboxChoice, withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
 import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
 import { announceTapJudged, useTapOnHardware } from "../controller/tap-feedback.ts";
@@ -40,6 +40,7 @@ import { HeadphonesGate } from "./HeadphonesGate.tsx";
 import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
 import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
+import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
 import { ResultCard } from "./ResultCard.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
 import "./lesson.css";
@@ -490,6 +491,10 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
               dispatch({ type: "review-declined" });
             }}
             onOpenLesson={onOpenLesson}
+            rekordboxCard={phase.kind === "result" ? lessonCardFor(lessonId, phase.result.outcome.kind === "passed", learner) : null}
+            onRekordboxChoice={(card, choice) => {
+              onLearnerChange(withRekordboxChoice(learnerRef.current, card, choice, new Date().toISOString()));
+            }}
           />
         ) : null}
 

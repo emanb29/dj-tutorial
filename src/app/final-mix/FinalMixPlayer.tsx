@@ -8,7 +8,7 @@ import { applyCheckResult } from "@checks";
 import { FINAL_MIX, finalMixMode, gradedLine, setEntry, setNotesText, type LessonTrack } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
-import { withFinalProject, withSkillProfile, type FinalProject, type LearnerRecord } from "@shared/learner.ts";
+import { withFinalProject, withRekordboxChoice, withSkillProfile, type FinalProject, type RekordboxCardChoice, type LearnerRecord } from "@shared/learner.ts";
 import { ALL_CONTROL_IDS, Controller, inputWording, useWording, type ControlId } from "../controller/index.ts";
 import type { TrackPreference } from "../lesson/track-loader.ts";
 import type { SaveStatus } from "../save-queue.ts";
@@ -16,6 +16,8 @@ import { keepFinalProjectAudio } from "./api.ts";
 import { listLibrary, type Library, type LibraryItem } from "./library.ts";
 import { SetBuilder, type PickedTrack } from "./SetBuilder.tsx";
 import { FinalProjectDownloads } from "./FinalProjectDownloads.tsx";
+import { RekordboxCard } from "../rekordbox/RekordboxCard.tsx";
+import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
 import { SetResult, type KeepStatus } from "./SetResult.tsx";
 import { SetSession, type GradedSet } from "./set-session.ts";
 import "../lesson/lesson.css";
@@ -68,6 +70,8 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
   const [problem, setProblem] = useState<string | null>(null);
   const [session, setSession] = useState<SetSession | null>(null);
   const [keep, setKeep] = useState<KeepStatus>({ kind: "idle" });
+  /** The attempt whose rekordbox card was answered here, so it hides until the next result. */
+  const [rekordboxAnsweredFor, setRekordboxAnsweredFor] = useState<string | null>(null);
   const [warmStep, setWarmStep] = useState(0);
   const learnerRef = useRef(learner);
   const phaseRef = useRef(phase.kind);
@@ -277,6 +281,16 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
     });
   }, [result, titles]);
 
+  const rekordboxCard = phase.kind === "result" ? lessonCardFor("final-mix", phase.graded.outcome.outcome.kind === "passed", learner) : null;
+  const answeredAttempt = phase.kind === "result" ? phase.graded.outcome.attemptId : null;
+  const answerRekordbox = useCallback(
+    (choice: RekordboxCardChoice["choice"]) => {
+      setRekordboxAnsweredFor(answeredAttempt);
+      onLearnerChange(withRekordboxChoice(learnerRef.current, "final-mix", choice, new Date().toISOString()));
+    },
+    [answeredAttempt, onLearnerChange],
+  );
+
   const keepProject = useCallback(() => {
     if (result?.recording == null) return;
     const { recording, outcome } = result;
@@ -447,6 +461,9 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
             onAgain={again}
             onExit={onExit}
           />
+        ) : null}
+        {phase.kind === "result" && rekordboxCard !== null && rekordboxAnsweredFor !== phase.graded.outcome.attemptId ? (
+          <RekordboxCard card={rekordboxCard} onChoose={answerRekordbox} />
         ) : null}
         {onStage && engine !== null ? <Controller engine={engine} unlocks={SET_UNLOCKS} pulse={phase.kind === "warm-up" ? (FINAL_MIX.warmUp[warmStep]?.control ?? null) : null} /> : null}
       </div>

@@ -76,6 +76,8 @@ export const SPEC_RULES: readonly SpecRule[] = [
   // App screens with their own spec.
   { paths: ["src/app/HealthIndicator.tsx"], specs: ["e2e/health.spec.ts"] },
   { paths: ["src/app/originals/**"], specs: ["e2e/originals.spec.ts"] },
+  // The optional rekordbox cards: their own spec (Lesson list, desktop and phone) and the set's result.
+  { paths: ["src/app/rekordbox/**"], specs: ["e2e/rekordbox.spec.ts", "e2e/final-mix.spec.ts"] },
   { paths: ["src/app/placement/**", "src/lessons/placement*.ts"], specs: ["e2e/placement.spec.ts"] },
   { paths: ["src/app/playground/**"], specs: ["e2e/controller.spec.ts", "e2e/mobile.spec.ts"] },
   // The DDJ-FLX4: the MIDI module and the Controller page (src/app/controller/hardware.ts stays under the shared controller rule).

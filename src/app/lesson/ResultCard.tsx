@@ -7,6 +7,9 @@ import { lessonById } from "@shared/catalogue.ts";
 import { RECENT_LINES_MAX } from "@shared/coach-contract.ts";
 import type { MissionTag } from "@shared/mission.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
+import type { RekordboxCardChoice, RekordboxCardId } from "@shared/learner.ts";
+import { RekordboxCard } from "../rekordbox/RekordboxCard.tsx";
+import type { RekordboxCard as RekordboxCardContent } from "../rekordbox/rekordbox-steps.ts";
 import type { SaveStatus } from "../save-queue.ts";
 import { coachLine } from "./api-client.ts";
 import { voidLine } from "./void-line.ts";
@@ -27,6 +30,9 @@ interface ResultCardProps {
   readonly onPractice: () => void;
   readonly onDeclineReview: () => void;
   readonly onOpenLesson: (lessonId: BuiltLessonId) => void;
+  /** The optional "Now try it in rekordbox" card for this Lesson, when passed and not yet done. */
+  readonly rekordboxCard: RekordboxCardContent | null;
+  readonly onRekordboxChoice: (card: RekordboxCardId, choice: RekordboxCardChoice["choice"]) => void;
 }
 
 export function ResultCard(props: ResultCardProps) {
@@ -58,13 +64,15 @@ function Actions({ onRetry, onPractice }: { readonly onRetry: () => void; readon
   );
 }
 
-function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, recentLines, saveStatus, onRetrySave, onRetry, onPractice, onDeclineReview, onOpenLesson }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
+function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, recentLines, saveStatus, onRetrySave, onRetry, onPractice, onDeclineReview, onOpenLesson, rekordboxCard, onRekordboxChoice }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
   const { result, review, tip, firstPass } = phase;
   const passed = result.outcome.kind === "passed";
   const unsaved = saveStatus.kind === "failed";
   const line = useCoachLine(phase, definition, learnerId, missionTags, attemptToday, recentLines);
   const wording = useWording();
   const shown = result.criteria.filter((criterion) => criterion.status !== "notApplicable");
+  // Hidden once answered here; "Not now" offers it again after a later pass.
+  const [rekordboxAnswered, setRekordboxAnswered] = useState(false);
   const next = LESSONS[LESSONS.findIndex((lesson) => lesson.id === definition.id) + 1];
 
   return (
@@ -119,6 +127,15 @@ function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, r
             Next Lesson →
           </button>
         </div>
+      ) : null}
+      {passed && !unsaved && rekordboxCard !== null && !rekordboxAnswered ? (
+        <RekordboxCard
+          card={rekordboxCard}
+          onChoose={(choice) => {
+            setRekordboxAnswered(true);
+            onRekordboxChoice(rekordboxCard.id, choice);
+          }}
+        />
       ) : null}
       <Actions onRetry={onRetry} onPractice={onPractice} />
     </section>

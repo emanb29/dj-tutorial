@@ -264,7 +264,7 @@ export function App() {
         </a>
         <HealthIndicator />
       </header>
-      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} /> : <p>Loading your progress…</p>}
+      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} onLearnerChange={changeLearner} /> : <p>Loading your progress…</p>}
     </main>
   );
 }

@@ -1,0 +1,40 @@
+/* The optional rekordbox cards (ISS-97). */
+.rekordbox-card {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--ink-dim);
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.rekordbox-card h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+}
+
+.rekordbox-steps,
+.rekordbox-folders,
+.rekordbox-differs {
+  margin: 0 0 var(--space-2);
+  padding-left: 1.5em;
+}
+
+.rekordbox-folders code {
+  overflow-wrap: anywhere;
+}
+
+.rekordbox-differs {
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.rekordbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.rekordbox-actions .btn {
+  min-width: 44px;
+  min-height: 44px;
+}
