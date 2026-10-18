@@ -46,3 +46,10 @@ The owner often develops remotely. Every dev server for this project (the app, o
 CI (`.github/workflows/ci.yml`) reports one status to wait on or require: `ci-ok`. On a pull request it runs `check` (typecheck, lint, every unit and browser test) and only the end-to-end specs the diff can affect, chosen by `scripts/e2e-affected.ts` from the rules in `scripts/e2e-spec-map.ts`. A shared path (`src/audio`, `src/app/lesson`, `shared`, `server`, `e2e` helpers, config, …) or any path no rule names runs the whole suite; docs and tests alone run none. A new spec must be named in the map (a unit test fails otherwise). `node scripts/e2e-affected.ts origin/main` shows what a branch would run. Pushes to main and manual runs play the whole suite, sharded.
 
 The owner's live dev server (`dj.example.com`) runs from the main checkout at the project root, and Vite and tsx hot-reload whatever it holds. `scripts/follow-green-main.sh` fast-forwards that checkout to the newest main commit whose CI push run passed, never past it; it refuses when the tree is dirty or off main, and does nothing when already there.
+
+### When to wait for CI (owner policy, 2026-10-17)
+
+- **Gated:** a change touching grading, timing or the audio engine (`src/audio`, `src/checks`, `src/app/lesson/lesson-session.ts`, `shared/attempt.ts`), or how a profile is stored (`shared/learner.ts`, `server/`). It merges only on a green `ci-ok`, and the live checkout follows green main.
+- **Expedited:** anything else (screens, layout, captions, content, track selection, new optional features). Before pushing, run `npm run typecheck`, `npm run lint` and the tests for the files you touched. The PR then merges without waiting for CI, and the live checkout fast-forwards to the merge at once (`git merge --ff-only`), ahead of green main.
+- If main's full run then fails, fix it or revert it before merging anything else, and tell the owner.
+- Never tell the owner a change is live until the live checkout holds it.
