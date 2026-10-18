@@ -16,6 +16,9 @@ import {
 } from "@shared/learner.ts";
 import type { CoachService } from "./coach/coach-service.ts";
 import type { FinalProjectStore } from "./final-projects.ts";
+import type { AudioExporter } from "./audio-export.ts";
+import { EXPORT_FORMATS, EXPORT_STATUS_PATH, exportFileName, exportTags, type ExportStatus } from "@shared/final-project-export.ts";
+import { RateLimiter, type BucketRule } from "./rate-limiter.ts";
 import { consoleLogger, type Logger } from "./logger.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import { requireSameOrigin, sameOriginPolicy, type SameOriginPolicy } from "./same-origin.ts";
@@ -31,6 +34,8 @@ export interface AppServices {
   readonly coach: CoachService;
   /** The final project's audio, one file per Learner. Unset = no `…/final-project/audio` route. */
   readonly finalProjects?: FinalProjectStore;
+  /** ffmpeg, found (or not) at startup. Unset = exports report "unavailable". */
+  readonly audioExport?: AudioExporter;
   readonly logger?: Logger;
   readonly now?: () => Date;
 }
@@ -45,7 +50,11 @@ export interface AppOptions {
   readonly logger?: Logger;
 }
 
-type Status = 400 | 403 | 404 | 413 | 415 | 500;
+type Status = 400 | 403 | 404 | 413 | 415 | 429 | 500 | 503 | 504;
+
+/** Each export runs ffmpeg for up to two minutes: 3 at once, then 12 an hour per Learner. */
+export const EXPORT_RATE_RULE: BucketRule = { burst: 3, perWindow: 12, windowMs: 60 * 60_000 };
+const EXPORT_FAILURE_STATUS = { unavailable: 503, timedOut: 504, tooLarge: 413, failed: 500 } as const;
 
 function failure(context: Pick<Context, "json">, status: Status, code: ApiErrorCode, error: string, issues?: readonly string[]) {
   const body: ApiFailure = issues === undefined ? { success: false, error, code } : { success: false, error, code, issues };
@@ -101,6 +110,11 @@ export function createApp(options: AppOptions = {}): Hono {
   app.get(HEALTH_PATH, (context) =>
     context.json({ success: true, data: { status: "ok" } } satisfies ApiSuccess<HealthData>),
   );
+
+  app.get(EXPORT_STATUS_PATH, (context) => {
+    const status: ExportStatus = options.services?.audioExport?.status ?? { available: false, reason: "The server was started without the audio export. Restart it with `npm run dev`." };
+    return context.json({ success: true, data: status } satisfies ApiSuccess<ExportStatus>);
+  });
 
   if (options.services !== undefined) mountLearnerRoutes(app, options.services);
   if (options.originalsDir !== undefined) app.route(ORIGINALS_PATH, originalsRoutes(options.originalsDir, logger));
@@ -206,6 +220,36 @@ function mountLearnerRoutes(app: Hono, services: AppServices): void {
         "Cache-Control": "no-store",
       });
     });
+  }
+
+  if (finalProjects !== undefined) {
+    const exportLimiter = new RateLimiter(() => now().getTime());
+    for (const format of EXPORT_FORMATS) {
+      learners.get(`/:learnerId/final-project/export.${format}`, async (context) => {
+        const learnerId = context.get("learnerId");
+        const exporter = services.audioExport;
+        if (!exporter?.status.available) {
+          return failure(context, 503, "unavailable", exporter?.status.available === false ? exporter.status.reason : "The server was started without the audio export. Restart it with `npm run dev`.");
+        }
+        const project = profiles.get(learnerId)?.finalProject;
+        const stored = await finalProjects.audioFile(learnerId);
+        if (project === undefined || stored === undefined) return failure(context, 404, "notFound", `Learner "${learnerId}" has kept no final project yet. Keep a set first.`);
+        if (!exportLimiter.tryTake(learnerId, EXPORT_RATE_RULE)) {
+          return failure(context, 429, "rateLimited", "Too many downloads in the last hour. Use the file you already downloaded, or wait a few minutes.");
+        }
+        const result = await exporter.transcode(stored.path, format, exportTags(project));
+        if (!result.ok) {
+          services.logger?.warn("export.failed", { learnerId, format, kind: result.failure.kind, message: result.failure.message });
+          return failure(context, EXPORT_FAILURE_STATUS[result.failure.kind], result.failure.kind === "tooLarge" ? "tooLarge" : "unavailable", result.failure.message);
+        }
+        return context.body(result.body, 200, {
+          "Content-Type": format === "mp3" ? "audio/mpeg" : "audio/wav",
+          "Content-Length": String(result.bytes),
+          "Content-Disposition": `attachment; filename="${exportFileName(project, format)}"`,
+          "Cache-Control": "no-store",
+        });
+      });
+    }
   }
 
   learners.post("/:learnerId/coach/warm", async (context) => context.json(await coach.warm(context.get("learnerId"))));

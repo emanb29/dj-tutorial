@@ -63,6 +63,13 @@ export class FinalProjectStore {
     });
   }
 
+  /** The stored audio file's path (for ffmpeg), or undefined when none was kept. */
+  async audioFile(learnerId: LearnerId): Promise<{ readonly meta: FinalProjectAudioMeta; readonly path: string } | undefined> {
+    const raw = await readJsonIfPresent(this.metaPath(learnerId));
+    if (raw === undefined) return undefined;
+    return { meta: AudioMetaSchema.parse(raw), path: this.audioPath(learnerId) };
+  }
+
   /** The Learner's final project audio, or undefined when none was kept. */
   async get(learnerId: LearnerId): Promise<{ readonly meta: FinalProjectAudioMeta; readonly bytes: Buffer } | undefined> {
     const raw = await readJsonIfPresent(this.metaPath(learnerId));

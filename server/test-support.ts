@@ -9,6 +9,7 @@ import { createApp } from "./app.ts";
 import { CoachService, type CoachTimings } from "./coach/coach-service.ts";
 import { memoryLogger } from "./logger.ts";
 import { FinalProjectStore } from "./final-projects.ts";
+import type { AudioExporter } from "./audio-export.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { sameOriginPolicy } from "./same-origin.ts";
 import { SpendLedger } from "./spend-ledger.ts";
@@ -98,6 +99,7 @@ export async function startTestServer(options: {
   capUsd?: number;
   timings?: Partial<CoachTimings>;
   now?: () => Date;
+  audioExport?: AudioExporter;
 }): Promise<TestServer> {
   const dataDir = await mkdtemp(join(tmpdir(), "ltd-app-"));
   const profiles = await ProfileStore.open(dataDir);
@@ -113,7 +115,7 @@ export async function startTestServer(options: {
   });
   const app = createApp({
     sameOrigin: sameOriginPolicy([APP_ORIGIN], ["127.0.0.1:5180"]),
-    services: { profiles, coach, logger, now, finalProjects: FinalProjectStore.forDataDir(dataDir, now) },
+    services: { profiles, coach, logger, now, finalProjects: FinalProjectStore.forDataDir(dataDir, now), ...(options.audioExport === undefined ? {} : { audioExport: options.audioExport }) },
   });
   return {
     app,

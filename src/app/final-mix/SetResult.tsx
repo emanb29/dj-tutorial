@@ -1,6 +1,6 @@
 // After a set: the Check (criteria in plain words, the LCME bands of a passed set, each transition's
 // results) and the recording: play it back, download it with its notes, keep it as the final project.
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { fileExtensionOf, type FinishedRecording } from "@audio";
 import type { TransitionReport } from "@checks";
 import { describeCriterion, describeSetCriterion } from "@lessons";
@@ -20,6 +20,8 @@ interface SetResultProps {
   readonly label: string;
   readonly keep: KeepStatus;
   readonly onKeep: () => void;
+  /** The WAV/MP3 downloads, once the set is kept. */
+  readonly downloads: ReactNode;
   readonly onAgain: () => void;
   readonly onExit: () => void;
 }
@@ -38,7 +40,7 @@ function useObjectUrl(blob: Blob | null): string | null {
   return url;
 }
 
-export function SetResult({ outcome, transitions, titles, recording, recordingProblem, notes, label, keep, onKeep, onAgain, onExit }: SetResultProps) {
+export function SetResult({ outcome, transitions, titles, recording, recordingProblem, notes, label, keep, onKeep, downloads, onAgain, onExit }: SetResultProps) {
   const audioUrl = useObjectUrl(recording?.blob ?? null);
   const notesBlob = useMemo(() => new Blob([notes], { type: "text/plain" }), [notes]);
   const notesUrl = useObjectUrl(notesBlob);
@@ -127,6 +129,7 @@ export function SetResult({ outcome, transitions, titles, recording, recordingPr
                 {keep.message}
               </p>
             ) : null}
+            {keep.kind === "kept" ? downloads : null}
           </>
         )}
       </div>

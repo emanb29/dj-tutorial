@@ -9,7 +9,7 @@ export interface ApiSuccess<Data> {
   readonly data: Data;
 }
 
-export type ApiErrorCode = "badRequest" | "forbidden" | "notFound" | "tooLarge" | "internal";
+export type ApiErrorCode = "badRequest" | "forbidden" | "notFound" | "tooLarge" | "rateLimited" | "unavailable" | "internal";
 
 export interface ApiFailure {
   readonly success: false;

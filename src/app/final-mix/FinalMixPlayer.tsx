@@ -15,6 +15,7 @@ import type { SaveStatus } from "../save-queue.ts";
 import { keepFinalProjectAudio } from "./api.ts";
 import { listLibrary, type Library, type LibraryItem } from "./library.ts";
 import { SetBuilder, type PickedTrack } from "./SetBuilder.tsx";
+import { FinalProjectDownloads } from "./FinalProjectDownloads.tsx";
 import { SetResult, type KeepStatus } from "./SetResult.tsx";
 import { SetSession, type GradedSet } from "./set-session.ts";
 import "../lesson/lesson.css";
@@ -410,6 +411,12 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
       </div>
 
       <div className="lesson-board">
+        {phase.kind === "build" && learner.finalProject !== undefined ? (
+          <section className="set-kept" aria-label="Your final project">
+            <h2>Your final project</h2>
+            <FinalProjectDownloads learnerId={learner.learnerId} project={learner.finalProject} />
+          </section>
+        ) : null}
         {phase.kind === "build" && library !== null ? (
           <SetBuilder
             library={{ ...library, items }}
@@ -436,6 +443,7 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
             label={phase.graded.outcome.mode === "cold" ? "Final project" : "Rehearsal"}
             keep={keep}
             onKeep={keepProject}
+            downloads={learner.finalProject === undefined ? null : <FinalProjectDownloads learnerId={learner.learnerId} project={learner.finalProject} />}
             onAgain={again}
             onExit={onExit}
           />

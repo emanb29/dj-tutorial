@@ -6,6 +6,7 @@ import { CoachService } from "./coach/coach-service.ts";
 import { requireRuntimeConfig, requireServerConfig } from "./config.ts";
 import { consoleLogger } from "./logger.ts";
 import { FinalProjectStore } from "./final-projects.ts";
+import { AudioExporter } from "./audio-export.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { sameOriginPolicy } from "./same-origin.ts";
 import { SpendLedger } from "./spend-ledger.ts";
@@ -24,10 +25,12 @@ const client = runtime.anthropicApiKey === null ? null : new Anthropic({ apiKey:
 if (client === null) consoleLogger.info("coach.noKey", { message: "Coach: no API key, using built-in Curriculum and lines" });
 
 const coach = new CoachService({ client, ledger, logger: consoleLogger, logPayloads: runtime.coachLogPayloads });
+const audioExport = await AudioExporter.detect();
+if (!audioExport.status.available) consoleLogger.warn("export.unavailable", { message: audioExport.status.reason });
 const ownAddress = `${host}:${String(port)}`;
 const app = createApp({
   sameOrigin: sameOriginPolicy(runtime.allowedOrigins, [ownAddress, `localhost:${String(port)}`]),
-  services: { profiles, coach, logger: consoleLogger, finalProjects: FinalProjectStore.forDataDir(runtime.dataDir) },
+  services: { profiles, coach, logger: consoleLogger, finalProjects: FinalProjectStore.forDataDir(runtime.dataDir), audioExport },
   originalsDir: runtime.originalsDir,
 });
 
@@ -38,5 +41,6 @@ serve({ fetch: app.fetch, hostname: host, port }, (info) => {
     originalsDir: runtime.originalsDir,
     coach: client === null ? "noKey" : "key",
     monthlyCapUsd: runtime.coachMonthlyCapUsd,
+    audioExport: audioExport.status.available ? "ffmpeg" : "unavailable",
   });
 });

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
 import { commandsAtBeats, keysAtBeats, learner, playingPast, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // Lesson 20 end to end, muted, on the synthetic set grooves (?track=synthetic): every track has its
@@ -148,4 +148,60 @@ test("final-mix: a three-track set with a cut and a blend, by ear, passes, and t
   expect(kept.status).toBe(200);
   expect(kept.bytes).toBeGreaterThan(10_000);
   expect(kept.project).toMatchObject({ outcome: "passed", tracks: [{}, {}, {}], transitions: [{ kind: "cut" }, { kind: "blend" }] });
+
+  // The files to post: WAV and MP3 from the server's ffmpeg (or the reason there are none).
+  const ffmpeg = (await (await page.request.get("/api/final-project/export-status")).json()) as { data: { available: boolean } };
+  if (!ffmpeg.data.available) {
+    await expect(card.getByRole("note")).toContainText("No WAV or MP3 download");
+    return;
+  }
+  await expect(card).toContainText("upload the WAV for best quality, or the MP3");
+  await expect(card.getByRole("link", { name: "Download as WAV" })).toHaveAttribute("download", /^learn-to-dj-set-\d{4}-\d{2}-\d{2}\.wav$/);
+  const mp3Link = card.getByRole("link", { name: "Download as MP3" });
+  const mp3 = await page.request.get((await mp3Link.getAttribute("href")) ?? "");
+  expect(mp3.status()).toBe(200);
+  expect(mp3.headers()["content-type"]).toBe("audio/mpeg");
+  expect((await mp3.body()).subarray(0, 3).toString("latin1")).toBe("ID3");
+});
+
+test.describe("on a phone", () => {
+  test.use({ userAgent: devices["Pixel 7"].userAgent, isMobile: true, hasTouch: true, deviceScaleFactor: 1, viewport: { width: 412, height: 915 } });
+
+  test("a kept final project offers its WAV and MP3 downloads, fitting the width", async ({ page }) => {
+    const learnerId = learner("e2e-set-phone");
+    await seedPassed(page, learnerId, ROUTE, { headphones: true });
+    const statuses = await page.evaluate(async (id) => {
+      const audio = await fetch(`/api/learners/${id}/final-project/audio`, { method: "PUT", headers: { "Content-Type": "audio/webm" }, body: new Uint8Array(64) });
+      const record = ((await (await fetch(`/api/learners/${id}/profile`)).json()) as { data: Record<string, unknown> }).data;
+      const finalProject = {
+        attemptId: "phone-1",
+        recordedAt: "2026-10-17T20:00:00.000Z",
+        mode: "lesson",
+        outcome: "passed",
+        band: "pass",
+        durationSec: 60,
+        audio: { mimeType: "audio/webm", bytes: 64 },
+        tracks: [{ title: "Set Groove C (synthetic)", artist: "Learn to DJ", bpm: 123, credit: "", shareable: true }],
+        transitions: [],
+      };
+      const profile = await fetch(`/api/learners/${id}/profile`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...record, finalProject }) });
+      return [audio.status, profile.status];
+    }, learnerId);
+    expect(statuses).toEqual([200, 200]);
+    await page.goto(`/?learner=${learnerId}&track=synthetic`);
+    await page.locator('li[data-lesson="final-mix"]').getByRole("button").tap();
+    const kept = page.getByRole("region", { name: "Your final project" });
+    await expect(kept).toBeVisible();
+    const ffmpeg = (await (await page.request.get("/api/final-project/export-status")).json()) as { data: { available: boolean } };
+    if (ffmpeg.data.available) {
+      for (const name of ["Download as WAV", "Download as MP3"]) {
+        const box = await kept.getByRole("link", { name }).boundingBox();
+        expect(box?.height ?? 0, name).toBeGreaterThanOrEqual(44);
+      }
+      await expect(kept.getByRole("link", { name: "Download as MP3" })).toHaveAttribute("download", "learn-to-dj-set-2026-10-17.mp3");
+    } else {
+      await expect(kept.getByRole("note")).toContainText("No WAV or MP3 download");
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
 });
