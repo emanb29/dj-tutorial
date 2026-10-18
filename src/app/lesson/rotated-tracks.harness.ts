@@ -27,6 +27,7 @@ import {
   type LessonTrack,
   type SyntheticLayout,
 } from "@lessons";
+import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { OriginalMetaSchema, type OriginalMeta } from "@shared/originals.ts";
 import { knownGridFromMeta, type Track } from "@tracks";
@@ -218,6 +219,8 @@ interface Run {
   readonly track: LessonTrack;
   /** The Check's plan (attempt 1; what varies by attempt is read live, not from here). */
   readonly plan: CheckPlan;
+  /** The Lessons the Learner has passed before this Check. */
+  readonly passed: readonly LessonId[];
   readonly now: () => number;
   /** Renders to context time `ctx`, a step at a time, letting the session's watch look after each. */
   readonly renderTo: (ctx: number) => Promise<void>;
@@ -227,7 +230,7 @@ interface Run {
   readonly audioEnded: () => number;
 }
 
-async function harness(pick: Pick): Promise<Run> {
+async function harness(pick: Pick, passed: readonly LessonId[]): Promise<Run> {
   const track0 = lessonTrackOf(pick.main);
   const partnerTrack0 = pick.partner === null ? undefined : lessonTrackOf(pick.partner);
   const definition0 = pick.lesson;
@@ -303,7 +306,8 @@ async function harness(pick: Pick): Promise<Run> {
     session,
     engine: running,
     track,
-    plan: definition.planCheck(track),
+    plan: definition.planCheck(track, 1, passed),
+    passed,
     now: () => context.currentTime,
     renderTo,
     toPos,
@@ -325,7 +329,7 @@ async function startedCheck(run: Run): Promise<void> {
   const slices = run.plan.slices !== undefined;
   const plays = run.plan.autoPlay && run.plan.stops === undefined;
   try {
-    run.session.startCheck();
+    run.session.startCheck(run.passed);
     await until(() => (slices ? run.session.deckTrack("A")?.trackId.endsWith("#cue-1") === true : cued) && (!plays || played), "the session to set up the Check");
   } finally {
     stop();
@@ -668,6 +672,13 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
     if (!Number.isFinite(fadeBars)) throw new Error(`The fade caption names no length: "${fade.caption}"`);
     const outPos = fade.pos + barLength(track);
     const lowBack = cueStarting(plan, "All the way down, then LOW A").pos;
+    // "B's in your headphones. LOW B all the way down" (when the Check asks for it), then "Now match B".
+    if (plan.cues.some((cue) => cue.caption.includes("LOW B all the way down"))) {
+      await run.renderTo(run.now() + 0.5);
+      run.send({ control: "eq-low", deck: "B", value: -1 });
+    }
+    const match = plan.cues.find((cue) => cue.caption.startsWith("Now match B"));
+    if (match !== undefined) await run.toPos(match.fromPos);
     // Matched in the headphones first, then kept in line through the blend.
     await run.renderTo(run.now() + 1);
     matchTempo(run);
@@ -725,22 +736,41 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
 
   "loop-transition": async (run) => {
     const { plan, track } = run;
+    // "CUE 🎧 B on", with "LOW B all the way down" when the Check swaps the bass (Lesson 12 passed).
+    const first = plan.cues[0];
+    if (first === undefined) throw new Error("loop-transition has no captions");
+    const swaps = (plan.stepCues ?? []).some((step) => step.caption.includes("swap the bass"));
     run.send({ control: "headphone-cue", deck: "B", value: true });
-    const loopPos = nextPhraseStart(track, cuePos(plan, "CUE 🎧 B on. Next phrase's 1: LOOP IN (D)") + 1e-3);
+    if (first.caption.includes("LOW B all the way down")) run.send({ control: "eq-low", deck: "B", value: -1 });
+    const loopPos = nextPhraseStart(track, cueStarting(plan, swaps ? "Next phrase's 1: LOOP IN" : "CUE 🎧 B on. Next phrase's 1: LOOP IN").pos + 1e-3);
     const loopOut = cuePos(plan, "Count 4 bars: LOOP OUT on the 1 (F)") - beatSec(track.grid) + 4 * barLength(track);
     await run.toPos(loopPos);
     run.send({ control: "loop-in", deck: "A" });
     await run.toPos(loopOut);
     run.send({ control: "loop-out", deck: "A" });
-    // "On the loop's 1: Press ,", then "Next loop's 1: EXIT (G)", then "Fader A down (S)".
+    // "On the loop's 1: Press ,", ["Next loop's 1: swap the bass"], "Next loop's 1: EXIT (G)", "Fader A down (S)".
     const loopSec = loopOut - loopPos;
     const wrapped = run.now();
-    await run.renderTo(wrapped + loopSec);
+    let loops = 1;
+    await run.renderTo(wrapped + loops * loopSec);
     run.send({ control: "play", deck: "B" });
-    await run.renderTo(wrapped + 2 * loopSec);
+    if (swaps) {
+      loops += 1;
+      await run.renderTo(wrapped + loops * loopSec - 0.1);
+      run.send({ control: "eq-low", deck: "A", value: -1 });
+      await run.renderTo(wrapped + loops * loopSec + 0.1);
+      run.send({ control: "eq-low", deck: "B", value: 0 });
+    }
+    loops += 1;
+    await run.renderTo(wrapped + loops * loopSec);
     run.send({ control: "loop-exit", deck: "A" });
     await run.renderTo(run.now() + 1);
     run.send({ control: "channel-fader", deck: "A", value: 0 });
+    // "… then LOW A to the middle".
+    if (swaps) {
+      await run.renderTo(run.now() + 0.5);
+      run.send({ control: "eq-low", deck: "A", value: 0 });
+    }
     await untilEnded(run);
     return {};
   },
@@ -788,13 +818,14 @@ export function describeLessons(first: number, last: number): void {
     "$name passes",
     { timeout: 120_000 },
     async ({ pick, index }) => {
-      const run = await harness(pick);
+      // Every earlier Lesson passed: the plan's captions may build on them (Lesson 18's bass swap after Lesson 12).
+      const passed = LESSONS.slice(0, index).map((lesson) => lesson.id);
+      const run = await harness(pick, passed);
       // A moment of practice first, as the Learner has: the recorded playheads hold it too.
       run.session.preparePractice();
       await run.renderTo(2);
       await startedCheck(run);
       const answers = await FOLLOW[pick.lesson.id](run);
-      const passed = LESSONS.slice(0, index).map((lesson) => lesson.id);
       const graded = await run.session.grade(answers, passed);
       run.session.close();
       if (!graded.ok) throw new Error(graded.message);
