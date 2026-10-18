@@ -13,10 +13,13 @@ const DECK_PARTS = [
   /** Turning the jog on a playing deck bends pitch (the nudge-phase Lesson); `jog` alone is search while paused. */
   "jog-bend",
   "hot-cue",
-  /** The loop buttons: LOOP IN (SHIFT: ½X), LOOP OUT (SHIFT: 2X) and 4 BEAT/EXIT. */
+  /** The loop buttons: LOOP IN, LOOP OUT and 4 BEAT/EXIT. */
   "loop-in",
   "loop-out",
   "loop-exit",
+  /** CUE/LOOP CALL ◀ and ▶, which are ½X and 2X on a loop (the FLX4 prints both above them). */
+  "loop-halve",
+  "loop-double",
   "tempo",
   "tempo-range",
   "master-tempo",

@@ -18,6 +18,8 @@ describe("inputWording on a touchscreen", () => {
     expect(touch("Count 4 bars: LOOP OUT on the 1 (F)")).toBe("Count 4 bars: LOOP OUT on the 1");
     expect(touch("Next loop's 1: EXIT (G)")).toBe("Next loop's 1: EXIT");
     expect(touch("Press J")).toBe("Tap 4 BEAT/EXIT on deck B");
+    expect(touch("OUT closes it: a 4-bar loop. 2X (6) doubles it, ½X (5) halves it.")).toBe("OUT closes it: a 4-bar loop. 2X doubles it, ½X halves it.");
+    expect(touch("Press =")).toBe("Tap 2X on deck B");
     expect(touch("Press V: BEAT FX on")).toBe("Tap BEAT FX ON: BEAT FX on");
     expect(touch("ECHO on (V), cut A on a 1 (S), then FX off (V)")).toBe("ECHO on, cut A on a 1, then FX off");
     expect(touch("Press ] for longer echoes")).toBe("Tap BEAT ▶ for longer echoes");

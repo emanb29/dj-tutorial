@@ -133,7 +133,7 @@ function loopDecks(track: LessonTrack): DeckSetups {
 const loopTransition: LessonDefinition = {
   id: "loop-transition",
   title: "Loop to buy time",
-  unlocks: ["A.loop-in", "A.loop-out", "A.loop-exit", "B.loop-in", "B.loop-out", "B.loop-exit"],
+  unlocks: ["A.loop-in", "A.loop-out", "A.loop-exit", "A.loop-halve", "A.loop-double", "B.loop-in", "B.loop-out", "B.loop-exit", "B.loop-halve", "B.loop-double"],
   practiceStart: (track) => loopDecks(track).A.pos,
   practiceDecks: loopDecks,
   practiceLoop: (track) => ({ atPos: phraseStart(track.grid, loopPhrases(track).loop) + barsSec(track, 2 * LOOP_BARS + 2), reset: "setup" }),
@@ -143,7 +143,7 @@ const loopTransition: LessonDefinition = {
     { caption: "Press G: a 4-beat loop", control: "A.loop-exit", trigger: { kind: "loop-on" }, named: "4 BEAT: one bar, round and round." },
     { caption: "Press G again: EXIT", control: "A.loop-exit", trigger: { kind: "loop-exit" }, named: "EXIT: the track plays on." },
     { caption: "LOOP IN on a 1 (D)", control: "A.loop-in", trigger: { kind: "loop-in" }, named: "IN marks where the loop starts." },
-    { caption: "LOOP OUT on a 1, 4 bars on (F)", control: "A.loop-out", trigger: { kind: "loop-on" }, named: "OUT closes it: a 4-bar loop. Shift + OUT doubles it." },
+    { caption: "LOOP OUT on a 1, 4 bars on (F)", control: "A.loop-out", trigger: { kind: "loop-on" }, named: "OUT closes it: a 4-bar loop. 2X (6) doubles it, ½X (5) halves it." },
   ],
   practice: { caption: "LOOP IN on the phrase's 1 (D), LOOP OUT 4 bars on (F), then EXIT (G)", rep: "loop", window: 2, needed: 1 },
   checkCaption: "This one counts: loop A's last phrase, Press , on the loop's 1, EXIT on a 1",
@@ -174,7 +174,7 @@ const loopTransition: LessonDefinition = {
   taskFor: (): LessonTask => ({ lessonId: "loop-transition" }),
   gradeFromOwnCue: true,
   tips: {
-    "loop-transition.loop-length": ["LOOP OUT exactly 4 bars after IN, on the 1.", "Or 4 BEAT on the 1, then Shift + OUT twice: 4 bars, exact."],
+    "loop-transition.loop-length": ["LOOP OUT exactly 4 bars after IN, on the 1.", "Or 4 BEAT on the 1, then 2X (6) twice: 4 bars, exact."],
     "loop-transition.loop-in": ["LOOP IN right on the phrase's 1."],
     "loop-transition.loop-exit": ["EXIT on the loop's 1: count the bars round."],
     "loop-transition.loop-entry": ["Press , on the loop's 1, while A loops."],

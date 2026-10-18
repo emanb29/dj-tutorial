@@ -188,11 +188,11 @@ describe("hot cues", () => {
 });
 
 describe("loops and Beat FX", () => {
-  it("LOOP IN and LOOP OUT, with Shift ½X and 2X", () => {
+  it("LOOP IN and LOOP OUT; ½X and 2X on the CUE/LOOP CALL keys after the hot cues", () => {
     const { engine, sent } = fakeEngine();
     const { session: controller } = session(engine);
-    for (const [code, shiftKey] of [["KeyD", false], ["KeyF", false], ["KeyD", true], ["KeyF", true], ["KeyY", false]] as const) {
-      controller.keyDown(key(code, { shiftKey }));
+    for (const code of ["KeyD", "KeyF", "Digit5", "Digit6", "KeyY", "KeyU", "Minus", "Equal"] as const) {
+      controller.keyDown(key(code));
       controller.keyUp(key(code));
     }
     expect(sent.map((entry) => entry.command)).toEqual([
@@ -201,7 +201,38 @@ describe("loops and Beat FX", () => {
       { control: "loop-halve", deck: "A" },
       { control: "loop-double", deck: "A" },
       { control: "loop-in", deck: "B" },
+      { control: "loop-out", deck: "B" },
+      { control: "loop-halve", deck: "B" },
+      { control: "loop-double", deck: "B" },
     ]);
+  });
+
+  it("Shift on a loop key is the FLX4's SHIFT layer (IN ADJ, OUT ADJ, cue delete, memory): not yet", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine);
+    for (const [code, control] of [
+      ["KeyD", "A.loop-in"],
+      ["KeyF", "A.loop-out"],
+      ["Digit5", "A.loop-halve"],
+      ["Equal", "B.loop-double"],
+    ] as const) {
+      expect(controller.keyDown(key(code, { shiftKey: true }))).toBe(true);
+      controller.keyUp(key(code));
+      expect(controller.snapshot().notYet).toBe(control);
+    }
+    // SHIFT held on screen does the same for the on-screen buttons.
+    controller.setShift("B", true);
+    controller.loopCall("B", -1, false, { device: "mouse", eventTimeMs: 1 });
+    expect(controller.snapshot().notYet).toBe("B.loop-halve");
+    expect(sent).toEqual([]);
+  });
+
+  it("½X and 2X do nothing while the loop Lesson has not unlocked them", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine, new Set<ControlId>(["A.loop-in", "A.loop-out", "A.loop-exit"]));
+    expect(controller.keyDown(key("Digit5"))).toBe(false);
+    controller.loopCall("A", 1, false, { device: "mouse", eventTimeMs: 1 });
+    expect(sent).toEqual([]);
   });
 
   it("4 BEAT/EXIT starts a 4-beat loop, or exits the one playing", () => {

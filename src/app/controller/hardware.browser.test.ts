@@ -105,6 +105,44 @@ describe("the FLX4 through the session into a real engine", () => {
     expect(engine.mixerState().channels.A["channel-fader"]).toBe(0);
   });
 
+  it("CUE/LOOP CALL ◀ halves the loop and ▶ doubles it; SHIFT + LOOP IN (IN ADJ) changes nothing", async () => {
+    const { context, port, recorder, session, engine } = await rig();
+    expect(recorder.start()).toEqual({ ok: true });
+    const steps = [
+      at(context, 0.1, () => {
+        port.midi([0x90, 0x0b, 0x7f], 0.1);
+      }),
+      // 4 BEAT: a 2 s loop at 120 BPM.
+      at(context, 0.5, () => {
+        port.midi([0x90, 0x4d, 0x7f], 0.5);
+      }),
+      at(context, 0.8, () => {
+        port.midi([0x90, 0x51, 0x7f], 0.8);
+        port.midi([0x90, 0x51, 0x00], 0.81);
+      }),
+      at(context, 1.1, () => {
+        port.midi([0x90, 0x53, 0x7f], 1.1);
+      }),
+      at(context, 1.4, () => {
+        port.midi([0x90, 0x3f, 0x7f], 1.4);
+        port.midi([0x90, 0x4c, 0x7f], 1.41);
+        port.midi([0x90, 0x3f, 0x00], 1.42);
+      }),
+    ];
+    await context.startRendering();
+    await Promise.all(steps);
+    const stopped = await recorder.stop({ attemptId: "a", learnerId: "l", endReason: "done", abandoned: false, phraseMarkers: {}, answers: {} });
+    if (!stopped.ok) throw new Error(`stop failed: ${stopped.error.kind}`);
+    const loopEvents = stopped.attempt.events.filter((event) => event.control.startsWith("loop"));
+    expect(loopEvents.map((event) => [event.control, Number(event.ctx.toFixed(6)), Number(event.value.toFixed(6))])).toEqual([
+      ["loopAuto", 0.5, 2],
+      ["loopHalve", 0.8, 1],
+      ["loopDouble", 1.1, 2],
+    ]);
+    expect(engine.deckState("A").loop).not.toBeNull();
+    expect(session.snapshot().notYet).toBe("A.loop-in");
+  });
+
   it("places a MIDI press on the heard timeline exactly where a key press with the same timestamp goes", async () => {
     const { context, port, recorder, session } = await rig();
     expect(recorder.start()).toEqual({ ok: true });

@@ -61,6 +61,10 @@ function touchWords(binding: KeyBinding): TouchWords | null {
       const name = `4 BEAT/EXIT${onDeck(action.deck)}`;
       return { press: `Tap ${name}`, aside: null, bare: name };
     }
+    case "loop-call": {
+      const name = `${action.step < 0 ? "½X" : "2X"}${onDeck(action.deck)}`;
+      return { press: `Tap ${name}`, aside: null, bare: name };
+    }
     case "beat-fx-on":
       return { press: "Tap BEAT FX ON", aside: null, bare: "BEAT FX ON" };
     case "beat-fx-beat": {
@@ -99,8 +103,9 @@ const bareLabels = [...WORDS_BY_LABEL.keys()].filter((label) => /^(?:[A-Z]|Space
 
 const PRESS = new RegExp(`\\b(?:Press|Hit|Tap) (${anyLabel})(?=$|[\\s.,;:!?)])`, "g");
 const ASIDE = new RegExp(` \\((${anyLabel})\\)`, "g");
-// Uppercase-only and whole-word, so "Deck A" (A is not bound) and words like "MASTER" never match.
-const BARE = new RegExp(`(?<![\\w(])(${bareLabels.join("|")})(?![\\w)])`, "g");
+// Uppercase-only and whole-word, so "Deck A" (A is not bound) and words like "MASTER" never match;
+// nor does the X of ½X (the loop's half).
+const BARE = new RegExp(`(?<![\\w(½])(${bareLabels.join("|")})(?![\\w)])`, "g");
 
 function wordsFor(label: string): TouchWords {
   const words = WORDS_BY_LABEL.get(label);

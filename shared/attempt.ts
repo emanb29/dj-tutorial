@@ -90,8 +90,8 @@ export interface CtxSpan {
  * Loops (deck). Each loop-button press is a point action at `ctx`; the loop it leaves on is in its
  * value and `pos`, so the loop on at any moment is the latest of these events:
  * - `loopIn`: LOOP IN, value 1; `pos` = the in point marked (heard at the press). No audible change.
- * - `loopOut` (LOOP OUT), `loopAuto` (4 BEAT), `loopDouble` (2X, SHIFT + OUT), `loopHalve` (½X,
- *   SHIFT + IN): value = the loop's length after the press, track seconds; `pos` = its start, track
+ * - `loopOut` (LOOP OUT), `loopAuto` (4 BEAT), `loopDouble` (2X, CUE/LOOP CALL ▶), `loopHalve` (½X,
+ *   CUE/LOOP CALL ◀): value = the loop's length after the press, track seconds; `pos` = its start, track
  *   seconds. `appliedCtx` = when the loop took effect in the playhead model.
  * - `loopExit`: the loop ended, value 1: EXIT, or (`byEngine`) a seek, hot cue, CUE return or search
  *   that left it. The loop's audio is in the playhead model, where each wrap is a jump back to the start.

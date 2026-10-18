@@ -3,8 +3,9 @@
 // - the jog wheel, with SHIFT under its left edge;
 // - bottom left: CUE above PLAY/PAUSE; beside them the pad-mode buttons over 8 pads;
 // - far right: the TEMPO fader.
-// SHIFT meanings are printed under the buttons, as on the panel. Parts the app does not use yet
-// (CUE/LOOP CALL, the pad modes other than HOT CUE) are drawn as dimmed placeholders.
+// SHIFT meanings are printed under the buttons, as on the panel. CUE/LOOP CALL ◀ ▶ are ½X and 2X (the
+// panel prints both above them); their SHIFT layers, IN ADJ / OUT ADJ and RELOOP are not in v1 and say
+// "not yet". Parts the app does not use yet (the pad modes other than HOT CUE) are dimmed placeholders.
 //
 // The FLX4 has no MASTER TEMPO button: holding BEAT SYNC turns Master Tempo on or off, and
 // SHIFT + BEAT SYNC changes the tempo range. The screen does the same.
@@ -69,17 +70,16 @@ function HotCuePads({ deck }: { readonly deck: DeckId }) {
   );
 }
 
-/** LOOP IN (SHIFT: ½X), LOOP OUT (SHIFT: 2X) and 4 BEAT/EXIT, lit while the deck loops. */
+/** LOOP IN, LOOP OUT and 4 BEAT/EXIT, lit while the deck loops. */
 function LoopButtons({ deck }: { readonly deck: DeckId }) {
   const { session } = useController();
   const looping = useSessionValue((snapshot) => snapshot.decks[deck].loop !== null);
   const marked = useSessionValue((snapshot) => snapshot.decks[deck].loopInSec !== null);
-  const shift = useSessionValue((snapshot) => snapshot.shiftHeld[deck]);
   return (
     <div className="loop-row" role="group" aria-label={`Deck ${deck} loop`}>
       <ControlButton
         id={deckControl(deck, "loop-in")}
-        label={shift ? "½X" : "IN"}
+        label="IN"
         ariaLabel={`Deck ${deck} loop in`}
         shape="small"
         tone="loop"
@@ -93,7 +93,7 @@ function LoopButtons({ deck }: { readonly deck: DeckId }) {
       />
       <ControlButton
         id={deckControl(deck, "loop-out")}
-        label={shift ? "2X" : "OUT"}
+        label="OUT"
         ariaLabel={`Deck ${deck} loop out`}
         shape="small"
         tone="loop"
@@ -122,15 +122,37 @@ function LoopButtons({ deck }: { readonly deck: DeckId }) {
   );
 }
 
-/** CUE/LOOP CALL ◀ ▶: not in the app yet. */
-function CueLoopCall() {
+/** CUE/LOOP CALL ◀ ▶: ½X and 2X on a loop. With SHIFT (DEL, MEMORY) they say "not yet". */
+function CueLoopCall({ deck }: { readonly deck: DeckId }) {
+  const { session } = useController();
+  const button = (step: -1 | 1) => {
+    const halve = step < 0;
+    const id = deckControl(deck, halve ? "loop-halve" : "loop-double");
+    return (
+      <ControlButton
+        id={id}
+        label={halve ? "◀" : "▶"}
+        topLabel={halve ? "½X" : "2X"}
+        shiftLabel={halve ? "DEL" : "MEMORY"}
+        ariaLabel={`Deck ${deck} loop ${halve ? "½X" : "2X"}`}
+        className="arrow"
+        shape="small"
+        tone="loop"
+        keyHint={keyHintFor(id)}
+        captionSide="below"
+        onPress={(input) => {
+          session.loopCall(deck, step, false, input);
+        }}
+      />
+    );
+  };
   return (
-    <div className="cue-loop-call" aria-hidden="true">
+    <div className="cue-loop-call" role="group" aria-label={`Deck ${deck} CUE/LOOP CALL`}>
       <span className="top-label">CUE/LOOP CALL</span>
       <div className="cue-loop-call-buttons">
-        <PlaceholderButton label="◀" shiftLabel="DEL" topLabel="½X" className="arrow" />
+        {button(-1)}
         <span className="loop-word">LOOP</span>
-        <PlaceholderButton label="▶" shiftLabel="MEMORY" topLabel="2X" className="arrow" />
+        {button(1)}
       </div>
     </div>
   );
@@ -200,7 +222,7 @@ function DeckTop({ deck }: { readonly deck: DeckId }) {
   return (
     <div className="deck-top">
       <LoopButtons deck={deck} />
-      <CueLoopCall />
+      <CueLoopCall deck={deck} />
       <SyncButton deck={deck} />
     </div>
   );

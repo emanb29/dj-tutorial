@@ -778,17 +778,13 @@
   gap: 2px;
 }
 
-.cue-loop-call > .top-label {
-  opacity: 0.45;
-}
-
 .cue-loop-call-buttons {
   display: flex;
   align-items: flex-end;
   gap: 4px;
 }
 
-.placeholder.arrow .hw-button {
+.arrow .hw-button {
   width: 28px;
   min-width: 28px;
   height: 28px;
@@ -1422,6 +1418,11 @@
   .sync-button .hw-button {
     min-width: 44px;
   }
+  .arrow .hw-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
   .crossfader .fader-hit {
     height: 48px;
   }
@@ -1465,8 +1466,8 @@
   .deck-shift {
     justify-self: start;
   }
-  .deck-top .cue-loop-call {
-    display: none;
+  .deck-top {
+    flex-wrap: wrap;
   }
   .tempo-column {
     width: 52px;
@@ -1559,10 +1560,14 @@
 
   .placeholder,
   .mixer-load,
-  .cue-loop-call,
+  .loop-word,
   .shift-label,
   .top-label {
     display: none;
+  }
+  /* CUE/LOOP CALL keeps what the arrows do: ½X and 2X. */
+  .cue-loop-call .arrow > .top-label {
+    display: block;
   }
 
   .controller-display > .deck-readout.deck-A {

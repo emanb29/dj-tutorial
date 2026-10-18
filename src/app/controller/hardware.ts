@@ -14,8 +14,9 @@
 // - LOAD = Enter (into the Check / again), SHIFT + LOAD = P (practice), SHIFT + BROWSE press = R (Ready):
 //   pressed as the Lesson keys, so Lessons have one path for them.
 //
-// - LOOP IN (SHIFT: ½X), LOOP OUT (SHIFT: 2X) and 4 BEAT/EXIT, as the on-screen loop buttons; LOOP IN
-//   lights while an in point waits for OUT, LOOP OUT while the deck loops.
+// - LOOP IN, LOOP OUT, 4 BEAT/EXIT and CUE/LOOP CALL ◀ / ▶ (½X / 2X), as the on-screen loop buttons;
+//   LOOP IN lights while an in point waits for OUT, LOOP OUT while the deck loops. Their SHIFT layers
+//   (IN ADJ, OUT ADJ, RELOOP, cue delete, memory) are out of v1 and refused.
 // - Beat FX: ON/OFF (its LED shows it), BEAT ◀/▶ (SHIFT: AUTO / TAP, the echo's tempo), LEVEL/DEPTH, and the CH SELECT lever (CH1 = deck A,
 //   CH2 = deck B, CH1&CH2 = MASTER, the one place both channels go through). FX SELECT stays on ECHO, the
 //   only effect in v1; 4 BEAT/EXIT's SHIFT layer (RELOOP) and the pad modes other than HOT CUE are out
@@ -350,11 +351,20 @@ export class HardwareBridge {
         if (this.unlockedOrRefuse(deckControl(deck, "headphone-cue"))) this.session.toggle(deck, "headphone-cue", timed);
         return;
       case "loop-in":
+        // SHIFT + LOOP IN is IN ADJ on the FLX4: not in v1 (the session refuses it).
         if (this.unlockedOrRefuse(deckControl(deck, "loop-in"))) this.session.loopIn(deck, input.shift, timed);
         return;
       case "loop-out":
+        // SHIFT + LOOP OUT is OUT ADJ: not in v1.
         if (this.unlockedOrRefuse(deckControl(deck, "loop-out"))) this.session.loopOut(deck, input.shift, timed);
         return;
+      case "call-back":
+      case "call-forward": {
+        // CUE/LOOP CALL ◀ / ▶ are ½X / 2X; with SHIFT (cue delete, memory) not in v1.
+        const halve = input.control === "call-back";
+        if (this.unlockedOrRefuse(deckControl(deck, halve ? "loop-halve" : "loop-double"))) this.session.loopCall(deck, halve ? -1 : 1, input.shift, timed);
+        return;
+      }
       case "loop-exit":
         // SHIFT + 4 BEAT/EXIT is RELOOP on the FLX4: not in v1.
         if (input.shift) this.session.refuse(deckControl(deck, "loop-exit"));

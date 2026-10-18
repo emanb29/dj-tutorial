@@ -92,6 +92,7 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   await expect(caption(page)).toContainText("Press G: a 4-beat loop");
   await page.keyboard.press("KeyG");
   await expect(caption(page)).toContainText("Press G again: EXIT");
+  await expect(caption(page)).toContainText("Press G again: EXIT");
   await page.keyboard.press("KeyG");
   await expect(caption(page)).toContainText("LOOP IN on a 1 (D)");
   await page.keyboard.press("KeyD");
@@ -99,6 +100,24 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   await page.waitForTimeout(600);
   await page.keyboard.press("KeyF");
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
+
+  // In practice, every loop control is open. On a 4 BEAT loop, ½X (5, CUE/LOOP CALL ◀) halves it and 2X
+  // (on screen, ▶) doubles it back. Shift + D is the FLX4's IN ADJ, not in v1: "not yet", the loop stays.
+  const loopSec = async () =>
+    page.evaluate(() => {
+      const loop = (window as LessonWindow).learnToDjLesson?.engine.deckState("A").loop;
+      return loop === null || loop === undefined ? null : loop.end - loop.start;
+    });
+  if ((await loopSec()) === null) await page.keyboard.press("KeyG");
+  await expect.poll(loopSec).not.toBeNull();
+  const startSec = (await loopSec()) ?? 0;
+  await page.keyboard.press("Digit5");
+  await expect.poll(loopSec).toBeCloseTo(startSec / 2, 3);
+  await page.getByRole("button", { name: "Deck A loop 2X" }).click();
+  await expect.poll(loopSec).toBeCloseTo(startSec, 3);
+  await page.keyboard.press("Shift+KeyD");
+  await expect(page.locator('[data-control="A.loop-in"] .not-yet')).toBeVisible();
+  expect(await loopSec()).toBeCloseTo(startSec, 3);
 
   // A from bar 61 (beat 240); LOOP IN on the outro's phrase start (bar 65, beat 256), LOOP OUT 4 bars on (beat 272).
   await page.keyboard.press("Enter");

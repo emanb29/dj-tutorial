@@ -272,12 +272,15 @@ describe("buttons go through the session as midi input, at the message's time", 
     expect(sent).toEqual([]);
   });
 
-  it("LOOP IN, LOOP OUT and 4 BEAT/EXIT drive the deck's loop, with SHIFT for ½X and 2X", () => {
+  it("LOOP IN, LOOP OUT, CUE/LOOP CALL ◀ / ▶ (½X / 2X) and 4 BEAT/EXIT drive the deck's loop", () => {
     const { port, sent } = rig();
     port.midi([0x90, 0x10, 0x7f], 100);
     port.midi([0x90, 0x11, 0x7f], 200);
-    port.midi([0x90, 0x4c, 0x7f]);
-    port.midi([0x90, 0x4e, 0x7f]);
+    port.midi([0x90, 0x51, 0x7f], 300);
+    port.midi([0x90, 0x51, 0x00], 310);
+    port.midi([0x90, 0x53, 0x7f], 400);
+    port.midi([0x91, 0x53, 0x7f]);
+    port.midi([0x91, 0x51, 0x7f]);
     port.midi([0x91, 0x4d, 0x7f]);
     port.midi([0x91, 0x4d, 0x7f]);
     expect(commands(sent)).toEqual([
@@ -285,10 +288,32 @@ describe("buttons go through the session as midi input, at the message's time", 
       { control: "loop-out", deck: "A" },
       { control: "loop-halve", deck: "A" },
       { control: "loop-double", deck: "A" },
+      { control: "loop-double", deck: "B" },
+      { control: "loop-halve", deck: "B" },
       { control: "loop-auto", deck: "B", value: 4 },
       { control: "loop-exit", deck: "B" },
     ]);
     expect(sent[0]?.input).toEqual({ device: "midi", eventTimeMs: 100, gestureEnd: true });
+    expect(sent[2]?.input).toEqual({ device: "midi", eventTimeMs: 300, gestureEnd: true });
+  });
+
+  it.each([
+    ["SHIFT + LOOP IN (IN ADJ)", [0x90, 0x4c, 0x7f], "A.loop-in"],
+    ["SHIFT + LOOP OUT (OUT ADJ)", [0x91, 0x4e, 0x7f], "B.loop-out"],
+    ["SHIFT + CUE/LOOP CALL ◀ (cue delete)", [0x90, 0x3e, 0x7f], "A.loop-halve"],
+    ["SHIFT + CUE/LOOP CALL ▶ (memory)", [0x91, 0x3d, 0x7f], "B.loop-double"],
+  ] as const)("refuses %s: not in v1, the screen says not yet", (_name, bytes, control) => {
+    const { port, sent, session } = rig();
+    port.midi([...bytes]);
+    expect(sent).toEqual([]);
+    expect(session.snapshot().notYet).toBe(control);
+  });
+
+  it("refuses CUE/LOOP CALL while the loop Lesson has not unlocked ½X and 2X", () => {
+    const { port, sent, session } = rig(new Set<ControlId>(["A.loop-in", "A.loop-out", "A.loop-exit"]));
+    port.midi([0x90, 0x51, 0x7f]);
+    expect(sent).toEqual([]);
+    expect(session.snapshot().notYet).toBe("A.loop-halve");
   });
 
   it("refuses SHIFT + 4 BEAT/EXIT (RELOOP, not in v1)", () => {

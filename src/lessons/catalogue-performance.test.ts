@@ -46,6 +46,11 @@ describe("the Lesson catalogue for Lessons 17–19", () => {
   it("reveals the pads, the loop buttons and Beat FX, each with its Lesson", () => {
     expect(unlocksAfter(["hot-cues"]).has("A.hot-cue")).toBe(true);
     expect(unlocksAfter(["loop-transition"]).has("B.loop-exit")).toBe(true);
+    // CUE/LOOP CALL ◀ / ▶ (½X / 2X) come with the loop buttons, not before.
+    for (const control of ["A.loop-halve", "A.loop-double", "B.loop-halve", "B.loop-double"] as const) {
+      expect(unlocksAfter(["hot-cues"]).has(control)).toBe(false);
+      expect(unlocksAfter(["loop-transition"]).has(control)).toBe(true);
+    }
     for (const control of ["beat-fx-select", "beat-fx-channel", "beat-fx-beat", "beat-fx-depth", "beat-fx-on"] as const) {
       expect(unlocksAfter(["hot-cues", "loop-transition"]).has(control)).toBe(false);
       expect(unlocksAfter(["echo-out"]).has(control)).toBe(true);

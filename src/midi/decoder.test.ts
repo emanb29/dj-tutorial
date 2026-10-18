@@ -48,6 +48,10 @@ describe("deck buttons (1-1 … 1-10, 3-6)", () => {
     expect(last([0x90, 0x3e, 0x7f])).toMatchObject({ control: "call-back", shift: true });
     expect(last([0x90, 0x53, 0x7f])).toMatchObject({ control: "call-forward", shift: false });
     expect(last([0x90, 0x3d, 0x7f])).toMatchObject({ control: "call-forward", shift: true });
+    // Deck B, on channel 2, and the release (note on, velocity 0).
+    expect(last([0x91, 0x51, 0x7f])).toMatchObject({ control: "call-back", deck: "B", shift: false, pressed: true });
+    expect(last([0x91, 0x53, 0x00])).toMatchObject({ control: "call-forward", deck: "B", shift: false, pressed: false });
+    expect(last([0x91, 0x3e, 0x7f])).toMatchObject({ control: "call-back", deck: "B", shift: true });
   });
 
   it("decodes the pad-mode buttons; their SHIFT layer is the second mode", () => {

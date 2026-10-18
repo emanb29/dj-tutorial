@@ -456,18 +456,30 @@ export class ControllerSession {
     this.send(command, { ...input, gestureEnd: true });
   }
 
-  /** LOOP IN; with SHIFT, ½X. */
+  /** LOOP IN. SHIFT + LOOP IN is IN ADJ on the FLX4, not in v1: it says "not yet". */
   loopIn(deck: DeckId, shift: boolean, input: CommandInput): void {
-    if (!this.isUnlocked(deckControl(deck, "loop-in"))) return;
-    const halve = shift || this.current.shiftHeld[deck];
-    this.send({ control: halve ? "loop-halve" : "loop-in", deck }, { ...input, gestureEnd: true });
+    this.shiftRefusedOrSend(deck, deckControl(deck, "loop-in"), shift, { control: "loop-in", deck }, input);
   }
 
-  /** LOOP OUT; with SHIFT, 2X. */
+  /** LOOP OUT. SHIFT + LOOP OUT is OUT ADJ on the FLX4, not in v1: it says "not yet". */
   loopOut(deck: DeckId, shift: boolean, input: CommandInput): void {
-    if (!this.isUnlocked(deckControl(deck, "loop-out"))) return;
-    const double = shift || this.current.shiftHeld[deck];
-    this.send({ control: double ? "loop-double" : "loop-out", deck }, { ...input, gestureEnd: true });
+    this.shiftRefusedOrSend(deck, deckControl(deck, "loop-out"), shift, { control: "loop-out", deck }, input);
+  }
+
+  /**
+   * CUE/LOOP CALL ◀ (`step` -1) is ½X, ▶ (+1) is 2X. With SHIFT they are cue delete and memory on the
+   * FLX4, not in v1: they say "not yet".
+   */
+  loopCall(deck: DeckId, step: -1 | 1, shift: boolean, input: CommandInput): void {
+    const halve = step < 0;
+    this.shiftRefusedOrSend(deck, deckControl(deck, halve ? "loop-halve" : "loop-double"), shift, { control: halve ? "loop-halve" : "loop-double", deck }, input);
+  }
+
+  /** A loop button's press: nothing while locked, "not yet" for its SHIFT layer, else the command. */
+  private shiftRefusedOrSend(deck: DeckId, control: ControlId, shift: boolean, command: EngineCommand, input: CommandInput): void {
+    if (!this.isUnlocked(control)) return;
+    if (shift || this.current.shiftHeld[deck]) this.refuse(control);
+    else this.send(command, { ...input, gestureEnd: true });
   }
 
   /** 4 BEAT/EXIT: out of a loop playing now, else a 4-beat loop on the grid. */
@@ -645,6 +657,9 @@ export class ControllerSession {
         break;
       case "loop-button":
         this.loopButton(action.deck, input);
+        break;
+      case "loop-call":
+        this.loopCall(action.deck, action.step, action.shift, input);
         break;
       case "beat-fx-on":
         this.beatFxToggle(input);
