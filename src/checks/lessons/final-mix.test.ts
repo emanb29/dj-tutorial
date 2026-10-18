@@ -3,6 +3,7 @@ import type { Attempt, ControlEvent, CtxSpan, LessonId, MeterFrame, PlayheadSegm
 import type { CheckResult } from "@shared/check-result.ts";
 import { runCheck } from "../run-check.ts";
 import { BAR, BEAT, PHRASE, SILENT, attempt, channel, event, frames, grid, phraseMarkersEvery8Bars, playing, ramp, spec } from "../testing/synthetic.ts";
+import { setPlays, transitionAttempt } from "../set.ts";
 import { finalMixTransitions } from "./final-mix.ts";
 
 // A three-track set at 120 BPM (a beat is 0.5 s, a bar 2 s, a phrase 16 s):
@@ -51,6 +52,8 @@ interface SetScenario {
   readonly loadAt?: number;
   /** Leave track-3 out: a two-track set. */
   readonly twoTracks?: boolean;
+  /** Moments track-2's own audio drops under the audible line (its channel meter silent). */
+  readonly track2Gaps?: readonly CtxSpan[];
 }
 
 const channelFrames = (on: (t: number) => boolean, offsetDb = 0): MeterFrame[] =>
@@ -85,7 +88,9 @@ function setAttempt(options: SetScenario = {}): Attempt {
       master: frames(0, WINDOW.to, (t) => ({ peak: -3, momentary: masterLufs(t) })),
       A: twoTracks ? channelFrames(() => true) : channelFrames((t) => t < loadAt || t >= blendAt, options.track3OffsetDb ?? 0),
       // B's short-term loudness fills its 3 s window after B starts, as the meter's does.
-      B: frames(0, WINDOW.to, (t) => (t >= cutAt ? { peak: -3, momentary: -14, shortTerm: t < cutAt + 3 ? -20 : -14 } : SILENT)),
+      B: frames(0, WINDOW.to, (t) =>
+        t >= cutAt && !(options.track2Gaps ?? []).some((gap) => t >= gap.from && t < gap.to) ? { peak: -3, momentary: -14, shortTerm: t < cutAt + 3 ? -20 : -14 } : SILENT,
+      ),
     },
   });
 }
@@ -181,6 +186,22 @@ describe("final-mix", () => {
     expect(result.outcome).toMatchObject({ kind: "failed", failedCriteria: ["standing.drift"] });
   });
 
+  it("grades drift over a blend whose outgoing track drops out for a moment, not only over its unbroken stretches", () => {
+    // track-2 goes quiet for 0.2 s twice in the blend: no stretch of both audible is 4 bars long.
+    const gaps = [{ from: 68, to: 68.2 }, { from: 74, to: 74.2 }];
+    const drifting: PlayheadSegment[] = [
+      { fromCtx: 64, pos: 0, rate: 1 },
+      { fromCtx: 66, pos: 2, rate: 1.1 },
+      { fromCtx: 66.65, pos: 2.715, rate: 1 },
+    ];
+    const result = check({ track2Gaps: gaps, track3: drifting });
+    expect(byId(result, "final-mix.technique")?.detail).toMatchObject({ blends: 1 });
+    expect(byId(result, "standing.drift")).toMatchObject({ status: "notMet" });
+    expect(result.outcome).toMatchObject({ kind: "failed", failedCriteria: ["standing.drift"] });
+    // In phase, the same broken-up blend is one blend that holds.
+    expect(byId(check({ track2Gaps: gaps }), "standing.drift")).toMatchObject({ status: "met" });
+  });
+
   it("needs three tracks, each heard for 16 bars", () => {
     const two = check({ twoTracks: true });
     expect(byId(two, "final-mix.track-count")).toMatchObject({ status: "notMet", measured: 2 });
@@ -234,6 +255,16 @@ describe("final-mix", () => {
     for (const aid of ["sync", "quantize", "bpmDisplay", "phaseMeter"] as const) {
       expect(() => check({}, { aids: { ...EXAM_AIDS, [aid]: true } })).toThrow(new RegExp(aid));
     }
+  });
+
+  it("keeps the Beat FX the set started with in a view with the decks swapped, on the swapped channel", () => {
+    const recorded = { ...setAttempt(), initialMixer: { ...setAttempt().initialMixer, beatFx: { on: true, channel: "A" as const, beats: 1, depth: 0.7 } } };
+    const plays = setPlays({ spec: setSpec(), attempt: recorded, window: WINDOW, lessonId: "final-mix" });
+    const track2 = plays.find((play) => play.trackId === "track-2");
+    const track3 = plays.find((play) => play.trackId === "track-3");
+    if (track2 === undefined || track3 === undefined) throw new Error("the set has tracks 2 and 3");
+    // Track 2 (deck B) hands over to track 3 (deck A): the view calls B "A", so CH 1 (A) is its B.
+    expect(transitionAttempt(recorded, track2, track3).initialMixer.beatFx).toEqual({ on: true, channel: "B", beats: 1, depth: 0.7 });
   });
 
   it("voids a set with a track whose grid cannot be trusted", () => {

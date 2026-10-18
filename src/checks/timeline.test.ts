@@ -26,6 +26,18 @@ describe("playhead model", () => {
     expect(positionAt(model, 40)).toBeCloseTo(10 + 10 * 1.02);
   });
 
+  it("reads a long set's model (tens of thousands of segments) at every frame without scanning it each time", () => {
+    // A 30-minute ride on the jog and tempo: a segment every 90 ms, two at some moments (a jump).
+    const segments = Array.from({ length: 20_000 }, (_, index) => ({ fromCtx: index * 0.09, pos: index * 0.09, rate: index % 2 === 0 ? 1 : 1.01 }));
+    const long = { segments: [...segments.slice(0, 5000), { fromCtx: 450, pos: 100, rate: 1 }, ...segments.slice(5000)] };
+    expect(positionAt(long, 449.99)).toBeCloseTo(449.91 + 0.08 * 1.01, 6);
+    // Two segments at 450 s: the later one wins.
+    expect(positionAt(long, 450.05)).toBeCloseTo(450 + 0.05, 6);
+    const started = performance.now();
+    for (let frame = 0; frame < 90_000; frame += 1) positionAt(long, frame * 0.02);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("finds the first moment the deck starts playing at or after a time", () => {
     expect(firstPlayStart(model, 0)).toBe(10);
     expect(firstPlayStart(model, 11)).toBe(30);

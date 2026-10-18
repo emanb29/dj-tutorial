@@ -52,6 +52,18 @@ describe("standing criteria timed from a Play press", () => {
     expect(byId(result, "standing.on-phrase")?.measured).toBeCloseTo(0);
     expect(byId(result, "standing.cued-first")?.measured).toBeCloseTo(30);
   });
+
+  it("on-phrase reads a stopped outgoing deck where it would be had it kept playing (an echo out, then A paused)", () => {
+    // A cut on bar 15's 1 (28 s), paused a beat later as its echoes ring on; B plays on the phrase start, 32 s.
+    const scenario = cutScenario({ playB: 32, closeA: [event(28, "channelFader", 0, "A")] });
+    const pausedA = { ...scenario, decks: { ...scenario.decks, A: { trackId: "track-a", playhead: { segments: playing(0, 0, 28.5) } } } };
+    const result = graded(
+      runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { mode: "cold", passedLessons: passedBefore(LESSON_IDS, "tempo-fader") }), pausedA),
+    );
+
+    expect(byId(result, "standing.on-phrase")).toMatchObject({ status: "met" });
+    expect(byId(result, "standing.on-phrase")?.measured).toBeCloseTo(0);
+  });
 });
 
 describe("standing criteria: which apply", () => {

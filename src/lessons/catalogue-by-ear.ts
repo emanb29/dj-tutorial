@@ -256,6 +256,12 @@ const tempoByEar: LessonDefinition = {
 const BLEND_MATCH_BARS = 8;
 const BLEND_BARS = 16;
 const BLEND_TAIL_BARS = 4;
+/**
+ * A fades out after the 16 bars, not across their second half: the Check measures the blend to the
+ * first frame A is inaudible, and a channel fader is inaudible for its last ~30% of travel (−24 dB at
+ * the crossfader's centre), so a slow fade from the swap to bar 16 measured under 14 bars.
+ */
+const BLEND_FADE_BARS = 2;
 /** B against A in the Check (catalogue: ≤ 2% apart), by attempt. */
 const BLEND_CHECK_APART = [-1.1, 0.8, -1.6, 1.4] as const;
 const RIDE_DRILL: PracticeDrill = {
@@ -326,19 +332,20 @@ const blendByEar: LessonDefinition = {
         { fromPos: inPos - barsSec(track, 1), caption: "Next 1: fader B up" },
         { fromPos: inPos + beat, caption: "Both play now. Keep B in line" },
         { fromPos: swapPos - barsSec(track, 1), caption: "Next 1: swap the bass. LOW A down, LOW B up" },
-        { fromPos: swapPos + beat, caption: "Hold it together. Fader A down slowly" },
-        { fromPos: outPos - barsSec(track, 1), caption: "A all the way down just after the next 1" },
-        { fromPos: outPos + barsSec(track, 1), caption: "Let B ride. LOW A back to the middle" },
+        { fromPos: swapPos + beat, caption: "Bass swapped. Both stay up: keep B in line" },
+        { fromPos: outPos - barsSec(track, 1), caption: `Next 1: fader A down slowly, over ${String(BLEND_FADE_BARS)} bars` },
+        // A counts as gone once its fader is under about 0.3, most of the way down the fade.
+        { fromPos: outPos + barsSec(track, BLEND_FADE_BARS * 0.75), caption: "All the way down, then LOW A to the middle" },
       ],
     };
   },
   taskFor: (): LessonTask => ({ lessonId: "blend-by-ear" }),
   tips: {
-    "blend-by-ear.blend-length": ["Take the whole 16 bars: A all the way down just after the second phrase."],
+    "blend-by-ear.blend-length": [`Both up for the whole 16 bars, then fader A down over ${String(BLEND_FADE_BARS)} bars.`],
     "blend-by-ear.phase-hold": ["Match in the headphones first, before fader B comes up.", "Hear two kicks? A short nudge on jog B, then listen."],
     "blend-by-ear.swap-time": ["Swap on the 1 of the middle phrase: LOW A down, LOW B up, together."],
     "blend-by-ear.clash-short": ["Both LOWs up means two basslines: swap them in one move."],
-    "blend-by-ear.loud-steady": ["B up as A goes down: never both full."],
+    "blend-by-ear.loud-steady": ["LOW B stays down till the swap: two full basslines are too loud."],
   },
 };
 

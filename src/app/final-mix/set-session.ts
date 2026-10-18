@@ -117,6 +117,15 @@ export class SetSession {
     // The set-up level, as every Lesson's: TRIM brings the track's peak down to SET_UP_PEAK_DB, so a set never starts in the red.
     const peakDbfs = peakDbfsOf(Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel)));
     this.send({ control: "trim", deck, value: setUpTrim({ ...prepared, peakDbfs }) });
+    // Auto cue, as DJ software loads a track: paused on its bar 1 (the first phrase start the Learner
+    // confirmed in track prep), its cue point there. Play from 0 would start a track with a lead-in off
+    // its own phrase, which on-phrase fails.
+    const barOne = prepared.phraseStarts[0];
+    if (barOne !== undefined && barOne > 0) {
+      this.send({ control: "seek", deck, value: barOne });
+      this.send({ control: "deck-cue", deck, value: true });
+      this.send({ control: "deck-cue", deck, value: false });
+    }
     this.played.push({ entry: track.entry, deck });
   }
 

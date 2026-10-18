@@ -136,6 +136,11 @@ interface RunningCheck {
   /** hot-cues: the stop deck A waits at (index into plan.stops), and whether a pad was set there. */
   stop: number;
   stopSet: boolean;
+  /**
+   * performance.now() when the Check's audio part proper began: at the start, or after the last stop.
+   * `plan.timeoutSec` counts from here; the stops have their own `plan.stopsTimeoutSec`.
+   */
+  playingFromMs: number | null;
   /** Steps of plan.stepCues done so far, in order. */
   steps: number;
   /** How often the `did-then` end's action happened, and when it last did (performance.now()). */
@@ -258,6 +263,9 @@ export class LessonSession {
   private progress(observation: Observation): void {
     const check = this.check;
     if (check?.stopped !== null) return;
+    if (observation.kind === "hot-cue-set") check.stopSet = true;
+    // At the stops the Learner sets pads (and may press one to hear it): that is not the Check's playing yet.
+    if (check.playingFromMs === null) return;
     const done = (trigger: HookTrigger) => triggerStep(trigger, observation) === 1;
     const step = check.plan.stepCues?.[check.steps];
     if (step !== undefined && done(step.after)) check.steps += 1;
@@ -266,7 +274,6 @@ export class LessonSession {
       check.did += 1;
       check.didAtMs = performance.now();
     }
-    if (observation.kind === "hot-cue-set") check.stopSet = true;
   }
 
   private onCommand(event: CommandEvent): void {
@@ -823,13 +830,14 @@ export class LessonSession {
     const firstStop = plan.stops?.[0];
     const decks: DeckSetups = firstStop === undefined ? planned : { ...planned, A: { ...planned.A, pos: firstStop, play: false } };
     if (plan.slices === undefined) this.cueDecks(decks);
-    const started = this.recorder.start({ expectedDurationSec: plan.timeoutSec + 30, allowTrackChanges: plan.slices !== undefined });
+    const started = this.recorder.start({ expectedDurationSec: plan.timeoutSec + (plan.stopsTimeoutSec ?? 0) + 30, allowTrackChanges: plan.slices !== undefined });
     if (!started.ok) {
       console.warn("[lesson] the recorder did not start", started.error);
       this.listener.checkFailed(`The attempt could not be recorded (${started.error.kind}). Try again with Enter.`);
       return;
     }
-    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null, cueCtx: this.engine.context.currentTime, stop: 0, stopSet: false, steps: 0, did: 0, didAtMs: null, farTapUntilPos: null };
+    const startedMs = performance.now();
+    const check: RunningCheck = { plan, startedMs, readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null, cueCtx: this.engine.context.currentTime, stop: 0, stopSet: false, playingFromMs: firstStop === undefined ? startedMs : null, steps: 0, did: 0, didAtMs: null, farTapUntilPos: null };
     this.check = check;
     this.faderWasUp = false;
     this.playDecks(decks);
@@ -849,10 +857,18 @@ export class LessonSession {
     return heard.ok && heard.ctx >= check.cueCtx + CUE_SETTLE_SEC;
   }
 
+  /** Past the Check's hard stop: the stops' own time while A waits at them, then `timeoutSec` from the playing. */
+  private timedOut(check: RunningCheck): boolean {
+    const { plan } = check;
+    const now = performance.now();
+    if (check.playingFromMs === null) return now - check.startedMs > (plan.stopsTimeoutSec ?? plan.timeoutSec) * 1000;
+    return now - check.playingFromMs > plan.timeoutSec * 1000;
+  }
+
   private ended(check: RunningCheck): boolean {
     const { plan } = check;
     const elapsedMs = performance.now() - check.startedMs;
-    if (elapsedMs > plan.timeoutSec * 1000) return true;
+    if (this.timedOut(check)) return true;
     const end = plan.endWhen;
     switch (end.kind) {
       case "faded-out":
@@ -967,6 +983,7 @@ export class LessonSession {
     check.stop += 1;
     check.stopSet = false;
     const next = stops[check.stop];
+    if (next === undefined) check.playingFromMs = performance.now();
     this.settingUpWith(() => {
       this.send({ control: "pause", deck: "A" });
       this.send({ control: "seek", deck: "A", value: next ?? check.plan.startPos });
@@ -1003,7 +1020,7 @@ export class LessonSession {
     this.settingUpWith(() => {
       for (const deck of DECKS) if (this.onDeck[deck] !== null) this.send({ control: "pause", deck });
     });
-    const timedOut = performance.now() - check.startedMs > check.plan.timeoutSec * 1000;
+    const timedOut = this.timedOut(check);
     // The attempt ends with its audio: answering questions afterwards is not part of it.
     check.stopped = this.recorder.stop({
       attemptId: crypto.randomUUID(),
@@ -1143,6 +1160,11 @@ export class LessonSession {
     this.settingUpWith(() => {
       if (this.onDeck[clip.deck] !== null) this.send({ control: "pause", deck: clip.deck });
     });
+  }
+
+  /** The plan of the Check running now (it varies by attempt), or null. */
+  runningPlan(): CheckPlan | null {
+    return this.check?.plan ?? null;
   }
 
   /** The live caption for the stretch of the Check the deck is in now. */

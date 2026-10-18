@@ -3,7 +3,7 @@
 // player (src/app/lesson) runs Lessons 1–19, which each have one fixed track and plan; a set has the
 // Learner's own tracks and its own session (set-session.ts).
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { createAudioEngine, SplitCueMonitor, type AudioEngine } from "@audio";
+import { createAudioEngine, type AudioEngine } from "@audio";
 import { applyCheckResult } from "@checks";
 import { FINAL_MIX, finalMixMode, gradedLine, setEntry, setNotesText, type LessonTrack } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
@@ -11,6 +11,7 @@ import type { CheckResult } from "@shared/check-result.ts";
 import { withFinalProject, withRekordboxChoice, withSkillProfile, type FinalProject, type RekordboxCardChoice, type LearnerRecord } from "@shared/learner.ts";
 import { ALL_CONTROL_IDS, Controller, inputWording, useWording, type ControlId } from "../controller/index.ts";
 import type { TrackPreference } from "../lesson/track-loader.ts";
+import { currentOutputPlan } from "../audio-output.ts";
 import type { SaveStatus } from "../save-queue.ts";
 import { keepFinalProjectAudio } from "./api.ts";
 import { listLibrary, type Library, type LibraryItem } from "./library.ts";
@@ -99,7 +100,10 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
     };
     void (async () => {
       try {
-        created = await createAudioEngine({ masterTempo: true, monitor: new SplitCueMonitor() });
+        // The Learner's output (Controller page), as every Lesson plays it: split cue, through the FLX4, or two devices.
+        const plan = await currentOutputPlan();
+        if (cancelled()) return;
+        created = await createAudioEngine({ masterTempo: true, output: { plan, headphones: true } });
         if (cancelled()) return;
         setPhase({ kind: "starting", status: "Opening your library…" });
         const listed = await listLibrary(trackPreference, created.context.sampleRate, controller.signal);

@@ -329,8 +329,10 @@ export interface CheckPlan {
   readonly clips?: Readonly<Record<string, ListeningClip>>;
   /** When the audio part ends by itself. */
   readonly endWhen: CheckEnd;
-  /** Hard stop for the audio part, seconds after the Check starts. */
+  /** Hard stop for the audio part, seconds after the Check starts (with `stops`, after the last one). */
   readonly timeoutSec: number;
+  /** hot-cues: how long the Learner may take at the `stops` before the Check stops (A is paused there). */
+  readonly stopsTimeoutSec?: number;
   /** Live caption per stretch of the attempt, by track position (e.g. "every beat" → "only the 1"). */
   readonly cues: readonly PositionCue[];
   /** Live caption by the number of Ready presses so far (overrides `cues` until every one is used, or always without `cues`). */

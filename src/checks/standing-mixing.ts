@@ -1,13 +1,13 @@
 // Standing criteria taught in Lessons 9–16 (check-design §3): controls-reset, sync-kept, one-bass,
 // drift and overcorrect. Registered, with their teaching Lessons and severities, in standing.ts.
-import type { CtxSpan, CtxTime, DeckId } from "@shared/attempt.ts";
+import type { CtxTime, DeckId } from "@shared/attempt.ts";
 import type { CriterionResult, Severity } from "@shared/check-result.ts";
-import { blendPhaseHold, clashSpans, spansSeconds } from "./blend.ts";
+import { blendPhaseHold, blendSpans, clashSpans, spansSeconds } from "./blend.ts";
 import { barSeconds, loadedDeck, type CheckContext } from "./context.ts";
 import { judge, notApplicable } from "./criterion.ts";
 import { deckControlChanges, filterAt, isSyncedAt } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
-import { audibleSpans, overlapSpans } from "./mix.ts";
+import { openSpans } from "./mix.ts";
 import { overcorrection } from "./overcorrect.ts";
 import { echoingAt, fxTailEnd } from "./performance.ts";
 import { EQ_BANDS } from "./lessons/eq-basics.ts";
@@ -16,8 +16,6 @@ import { controlEvents, controlValueAt } from "./timeline.ts";
 
 const DECKS: readonly DeckId[] = ["A", "B"];
 const EQ_CENTRED_DB = 1;
-/** A blend is an overlap of at least 4 bars (check-design §5.1); shorter overlaps are cuts or unclassified. */
-const BLEND_MIN_BARS = 4;
 
 /** Which parts of `controls-reset` apply: each is taught by its own Lesson. */
 export interface ResetParts {
@@ -28,7 +26,7 @@ export interface ResetParts {
 }
 
 /**
- * `controls-reset`: within 1 bar of a deck going silent (the end of each audible span before the
+ * `controls-reset`: within 1 bar of a deck going silent (the end of each open span, `openSpans`, before the
  * window ends), its EQs are within ±1 dB and its CFX within ±5% of centre. Measured: the slowest
  * reset, in bars. The FX part counts from where the deck's echoes die out instead (FX return under
  * −50 LUFS), since an echo out rings on after the deck goes silent by design: within 1 bar of that,
@@ -54,7 +52,8 @@ export function controlsReset(context: CheckContext, severity: Severity, parts: 
         .sort((a, b) => a - b);
     const fxMoves = (from: CtxTime) =>
       attempt.events.filter((event) => (event.control === "beatFx" || event.control === "beatFxChannel") && event.ctx > from && event.ctx < window.to).map((event) => event.ctx);
-    return audibleSpans(attempt, deck, window)
+    // Going silent is the Learner taking the deck out: a filter or EQ that thins it out is not that.
+    return openSpans(attempt, deck, window)
       .filter((span) => span.to < window.to - TIME_EPSILON)
       .map((span) => {
         const silentAt = span.to;
@@ -103,13 +102,7 @@ export function syncKept(context: CheckContext, severity: Severity): CriterionRe
   });
 }
 
-/** Overlap spans of at least 4 bars: the blends. */
-function blends(context: CheckContext): CtxSpan[] {
-  const master = loadedDeck(context, "A");
-  return overlapSpans(context.attempt, context.window).filter(
-    (span) => master !== null && span.to - span.from >= BLEND_MIN_BARS * barSeconds(master, span.from) - TIME_EPSILON,
-  );
-}
+const blends = blendSpans;
 
 /** `one-bass`: bass clash `≤ 1 beat` in every blend. Measured: the worst blend, in beats. */
 export function oneBass(context: CheckContext, severity: Severity): CriterionResult {

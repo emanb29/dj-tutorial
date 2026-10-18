@@ -44,6 +44,7 @@ import { LessonSession } from "./lesson-session.ts";
 import { PhraseCounter } from "./PhraseCounter.tsx";
 import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
 import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
+import { practiceSetUp } from "./practice-set-up.ts";
 import { ResultCard } from "./ResultCard.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
 import "./lesson.css";
@@ -328,10 +329,12 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 
   // Deck set-up follows the phase: practice cues the deck, each Check attempt auto-jumps and records.
   const inPractice = phase.kind === "hook" || phase.kind === "practice";
+  // A by-ear drill (Lessons 14–16) starts its own rounds from the set-up, and its last hook step shows a reveal a re-cue would cut off.
+  const setUp = practiceSetUp(phase.kind, session?.deckTrack("B") != null && definition.drill === undefined);
   const attempt = phase.kind === "check" ? phase.attempt : null;
   useEffect(() => {
-    if (session !== null && inPractice) session.preparePractice();
-  }, [session, inPractice]);
+    if (session !== null && setUp !== null) session.preparePractice();
+  }, [session, setUp]);
   useEffect(() => {
     if (session === null || attempt === null) return;
     setTaps([]);

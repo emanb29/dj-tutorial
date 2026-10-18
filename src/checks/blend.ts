@@ -129,6 +129,28 @@ export function loudSteady(id: CriterionId, context: CheckContext, move: Handove
   });
 }
 
+/** A blend is an overlap of at least 4 bars (check-design §5.1); shorter overlaps are cuts or unclassified. */
+export const BLEND_MIN_BARS = 4;
+/** Overlap spans this close together are one blend: a deck dropping under the audible line for a moment does not end it. */
+const BLEND_GAP_BARS = 1;
+
+/**
+ * The blends in the window: the overlap spans, those less than a bar apart joined into one (a
+ * breakdown's silent beat, a fader dipped, a filter that thins a deck out), kept when at least 4 bars
+ * long, in bars of the master deck.
+ */
+export function blendSpans(context: CheckContext): CtxSpan[] {
+  const master = loadedDeck(context, "A");
+  if (master === null) return [];
+  const joined = overlapSpans(context.attempt, context.window).reduce<CtxSpan[]>((spans, span) => {
+    const last = spans.at(-1);
+    if (last !== undefined && span.from - last.to < BLEND_GAP_BARS * barSeconds(master, last.to)) spans[spans.length - 1] = { from: last.from, to: span.to };
+    else spans.push(span);
+    return spans;
+  }, []);
+  return joined.filter((span) => span.to - span.from >= BLEND_MIN_BARS * barSeconds(master, span.from) - TIME_EPSILON);
+}
+
 /** Trim events on either deck while both are audible. */
 export function trimMovesInOverlap(context: CheckContext, span: CtxSpan = context.window) {
   return overlapSpans(context.attempt, span).flatMap((overlap) =>

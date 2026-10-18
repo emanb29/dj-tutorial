@@ -72,8 +72,10 @@ const hotCues: LessonDefinition = {
       deckA: { hotCues: EMPTY_PADS },
       stops: pads.map((phrase, index) => phraseStart(track.grid, phrase) - (STOP_LEADS_BEATS[index] ?? 1) * beat),
       endWhen: { kind: "did-then", what: { kind: "hot-cue-trigger" }, count: pads.length, bars: HOT_CUE_TAIL_BARS },
-      // Up to a minute to set the pads, then the lead, two phrases and the tail.
-      timeoutSec: 60 + barsSec(track, HOT_CUE_LEAD_BARS + 16 + HOT_CUE_TAIL_BARS) + 5,
+      // Two minutes to set the pads by ear (as cue-point's three cue points); then, from the last Ready,
+      // the lead, two phrases and the tail.
+      stopsTimeoutSec: 120,
+      timeoutSec: barsSec(track, HOT_CUE_LEAD_BARS + 16 + HOT_CUE_TAIL_BARS) + 5,
       readyCues: [
         "Pad 1: jog to this phrase's 1 (hold Z to check), Press 1, then R",
         "Pad 2: jog to the 1, Press 2, then R",

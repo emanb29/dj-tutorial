@@ -11,19 +11,38 @@ import type {
 } from "@shared/attempt.ts";
 import { at, TIME_EPSILON } from "./measures.ts";
 
+/**
+ * The segment playing at `t`: the last one starting at or before it. Segments are in time order; a
+ * binary search, since a long set rides the tempo and jog into tens of thousands of segments and a
+ * Check asks at every 50 Hz frame.
+ */
 function segmentAt(model: PlayheadModel, t: CtxTime): PlayheadSegment | null {
-  let found: PlayheadSegment | null = null;
-  for (const segment of model.segments) {
-    if (segment.fromCtx > t + TIME_EPSILON) break;
-    found = segment;
+  const { segments } = model;
+  let low = 0;
+  let high = segments.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if ((segments[middle]?.fromCtx ?? Infinity) <= t + TIME_EPSILON) low = middle + 1;
+    else high = middle;
   }
-  return found;
+  return low === 0 ? null : (segments[low - 1] ?? null);
 }
 
 /** Track seconds at heard time `t`; `null` before the deck first starts. */
 export function positionAt(model: PlayheadModel, t: CtxTime): number | null {
   const segment = segmentAt(model, t);
   return segment === null ? null : segment.pos + segment.rate * (t - segment.fromCtx);
+}
+
+/**
+ * Where the deck would be at `t` had it kept playing: its position while it plays; once stopped, run
+ * on from its last playing segment at that segment's rate (an echo out pauses A and counts on through
+ * the echoes). `null` before it ever played.
+ */
+export function positionPlayedOn(model: PlayheadModel, t: CtxTime): number | null {
+  if (isPlaying(model, t)) return positionAt(model, t);
+  const last = model.segments.filter((segment) => segment.rate > 0 && segment.fromCtx <= t + TIME_EPSILON).at(-1);
+  return last === undefined ? null : last.pos + last.rate * (t - last.fromCtx);
 }
 
 export function rateAt(model: PlayheadModel, t: CtxTime): number {

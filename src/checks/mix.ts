@@ -119,6 +119,37 @@ export function audibleSpans(attempt: Attempt, deck: DeckId, window: CtxSpan): C
   return spans;
 }
 
+/**
+ * Maximal spans in which the deck is open to the master: playing, with its channel gain above the
+ * audible line, whatever its own loudness (on the master meter's frame clock). A deck high-passed or
+ * EQ'd down to a whisper is still in the mix until the Learner takes it out.
+ */
+export function openSpans(attempt: Attempt, deck: DeckId, window: CtxSpan): CtxSpan[] {
+  const open = (t: CtxTime) => deckTracks(attempt.decks[deck]).some((track) => isPlaying(track.playhead, t)) && channelGainDb(attempt, deck, t) > AUDIBLE_GAIN_DB;
+  const spans: CtxSpan[] = [];
+  let openedAt: CtxTime | null = null;
+  for (const frame of framesIn(attempt.meters.master, window)) {
+    if (open(frame.ctx) && openedAt === null) openedAt = frame.ctx;
+    if (!open(frame.ctx) && openedAt !== null) {
+      spans.push({ from: openedAt, to: frame.ctx });
+      openedAt = null;
+    }
+  }
+  if (openedAt !== null) spans.push({ from: openedAt, to: window.to });
+  return spans;
+}
+
+/**
+ * When the Learner took the deck out for good: the first frame of the last stretch, to the window's
+ * end, in which it is stopped or its fader (or the crossfader) is below the audible line. Unlike `t_out`
+ * it ignores the deck's own loudness, so a filter or EQ that thins it out is not its exit. Null while
+ * it is still open at the end.
+ */
+export function takenOutTime(attempt: Attempt, deck: DeckId, window: CtxSpan): CtxTime | null {
+  const last = openSpans(attempt, deck, window).at(-1);
+  return last === undefined || last.to >= window.to - TIME_EPSILON ? null : last.to;
+}
+
 /** Spans in which both decks are audible (`overlap`). */
 export function overlapSpans(attempt: Attempt, window: CtxSpan): CtxSpan[] {
   const bSpans = audibleSpans(attempt, "B", window);

@@ -70,6 +70,19 @@ describe("filter-transition", () => {
     expect(byId(check(dip), "filter-transition.filter-length")?.measured).toBeCloseTo(8);
   });
 
+  it("times A's exit from its fader, not from the high-pass thinning A under the audible line first", () => {
+    // A real track high-passed past ~60% (a 1 kHz cutoff and up) can read under −40 LUFS on its channel
+    // meter, which is after the filter, well before the Learner closes the fader at 56 s.
+    const result = runCheck(
+      spec({ lessonId: "filter-transition" }, BLEND_WINDOW, { aids: { ...LESSON_AIDS, sync: true } }),
+      blendScenario({ extraEvents: sweep(), aLevels: (t) => (t >= 46 ? { peak: -30, momentary: -45 } : { peak: -3, momentary: -14 }) }),
+    );
+    if (!("criteria" in result)) throw new Error("expected a graded result");
+    expect(result.outcome).toEqual({ kind: "passed" });
+    expect(byId(result, "filter-transition.filter-length")?.measured).toBeCloseTo(8);
+    expect(byId(result, "filter-transition.cfx-back")?.measured).toBeCloseTo(0.5);
+  });
+
   it("measures depth, length and reset from the first frame A is not audible, not from the start of its fader drag", () => {
     // A's fader dragged down at 50 Hz from 52 s; it drops under −24 dB at 56 s (at 0.3 on the fader: the
     // crossfader's centre is −3 dB). The sweep reaches 0.75 at 55 s.

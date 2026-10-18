@@ -9,7 +9,7 @@ import { barSeconds, loadedDeck, type CheckContext, type LoadedDeck } from "./co
 import type { GradedAttempt } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { audibleSpans, overlapSpans } from "./mix.ts";
-import { spansSeconds } from "./blend.ts";
+import { BLEND_MIN_BARS, blendSpans, spansSeconds } from "./blend.ts";
 
 /** One track's stay on a deck, inside the grading window. */
 export interface Play {
@@ -22,10 +22,10 @@ export interface Play {
   readonly audible: readonly CtxSpan[];
 }
 
-/** Overlap classes (check-design §5.1): a cut is under 2 beats, a blend at least 4 bars. */
+/** Overlap classes (check-design §5.1): a cut is under 2 beats, a blend at least 4 bars (`blendSpans`). */
 export type TransitionKind = "cut" | "blend" | "unclassified";
 export const CUT_MAX_BEATS = 2;
-export const BLEND_MIN_BARS = 4;
+export { BLEND_MIN_BARS };
 
 export interface SetTransition {
   /** 1 for the hand-over from the first track to the second. */
@@ -96,7 +96,15 @@ export function transitionAttempt(attempt: GradedAttempt, outgoing: Play, incomi
     decks: { ...(decks.decks.B === undefined ? {} : { A: decks.decks.B }), ...(decks.decks.A === undefined ? {} : { B: decks.decks.A }) },
     meters: { ...buses, ...(meterB === undefined ? {} : { A: meterB }), ...(meterA === undefined ? {} : { B: meterA }) },
     cuePoints: decks.cuePoints.map((cue) => ({ ...cue, deck: other(cue.deck) })),
-    initialMixer: { A: decks.initialMixer.B, B: decks.initialMixer.A, crossfader: 1 - decks.initialMixer.crossfader },
+    initialMixer: {
+      ...decks.initialMixer,
+      A: decks.initialMixer.B,
+      B: decks.initialMixer.A,
+      crossfader: 1 - decks.initialMixer.crossfader,
+      ...(decks.initialMixer.beatFx === undefined
+        ? {}
+        : { beatFx: { ...decks.initialMixer.beatFx, channel: decks.initialMixer.beatFx.channel === "master" ? "master" : other(decks.initialMixer.beatFx.channel) } }),
+    },
     initialDecks: { A: decks.initialDecks.B, B: decks.initialDecks.A },
   };
 }
@@ -131,8 +139,8 @@ export function setTransitions(context: CheckContext): SetTransition[] {
     if (inAt === undefined || master === null) return;
     const overlapS = spansSeconds(overlapSpans(attempt, window));
     const beat = beatSecondsOf(master, inAt);
-    const kind: TransitionKind =
-      overlapS < CUT_MAX_BEATS * beat - TIME_EPSILON ? "cut" : overlapS >= BLEND_MIN_BARS * 4 * beat - TIME_EPSILON ? "blend" : "unclassified";
+    // A blend is one the blend rules (drift, one-bass) grade: 4 bars together, short drop-outs joined.
+    const kind: TransitionKind = overlapS < CUT_MAX_BEATS * beat - TIME_EPSILON ? "cut" : blendSpans(view).length > 0 ? "blend" : "unclassified";
     transitions.push({ number: transitions.length + 1, outgoing, incoming, view, inAt, overlapS, kind });
   });
   return transitions;

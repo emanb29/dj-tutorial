@@ -121,8 +121,8 @@ const bassSwap: LessonDefinition = {
       { fromPos: blendPos - barsSec(track, 2), caption: "Next phrase: Press , and slide B up" },
       { fromPos: blendPos + beat, caption: "Fader B up. Swap on the next phrase's 1" },
       { fromPos: handoverPos - barsSec(track, 1), caption: "Next 1: LOW A down, LOW B up" },
-      { fromPos: handoverPos + beat, caption: "Bass swapped. Now fader A down" },
-      { fromPos: handoverPos + barsSec(track, 4), caption: "A out, then LOW A back to the middle" },
+      // One caption for both: the Check ends 2 bars after A's fader closes, and LOW A must be back within 1.
+      { fromPos: handoverPos + beat, caption: "Bass swapped. Fader A down, then LOW A to the middle" },
     ]);
   },
   // The Check finds B's entry and the swap inside the window, which starts at its own cue.

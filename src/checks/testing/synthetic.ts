@@ -239,6 +239,10 @@ export interface BlendScenario {
   /** Replaces the default channel-fader events entirely (crossfader blends). */
   readonly faderEvents?: readonly ControlEvent[];
   readonly crossfader?: number;
+  /** A's channel levels at `t` (default −3 dBFS peak, −14 LUFS): a filter or EQ thinning A out. */
+  readonly aLevels?: (t: number) => FrameLevels;
+  /** B's channel levels at `t` once it plays (default as A's). */
+  readonly bLevels?: (t: number) => FrameLevels;
 }
 
 export const BLEND_WINDOW: CtxSpan = { from: 0, to: 96 };
@@ -266,8 +270,8 @@ export function blendScenario(options: BlendScenario = {}): Attempt {
     cuePoints: [{ ctx: 1, deck: "B", trackId: "track-b", pos: bStartPos }],
     meters: {
       master: frames(0, end, (t) => ({ peak: -3, momentary: masterLufs(t) })),
-      A: frames(0, end, () => ({ peak: -3, momentary: -14 })),
-      B: frames(0, end, (t) => (t >= bStart ? { peak: -3, momentary: -14 } : SILENT)),
+      A: frames(0, end, (t) => options.aLevels?.(t) ?? { peak: -3, momentary: -14 }),
+      B: frames(0, end, (t) => (t >= bStart ? (options.bLevels?.(t) ?? { peak: -3, momentary: -14 }) : SILENT)),
     },
     initialDecks: { A: deckState({ sync: syncedAtStart.includes("A") }), B: deckState({ sync: syncedAtStart.includes("B") }) },
   });

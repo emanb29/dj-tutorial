@@ -106,6 +106,38 @@ describe("standing.controls-reset", () => {
     const filterBack = { extraEvents: [event(50, "filter", 0.8, "A"), event(57, "filter", 0.04, "A")] };
     expect(byId(cold("sync-blend", filterBack, { passedUpTo: "nudge-phase" }), "standing.controls-reset")?.status).toBe("met");
   });
+
+  it("counts from A's fader closing, not from a high-pass that thinned A under the audible line first", () => {
+    // The channel meter reads after the filter: from 50 s A is a whisper, but its fader closes at 56 s.
+    const filteredOut = {
+      extraEvents: [event(46, "filter", 0.5, "A"), event(50, "filter", 0.85, "A"), event(57, "filter", 0, "A")],
+      aLevels: (t: number) => (t >= 50 ? { peak: -30, momentary: -45 } : { peak: -3, momentary: -14 }),
+    };
+    expect(byId(cold("sync-blend", filteredOut, { passedUpTo: "nudge-phase" }), "standing.controls-reset")).toMatchObject({ status: "met", measured: 0.5 });
+  });
+});
+
+describe("standing.level-match", () => {
+  const level = (shortTerm: number) => ({ peak: -3, momentary: shortTerm, shortTerm });
+
+  it("compares the two tracks as their trims set them: before A's filter or EQ moves, after B's are centred", () => {
+    // A high-passed out from 40 s; B unfiltered at A's earlier level.
+    const filterOut = cold("sync-blend", {
+      extraEvents: [event(40, "filter", 0.3, "A"), event(50, "filter", 0.85, "A"), event(57, "filter", 0, "A")],
+      aLevels: (t) => level(t >= 40 ? -32 : -14),
+    });
+    expect(byId(filterOut, "standing.level-match")).toMatchObject({ status: "met" });
+    expect(byId(filterOut, "standing.level-match")?.measured).toBeCloseTo(0);
+    // A bass swap: B comes in with its LOW cut and A leaves with its LOW cut.
+    const bassSwap = cold("bass-swap", swapped({ aLevels: (t) => level(t >= 48 ? -30 : -14), bLevels: (t) => level(t >= 48 ? -14 : -21) }));
+    expect(byId(bassSwap, "standing.level-match")?.measured).toBeCloseTo(0);
+  });
+
+  it("still catches two tracks trimmed apart", () => {
+    const apart = cold("bass-swap", swapped({ aLevels: (t) => level(t >= 48 ? -30 : -14), bLevels: (t) => level(t >= 48 ? -10 : -17) }));
+    expect(byId(apart, "standing.level-match")).toMatchObject({ status: "notMet" });
+    expect(byId(apart, "standing.level-match")?.measured).toBeCloseTo(4);
+  });
 });
 
 describe("standing.one-bass", () => {

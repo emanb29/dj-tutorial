@@ -59,6 +59,34 @@ describe("nudge-phase", () => {
     expect(byId(check(bentBack(BEAT / 4, 1.01)), "nudge-phase.converge")?.status).toBe("notMet");
   });
 
+  it("times the convergence from where the hold starts when the first nudge overshoots and comes back within 4 bars", () => {
+    // 125 ms behind; bent forward past A to 35 ms ahead by 6.6 s, held there, then bent back into line by 8.85 s.
+    const overshoot: PlayheadSegment[] = [
+      { fromCtx: PHASE_FROM, pos: PHASE_FROM - 0.125, rate: 1 },
+      { fromCtx: 5, pos: 4.875, rate: 1.1 },
+      { fromCtx: 6.6, pos: 6.635, rate: 1 },
+      { fromCtx: 8.5, pos: 8.535, rate: 0.9 },
+      { fromCtx: 8.85, pos: 8.85, rate: 1 },
+    ];
+    const result = check(overshoot);
+
+    expect(result.outcome).toEqual({ kind: "passed" });
+    // Under 15 ms for good from about 8.7 s: 2.35 bars after the task starts.
+    expect(byId(result, "nudge-phase.converge")?.measured).toBeCloseTo((8.7 - PHASE_FROM) / BAR, 1);
+  });
+
+  it("still fails an overshoot that never settles: the first crossing is reported", () => {
+    const neverSettles: PlayheadSegment[] = [
+      { fromCtx: PHASE_FROM, pos: PHASE_FROM - 0.125, rate: 1 },
+      { fromCtx: 5, pos: 4.875, rate: 1.1 },
+      { fromCtx: 6.6, pos: 6.635, rate: 1 },
+    ];
+    const result = check(neverSettles);
+
+    expect(byId(result, "nudge-phase.converge")).toMatchObject({ status: "met" });
+    expect(byId(result, "nudge-phase.hold")?.status).toBe("notMet");
+  });
+
   it("fails a hold that drifts out again within 8 bars", () => {
     const drifting = [...bentBack(BEAT / 4), { fromCtx: 10, pos: 10, rate: 1.01 }];
     const result = check(drifting);

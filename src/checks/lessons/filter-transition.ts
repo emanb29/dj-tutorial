@@ -5,6 +5,7 @@ import type { LessonCheck, TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
 import { deckControlChanges, filterAt, type DeckControlChange } from "../deck-controls.ts";
 import { TIME_EPSILON } from "../measures.ts";
+import { takenOutTime } from "../mix.ts";
 
 const HPF_DEPTH = 0.7;
 /** The filter counts as on past this; within it, as centred (±5%). */
@@ -37,7 +38,10 @@ export const filterTransition: LessonCheck<TaskOf<"filter-transition">> = {
   run(context) {
     const { attempt, window, spec } = context;
     const move = handover(context, "A", "B");
-    const { outAt, bar } = move;
+    // A's exit is its fader closing: the channel meter reads after the filter, so a deep high-pass can
+    // take A under the audible line first, and that is the sweep doing its job, not A leaving.
+    const outAt = takenOutTime(attempt, "A", window);
+    const { bar } = move;
     const filterMoves = deckControlChanges(attempt, "filter", "A").filter((change) => change.ctx >= window.from - TIME_EPSILON);
     const beforeOut = outAt === null ? [] : filterMoves.filter((change) => change.ctx < outAt);
     const depth = outAt === null ? null : beforeOut.reduce((most, change) => Math.max(most, change.value), 0);

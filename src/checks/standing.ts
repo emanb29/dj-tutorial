@@ -6,13 +6,14 @@ import { barSeconds, framesWhere, loadedDeck, type CheckContext, type Situations
 import { judge, notApplicable } from "./criterion.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { cueOnSeconds, entryActionTime, entryTime, exitTime, frameAt, framesIn, isAudible, MAX_FRAME_AGE_S, overlapSpans } from "./mix.ts";
-import { phraseOffsetBeats } from "./phrasing.ts";
+import { phraseOffsetBeats, phraseOffsetBeatsOf } from "./phrasing.ts";
 import { CUED_BEFORE_S } from "./lessons/cut-on-phrase.ts";
 import { CLIP_DBFS } from "./lessons/deck-basics.ts";
 import { EQ_BANDS } from "./lessons/eq-basics.ts";
 import { controlsReset, drift, oneBass, overcorrect, syncKept } from "./standing-mixing.ts";
 import { loopedPhraseOffsetBeats } from "./performance.ts";
-import { controlEvents, controlValueAt, firstPlayStart, isPlaying, playingFrom } from "./timeline.ts";
+import { controlEvents, controlValueAt, firstPlayStart, isPlaying, playingFrom, positionPlayedOn } from "./timeline.ts";
+import { filterAt } from "./deck-controls.ts";
 
 /** Severity before `final-mix` and in it; `null` where the criterion does not apply. */
 const SEVERITY: Readonly<Record<StandingId, readonly [Severity | null, Severity | null]>> = {
@@ -172,8 +173,14 @@ function onPhrase(context: CheckContext, severity: Severity): CriterionResult {
   const inAt = entryActionTime(context.attempt, INCOMING, context.window, "firstMove");
   const master = loadedDeck(context, OUTGOING);
   const incoming = loadedDeck(context, INCOMING);
-  // The master may be looping (loop-transition): its loop's start and end are one moment.
-  const masterBeats = inAt === null || master === null ? null : loopedPhraseOffsetBeats(context.attempt, master, inAt);
+  // The master may be looping (loop-transition): its loop's start and end are one moment. Stopped (an
+  // echo out, then A paused), it is read where it would be had it kept playing, as echo-entry reads it.
+  const masterBeats = (() => {
+    if (inAt === null || master === null) return null;
+    if (isPlaying(master.playhead, inAt)) return loopedPhraseOffsetBeats(context.attempt, master, inAt);
+    const playedOn = positionPlayedOn(master.playhead, inAt);
+    return playedOn === null ? null : phraseOffsetBeatsOf(master, playedOn);
+  })();
   // A Play is timed from its press, before the deck's audio starts: read the deck where it starts.
   const incomingBeats = inAt === null || incoming === null ? null : phraseOffsetBeats(incoming, playingFrom(incoming.playhead, inAt));
   const measured = masterBeats === null || incomingBeats === null ? null : Math.max(Math.abs(masterBeats), Math.abs(incomingBeats));
@@ -188,19 +195,70 @@ function onPhrase(context: CheckContext, severity: Severity): CriterionResult {
   });
 }
 
-/** At the handover: A's short-term loudness as it leaves vs B's once its 3 s window is full. */
+/** Within these of centre a channel plays its track as the trim set it (the channel meter reads after EQ and CFX). */
+const FLAT_EQ_DB = 1;
+const FLAT_CFX = 0.05;
+/**
+ * A tone move is heard at its event time but reaches the channel meter an output latency (and the
+ * engine's lookahead) later: a Bluetooth output's few hundred ms, with room.
+ */
+const TONE_SETTLE_S = 0.5;
+
+function flatAt(attempt: CheckContext["attempt"], deck: DeckId, t: CtxTime): boolean {
+  return (
+    EQ_BANDS.every(([control, field]) => Math.abs(controlValueAt(attempt.events, control, deck, t, attempt.initialMixer[deck][field])) <= FLAT_EQ_DB) &&
+    Math.abs(filterAt(attempt, deck, t)) <= FLAT_CFX
+  );
+}
+
+/** Maximal stretches of `span` in which the deck's EQs and CFX are all at centre. */
+function flatStretches(attempt: CheckContext["attempt"], deck: DeckId, span: CtxSpan): CtxSpan[] {
+  const moves = [
+    ...EQ_BANDS.flatMap(([control]) => controlEvents(attempt.events, control, deck, span).map((event) => event.ctx)),
+    ...controlEvents(attempt.events, "filter", deck, span).map((event) => event.ctx),
+  ].filter((t) => t > span.from);
+  const edges = [span.from, ...new Set(moves.toSorted((a, b) => a - b)), span.to];
+  const stretches: CtxSpan[] = [];
+  edges.slice(0, -1).forEach((from, index) => {
+    const to = edges[index + 1] ?? from;
+    if (to <= from || !flatAt(attempt, deck, from)) return;
+    const last = stretches.at(-1);
+    if (last !== undefined && Math.abs(last.to - from) < TIME_EPSILON) stretches[stretches.length - 1] = { from: last.from, to };
+    else stretches.push({ from, to });
+  });
+  return stretches;
+}
+
+/**
+ * At the handover, the two tracks' levels as their trims set them (mistake 2), from the channel
+ * meters' short-term loudness. The channel meter reads after the EQ and CFX, and a transition moves
+ * them on purpose (A high-passed or its LOW cut on the way out, B in with its LOW cut), so: A's
+ * level just before its last stretch with every EQ and CFX centred ended (at the latest as it
+ * leaves), and B's once its 3 s window is full after its entry with them centred (at the earliest
+ * 3 s after it comes in). A deck never centred is read as it leaves or 3 s in.
+ */
 function levelMatch(context: CheckContext, severity: Severity): CriterionResult {
   const { attempt, window } = context;
   const inAt = entryTime(attempt, INCOMING, window);
   const outAt = exitTime(attempt, OUTGOING, window) ?? inAt;
-  const outgoing = outAt === null ? null : frameAt(attempt.meters[OUTGOING], outAt - TIME_EPSILON - 0.02);
-  const incoming = inAt === null ? null : frameAt(attempt.meters[INCOMING], Math.min(inAt + SHORT_TERM_S, window.to - TIME_EPSILON));
+  const outgoingAt = outAt === null ? null : (flatStretches(attempt, OUTGOING, { from: window.from, to: outAt }).at(-1)?.to ?? outAt);
+  const incomingAt = (() => {
+    if (inAt === null) return null;
+    const earliest = inAt + SHORT_TERM_S;
+    const full = flatStretches(attempt, INCOMING, window)
+      .map((stretch) => ({ stretch, at: Math.max(earliest, stretch.from + SHORT_TERM_S + TONE_SETTLE_S) }))
+      .find(({ stretch, at }) => at <= stretch.to && at < window.to);
+    return full?.at ?? Math.min(earliest, window.to - TIME_EPSILON);
+  })();
+  const outgoing = outgoingAt === null ? null : frameAt(attempt.meters[OUTGOING], outgoingAt - TIME_EPSILON - 0.02);
+  const incoming = incomingAt === null ? null : frameAt(attempt.meters[INCOMING], incomingAt);
   return judge({
     id: "standing.level-match",
     severity,
     unit: "dB",
     threshold: { op: "<=", value: LEVEL_MATCH_DB, unit: "dB" },
     measured: outgoing === null || incoming === null ? null : Math.abs(outgoing.shortTermLufs - incoming.shortTermLufs),
+    ...(outgoingAt === null || incomingAt === null ? {} : { evidence: [{ from: outgoingAt, to: incomingAt, label: "levels compared" }] }),
   });
 }
 

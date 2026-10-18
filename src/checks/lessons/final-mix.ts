@@ -3,14 +3,14 @@
 // criteria, measured on every transition's view (src/checks/set.ts) and reported as the worst.
 import type { CtxSpan, TaskSpec } from "@shared/attempt.ts";
 import type { Band, CriterionResult, FinalMixBands } from "@shared/check-result.ts";
-import { clashSpans, handover, phraseDistanceBeats, spansSeconds, swapTime } from "../blend.ts";
+import { blendSpans, clashSpans, handover, phraseDistanceBeats, spansSeconds, swapTime } from "../blend.ts";
 import { barSeconds, loadedDeck, type CheckContext, type LessonCheck, type TaskOf } from "../context.ts";
 import { judge, judgeAll } from "../criterion.ts";
 import type { GradedAttempt } from "../deck-controls.ts";
 import { TIME_EPSILON } from "../measures.ts";
-import { exitTime, overlapSpans } from "../mix.ts";
+import { exitTime } from "../mix.ts";
 import { phaseHold, phasePair } from "../phase.ts";
-import { audibleSeconds, BLEND_MIN_BARS, setPlays, setTransitions, type SetTransition, type TransitionKind } from "../set.ts";
+import { audibleSeconds, setPlays, setTransitions, type SetTransition, type TransitionKind } from "../set.ts";
 import { transitionStanding } from "../standing.ts";
 import { positionAt } from "../timeline.ts";
 
@@ -66,13 +66,8 @@ function technique(transitions: readonly SetTransition[]): CriterionResult {
   );
 }
 
-/** The blends' overlap spans in a transition's view (the spans `drift` grades). */
-function blendSpans(transition: SetTransition): CtxSpan[] {
-  const master = loadedDeck(transition.view, "A");
-  return overlapSpans(transition.view.attempt, transition.view.window).filter(
-    (span) => master !== null && span.to - span.from >= BLEND_MIN_BARS * barSeconds(master, span.from) - TIME_EPSILON,
-  );
-}
+/** The blends' spans in a transition's view (the spans `drift` grades). */
+const blendSpansOf = (transition: SetTransition): CtxSpan[] => blendSpans(transition.view);
 
 const measuredOf = (criteria: readonly CriterionResult[], id: string) => criteria.find((criterion) => criterion.id === id);
 const metOrAbsent = (criteria: readonly CriterionResult[], id: string) => {
@@ -83,7 +78,7 @@ const metOrAbsent = (criteria: readonly CriterionResult[], id: string) => {
 function beatSyncingBand(blends: readonly SetTransition[]): Band {
   const holds = blends.flatMap((transition) => {
     const pair = phasePair(transition.view);
-    const spans = blendSpans(transition);
+    const spans = blendSpansOf(transition);
     const first = spans[0];
     if (pair === null || first === undefined) return [];
     const bar = barSeconds(pair.master, first.from);
@@ -100,7 +95,7 @@ function worstClashBeats(blends: readonly SetTransition[]): number {
     0,
     ...blends.map((transition) => {
       const master = loadedDeck(transition.view, "A");
-      return master === null ? Number.POSITIVE_INFINITY : spansSeconds(clashSpans(transition.view, blendSpans(transition))) / (barSeconds(master, transition.inAt) / 4);
+      return master === null ? Number.POSITIVE_INFINITY : spansSeconds(clashSpans(transition.view, blendSpansOf(transition))) / (barSeconds(master, transition.inAt) / 4);
     }),
   );
 }

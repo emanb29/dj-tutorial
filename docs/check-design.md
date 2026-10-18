@@ -127,7 +127,7 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 | `filter-transition` | `hpf-depth` | max HPF amount on CFX A before `t_out(A)` | `≥ 0.70` | |
 | | `filter-length` | `t_out(A) −` first CFX A `> 0.05` | `∈ [8, 16] bars ± 1 beat` | `∈ [8, 9]` bars |
 | | `cfx-back` | time from `t_out(A)` to CFX A within ±5% of centre | `≤ 1 bar` | |
-| `nudge-phase` | `converge` | first `t_c` with `|phaseErr| < 15 ms`, measured from task start | `≤ 4 bars` | same, hold 4 bars |
+| `nudge-phase` | `converge` | first `t_c` with `|phaseErr| < 15 ms` whose `hold` is met, if one comes within 4 bars (an overshoot back through A is not the convergence), else the first under 15 ms; measured from task start | `≤ 4 bars` | same, hold 4 bars |
 | | `hold` | `holdFrac([t_c, t_c + 8 bars], 15 ms)`; `worstRun(…, 30 ms)` | `≥ 0.95` ∧ `≤ 1 beat` | |
 | | `cue-presses` | CUE presses on B | `≤ 1` | |
 | `tempo-by-ear` | `tempo-match` | exists `t_c ≤ start + 32 bars`; over `[t_c, t_c + 8 bars]`: max `|bpm_A − bpm_B|`, `holdFrac(·, 20 ms)` | `≤ 0.1 BPM` ∧ `≥ 0.95` | `t_c ≤ 24 bars`, hold 4 bars |
@@ -159,7 +159,7 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 | `grid-trust` (admission) | each track's `rmsResidualMs` | `≤ 15 ms`, else the track is refused in prep with "this track's beat grid is too uneven to grade; pick another" |
 | Aids | sync, quantize off; BPM display and phase meter hidden; Lesson text none | enforced by the deck engine, recorded in `aids` |
 
-Transitions are classified by overlap length: **cut** `< 2 beats`, **blend** `≥ 4 bars`, otherwise
+Transitions are classified by overlap length: **cut** `< 2 beats`, **blend** `≥ 4 bars` (overlap spans under a bar apart are one blend, so a deck dropping out for a moment does not split it out of `drift`), otherwise
 **unclassified** (graded by standing criteria, counts as neither). Required: `≥ 1` blend and `≥ 1` cut.
 
 ### 5.2 Criteria (all must be met for Pass)

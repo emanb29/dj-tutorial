@@ -103,10 +103,13 @@ async function until(done: () => boolean, what: string): Promise<void> {
 async function startingPeaks(
   definition: LessonDefinition,
   set: TrackSet,
+  /** What the Learner does first, as the Check starts (echo-out: ECHO on). */
+  firstMove?: (engine: AudioEngine) => void,
 ): Promise<{ readonly master: number; readonly fx: number; readonly playing: Partial<Record<DeckId, number>> }> {
   const { track } = set;
   const barSec = (4 * 60) / track.grid.bpm;
-  const context = new OfflineAudioContext({ numberOfChannels: 2, length: Math.round((LISTEN_BARS * barSec + 2) * SAMPLE_RATE), sampleRate: SAMPLE_RATE });
+  const listenBars = firstMove === undefined ? LISTEN_BARS : 2 * LISTEN_BARS;
+  const context = new OfflineAudioContext({ numberOfChannels: 2, length: Math.round((listenBars * barSec + 2) * SAMPLE_RATE), sampleRate: SAMPLE_RATE });
   const running = await createAudioEngine({ context, masterTempo: false });
   engine = running;
   const usesB = LessonSession.usesDeckB(definition, track);
@@ -142,6 +145,7 @@ async function startingPeaks(
     await new Promise((resolve) => setTimeout(resolve, 20));
     // A Check the Learner starts (deck-basics, cue-point): press Play as they would.
     if (!DECKS.some((deck) => running.deckState(deck).playing)) expect(running.command({ control: "play", deck: "A" }, { device: "touch" })).toEqual({ ok: true });
+    firstMove?.(running);
     await context.startRendering();
     const playing = Object.fromEntries(DECKS.filter((deck) => running.deckState(deck).playing).map((deck) => [deck, peaks[deck]]));
     return { master: peaks.master, fx: peaks.fx, playing };
@@ -178,5 +182,18 @@ describe.each([
     expect(master, what).toBeLessThanOrEqual(CLIP_DBFS);
     expect(fx, what).toBeLessThanOrEqual(CLIP_DBFS);
     for (const peak of Object.values(playing)) expect(peak, what).toBeLessThanOrEqual(CLIP_DBFS);
+  });
+
+  // echo-out's first caption is "ECHO on (V)": its echoes join the master over the bars before the cut.
+  it("echo-out stays out of the red once ECHO is on", { timeout: 30_000 }, async () => {
+    const loaded = await tracks();
+    const definition = LESSONS.find((lesson) => lesson.id === "echo-out");
+    if (definition === undefined) throw new Error("echo-out is in the catalogue");
+    const echoOn = (running: AudioEngine) => {
+      expect(running.command({ control: "beat-fx", value: true }, { device: "keyboard" })).toEqual({ ok: true });
+    };
+    const { master, fx } = await startingPeaks(definition, loaded, echoOn);
+    const what = `echo-out on ${loaded.name} with ECHO on: master ${master.toFixed(2)} dBFS, FX return ${fx.toFixed(2)} dBFS`;
+    expect(master, what).toBeLessThanOrEqual(CLIP_DBFS);
   });
 });
