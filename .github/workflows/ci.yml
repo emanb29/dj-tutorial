@@ -30,7 +30,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
       # Both the Vitest browser project and the end-to-end tests need Chromium. The browser download
       # is cached per Playwright version; the system libraries still install each run.
@@ -117,7 +117,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
       - name: Read the Playwright version
         id: playwright
