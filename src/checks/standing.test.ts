@@ -120,6 +120,44 @@ describe("standing.no-clip (fail)", () => {
     expect(byId(coldCut({ bPeak: 0 }), "standing.no-clip")?.status).toBe("notMet");
   });
 
+  // cue-point (ISS-100): the cue points are set on a paused deck. A Learner who never holds CUE to hear
+  // one plays nothing at all, so nothing can clip: not applicable, not a failed "not measured".
+  it("does not apply when no deck plays and no level control is moved", () => {
+    const result = graded(
+      runCheck(
+        spec({ lessonId: "beats-and-bars", beatSection: { from: 4, to: 4 + 4 * BAR }, downbeatSection: { from: 12, to: 20 } }, { from: 0, to: 22 }, {
+          mode: "cold",
+          passedLessons: ["deck-basics", "gain-staging"],
+        }),
+        attempt({
+          decks: { A: { trackId: "track-a", playhead: { segments: [{ fromCtx: 0, pos: 0, rate: 0 }] } } },
+          meters: { master: frames(0, 22, () => SILENT), A: frames(0, 22, () => SILENT) },
+        }),
+      ),
+    );
+
+    expect(byId(result, "standing.no-clip")).toMatchObject({ status: "notApplicable", severity: "fail" });
+  });
+
+  // A silent meter reads −∞ dBFS: the quietest a master can be, not "not measured".
+  it("passes a master that stayed silent after the Learner's first level move", () => {
+    const result = graded(
+      runCheck(
+        spec({ lessonId: "beats-and-bars", beatSection: { from: 4, to: 4 + 4 * BAR }, downbeatSection: { from: 12, to: 20 } }, { from: 0, to: 22 }, {
+          mode: "cold",
+          passedLessons: ["deck-basics", "gain-staging"],
+        }),
+        attempt({
+          decks: { A: { trackId: "track-a", playhead: { segments: [{ fromCtx: 0, pos: 0, rate: 0 }] } } },
+          events: [event(1, "trim", 0.1, "A")],
+          meters: { master: frames(0, 22, () => ({ peak: -Infinity, momentary: -Infinity })), A: frames(0, 22, () => ({ peak: -Infinity, momentary: -Infinity })) },
+        }),
+      ),
+    );
+
+    expect(byId(result, "standing.no-clip")).toMatchObject({ status: "met" });
+  });
+
   it("ignores a clipping channel that is not audible (cued in headphones, fader down)", () => {
     const base = cutScenario();
     const cuedClip: Attempt = {

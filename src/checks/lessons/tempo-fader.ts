@@ -26,8 +26,10 @@ export const tempoFader: LessonCheck<TaskOf<"tempo-fader">> = {
   run(context, task) {
     const { attempt, window } = context;
     const deckB = loadedDeck(context, "B");
-    // Confirm presses: "Ready" for each target but the last, which may be "Done".
-    const confirms = [...controlEvents(attempt.events, "ready", "B", window), ...controlEvents(attempt.events, "done", undefined, window)]
+    // Confirm presses: "Ready" for each target but the last, which may be "Done". The last one ends the
+    // attempt, so it can be heard at the window's very end: the end is inclusive here.
+    const presses = { from: window.from, to: window.to + TIME_EPSILON };
+    const confirms = [...controlEvents(attempt.events, "ready", "B", presses), ...controlEvents(attempt.events, "done", undefined, presses)]
       .map((press) => press.ctx)
       .sort((a, b) => a - b)
       .slice(0, task.targetsBpm.length);

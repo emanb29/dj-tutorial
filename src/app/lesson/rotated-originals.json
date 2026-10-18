@@ -1,0 +1,86 @@
+[
+  {
+    "id": "001", "title": "Lamplight Moths", "genre": "house", "subgenre": "deep house", "bpm": 123, "durationSec": 343.414626, "firstDownbeatSec": 0, "bars": 176,
+    "phrases": [
+      {"startBar": 0, "lengthBars": 32, "section": "intro"},
+      {"startBar": 32, "lengthBars": 16, "section": "build"},
+      {"startBar": 48, "lengthBars": 32, "section": "drop"},
+      {"startBar": 80, "lengthBars": 16, "section": "breakdown"},
+      {"startBar": 96, "lengthBars": 16, "section": "build"},
+      {"startBar": 112, "lengthBars": 32, "section": "drop"},
+      {"startBar": 144, "lengthBars": 32, "section": "outro"}
+    ]
+  },
+  {
+    "id": "014", "title": "Lemonade Afterhours", "genre": "house", "subgenre": "nu-disco", "bpm": 120, "durationSec": 352, "firstDownbeatSec": 0, "bars": 176,
+    "phrases": [
+      {"startBar": 0, "lengthBars": 32, "section": "intro"},
+      {"startBar": 32, "lengthBars": 16, "section": "build"},
+      {"startBar": 48, "lengthBars": 32, "section": "drop"},
+      {"startBar": 80, "lengthBars": 16, "section": "breakdown"},
+      {"startBar": 96, "lengthBars": 16, "section": "build"},
+      {"startBar": 112, "lengthBars": 32, "section": "drop"},
+      {"startBar": 144, "lengthBars": 32, "section": "outro"}
+    ]
+  },
+  {
+    "id": "022", "title": "Postcard from Lisbon", "genre": "house", "subgenre": "indie dance", "bpm": 123, "durationSec": 296.585374, "firstDownbeatSec": 0, "bars": 152,
+    "phrases": [
+      {"startBar": 0, "lengthBars": 32, "section": "intro"},
+      {"startBar": 32, "lengthBars": 16, "section": "build"},
+      {"startBar": 48, "lengthBars": 16, "section": "drop"},
+      {"startBar": 64, "lengthBars": 16, "section": "breakdown"},
+      {"startBar": 80, "lengthBars": 8, "section": "build"},
+      {"startBar": 88, "lengthBars": 32, "section": "drop"},
+      {"startBar": 120, "lengthBars": 32, "section": "outro"}
+    ]
+  },
+  {
+    "id": "040", "title": "Parallel Parking", "genre": "house", "subgenre": "electro house", "bpm": 124, "durationSec": 340.64517, "firstDownbeatSec": 0, "bars": 176,
+    "phrases": [
+      {"startBar": 0, "lengthBars": 32, "section": "intro"},
+      {"startBar": 32, "lengthBars": 16, "section": "build"},
+      {"startBar": 48, "lengthBars": 32, "section": "drop"},
+      {"startBar": 80, "lengthBars": 24, "section": "breakdown"},
+      {"startBar": 104, "lengthBars": 8, "section": "build"},
+      {"startBar": 112, "lengthBars": 32, "section": "drop"},
+      {"startBar": 144, "lengthBars": 32, "section": "outro"}
+    ]
+  },
+  {
+    "id": "045", "title": "Glitter in the Gutter", "genre": "house", "subgenre": "nu-disco", "bpm": 123, "durationSec": 312.195125, "firstDownbeatSec": 0, "bars": 160,
+    "phrases": [
+      {"startBar": 0, "lengthBars": 32, "section": "intro"},
+      {"startBar": 32, "lengthBars": 8, "section": "build"},
+      {"startBar": 40, "lengthBars": 32, "section": "drop"},
+      {"startBar": 72, "lengthBars": 16, "section": "breakdown"},
+      {"startBar": 88, "lengthBars": 8, "section": "build"},
+      {"startBar": 96, "lengthBars": 32, "section": "drop"},
+      {"startBar": 128, "lengthBars": 32, "section": "outro"}
+    ]
+  },
+  {
+    "id": "033", "title": "Foundry Shift", "genre": "techno", "subgenre": "techno", "bpm": 130, "durationSec": 295.384626, "firstDownbeatSec": 0, "bars": 160,
+    "phrases": [
+      {"startBar": 0, "lengthBars": 32, "section": "intro"},
+      {"startBar": 32, "lengthBars": 8, "section": "build"},
+      {"startBar": 40, "lengthBars": 32, "section": "drop"},
+      {"startBar": 72, "lengthBars": 16, "section": "breakdown"},
+      {"startBar": 88, "lengthBars": 8, "section": "build"},
+      {"startBar": 96, "lengthBars": 32, "section": "drop"},
+      {"startBar": 128, "lengthBars": 32, "section": "outro"}
+    ]
+  },
+  {
+    "id": "053", "title": "Data Centre Dawn", "genre": "techno", "subgenre": "techno", "bpm": 128, "durationSec": 345, "firstDownbeatSec": 0, "bars": 184,
+    "phrases": [
+      {"startBar": 0, "lengthBars": 32, "section": "intro"},
+      {"startBar": 32, "lengthBars": 16, "section": "build"},
+      {"startBar": 48, "lengthBars": 32, "section": "drop"},
+      {"startBar": 80, "lengthBars": 16, "section": "breakdown"},
+      {"startBar": 96, "lengthBars": 8, "section": "build"},
+      {"startBar": 104, "lengthBars": 48, "section": "drop"},
+      {"startBar": 152, "lengthBars": 32, "section": "outro"}
+    ]
+  }
+]

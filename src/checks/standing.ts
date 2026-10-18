@@ -115,10 +115,17 @@ export function noClipJudgedFrom(context: CheckContext, deck?: DeckId): CtxTime 
   return Math.min(firstMove ?? Number.POSITIVE_INFINITY, graceEnd);
 }
 
+/** The lowest peak no-clip reports: below any real signal (a 24-bit file's floor). */
+const SILENT_PEAK_DBFS = -144;
+const NO_CLIP_THRESHOLD = { op: "<=", value: CLIP_DBFS, unit: "dBFS" } as const;
+
 function noClip(context: CheckContext, severity: Severity): CriterionResult {
   const { attempt, window } = context;
-  const meters = [undefined, ...DECKS].map((deck) => {
-    const from = noClipJudgedFrom(context, deck);
+  const judgedFrom = [undefined, ...DECKS].map((deck) => ({ deck, from: noClipJudgedFrom(context, deck) }));
+  // Nothing to judge: nothing played and no level control moved, or the attempt ended inside the grace
+  // (cue-point: cue points set on a paused deck, at most a moment of CUE held to hear one).
+  if (judgedFrom.every(({ from }) => from === null || from >= window.to - TIME_EPSILON)) return notApplicable("standing.no-clip", severity, "dBFS", NO_CLIP_THRESHOLD);
+  const meters = judgedFrom.map(({ deck, from }) => {
     const span: CtxSpan = { from: from === null ? window.to : Math.max(window.from, from), to: window.to };
     const frames = deck === undefined ? attempt.meters.master : attempt.meters[deck];
     const counts = (frame: MeterFrame) => deck === undefined || isAudible(attempt, deck, frame.ctx);
@@ -132,8 +139,9 @@ function noClip(context: CheckContext, severity: Severity): CriterionResult {
     id: "standing.no-clip",
     severity,
     unit: "dBFS",
-    threshold: { op: "<=", value: CLIP_DBFS, unit: "dBFS" },
-    measured: peaks.length === 0 ? null : peaks.reduce((highest, peak) => Math.max(highest, peak), -Infinity),
+    threshold: NO_CLIP_THRESHOLD,
+    // A silent meter reads −∞ dBFS, which judge() would take for "not measured": floor it.
+    measured: peaks.length === 0 ? null : peaks.reduce((highest, peak) => Math.max(highest, peak), SILENT_PEAK_DBFS),
     evidence: meters.flatMap((meter) => meter.evidence),
   });
 }

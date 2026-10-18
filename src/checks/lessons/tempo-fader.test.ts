@@ -56,6 +56,13 @@ describe("tempo-fader", () => {
     expect(byId(result, "tempo-fader.set-bpm")?.measured).toBeCloseTo(0);
   });
 
+  // ISS-100: the last Ready ends the attempt, so it can be heard at the attempt's very end (window.to).
+  it("counts the Ready that ends the attempt, heard at the window's end", () => {
+    const result = check(setTo(TARGETS), { events: [event(9, "ready", 1, "B"), event(19, "ready", 1, "B"), event(30, "ready", 1, "B")] });
+
+    expect(byId(result, "tempo-fader.set-bpm")).toMatchObject({ status: "met" });
+  });
+
   it("allows 0.05 BPM off a target and fails beyond, on any one of the three", () => {
     expect(byId(check(setTo([122.05, 118, 125])), "tempo-fader.set-bpm")?.status).toBe("met");
     expect(byId(check(setTo([122, 117.94, 125])), "tempo-fader.set-bpm")).toMatchObject({ status: "notMet" });
