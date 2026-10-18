@@ -212,8 +212,6 @@ export interface DeckSetup {
   readonly eqCentred?: true;
   /** The CFX knob back to centre (no filter). */
   readonly filterCentred?: true;
-  /** LOW all the way down, after `eqCentred` (blend-by-ear brings B in with no bass, for the swap). */
-  readonly lowCut?: true;
   /** The 8 hot cue pads, track seconds or null for empty: every pad is cleared, then these are set. */
   readonly hotCues?: readonly (number | null)[];
 }
@@ -454,8 +452,12 @@ export interface LessonDefinition {
   readonly checkCaption: string;
   /** Questions asked after the audio part of the Check (phrases); answers go into the attempt. */
   readonly questions: readonly CheckQuestion[];
-  /** `attempt` (1, 2, …) varies what must differ between attempts, such as which clip has Master Tempo on. */
-  readonly planCheck: (track: LessonTrack, attempt?: number) => CheckPlan;
+  /**
+   * `attempt` (1, 2, …) varies what must differ between attempts, such as which clip has Master Tempo on.
+   * `passedLessons` (the Learner's, before this Check) lets the captions ask for what an earlier Lesson
+   * taught, such as loop-transition's bass swap once bass-swap is passed.
+   */
+  readonly planCheck: (track: LessonTrack, attempt?: number, passedLessons?: readonly LessonId[]) => CheckPlan;
   /**
    * The task the Check grades, from the plan and what was recorded. Pure. A recorded playhead model
    * holds the track's whole history since it was loaded (hook, practice, earlier attempts): look for

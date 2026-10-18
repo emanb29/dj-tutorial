@@ -42,6 +42,25 @@ async function keyAtLoopWrap(page: Page, loopEndBeat: number, code: string): Pro
   );
 }
 
+/** Sends engine commands (knob turns) on the next pass through deck A's loop start, as keyAtLoopWrap presses a key. */
+async function commandsAtLoopWrap(page: Page, loopEndBeat: number, commands: readonly Record<string, unknown>[]): Promise<void> {
+  await playingPast(page, "check", loopEndBeat - 3, { before: loopEndBeat });
+  const refused = await page.evaluate(
+    async ({ end, sent }) => {
+      const lesson = (window as LessonWindow).learnToDjLesson;
+      if (lesson === undefined) throw new Error("No Lesson is open.");
+      const beatMs = 60_000 / lesson.track.grid.bpm;
+      const reading = lesson.engine.playhead("A");
+      const beat = reading.ok ? reading.beat : null;
+      if (beat == null) throw new Error("Deck A has no playhead reading.");
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, (end - beat) * beatMs - 2)));
+      return sent.filter((each) => !lesson.engine.command(each, { device: "trackpad" }).ok);
+    },
+    { end: loopEndBeat, sent: commands },
+  );
+  expect(refused, "commands the engine refused").toEqual([]);
+}
+
 test("hot-cues: three pads set at the stops, then pressed on A's phrase starts, passes", async ({ page }) => {
   test.setTimeout(150_000);
   const learnerId = learner("hotcues");
@@ -137,6 +156,52 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
   await expect(card).toContainText(/Loop: 4\.00 bars/);
   await expect(card).toContainText("B in: on the loop's 1, on B's phrase");
+});
+
+test("loop-transition after the bass swap: LOW B cut, B on the loop's 1, the bass swapped on the next, EXIT, passes with no warning", async ({ page }) => {
+  test.setTimeout(120_000);
+  const learnerId = learner("loopswap");
+  await seedPassed(page, learnerId, [...TO_SYNC_BLEND, "eq-basics", "bass-swap", "nudge-phase", "tempo-by-ear", "blend-by-ear"], { headphones: true });
+  await openLesson(page, learnerId, "loop-transition");
+  await expect(caption(page)).toContainText("Press G: a 4-beat loop");
+  await page.keyboard.press("KeyG");
+  await expect(caption(page)).toContainText("Press G again: EXIT");
+  await page.keyboard.press("KeyG");
+  await expect(caption(page)).toContainText("LOOP IN on a 1 (D)");
+  await page.keyboard.press("KeyD");
+  await expect(caption(page)).toContainText("LOOP OUT on a 1");
+  await page.waitForTimeout(600);
+  await page.keyboard.press("KeyF");
+  await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
+  // Practice may leave the loop on: the Check's set-up cues A from before it anyway.
+
+  const cue = page.locator(".lesson-cue");
+  await page.keyboard.press("Enter");
+  await playingPast(page, "check", 240.5, { before: 250 });
+  await expect(cue).toHaveText("CUE 🎧 B on. LOW B all the way down");
+  await page.getByRole("button", { name: "Channel B headphone cue" }).click();
+  await command(page, { control: "eq-low", deck: "B", value: -1 });
+  await keysAtBeats(page, [256], { codes: ["KeyD"] });
+  await keysAtBeats(page, [272], { codes: ["KeyF"] });
+  await keyAtLoopWrap(page, 272, "Comma");
+  await expect(cue).toHaveText("Next loop's 1: swap the bass. LOW A down, LOW B up");
+  await commandsAtLoopWrap(page, 272, [
+    { control: "eq-low", deck: "A", value: -1 },
+    { control: "eq-low", deck: "B", value: 0 },
+  ]);
+  await expect(cue).toHaveText("Next loop's 1: EXIT (G)");
+  await keyAtLoopWrap(page, 272, "KeyG");
+  await page.waitForTimeout(500);
+  await page.keyboard.press("KeyS");
+  await page.waitForTimeout(300);
+  await command(page, { control: "eq-low", deck: "A", value: 0 });
+
+  const card = resultCard(page);
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
+  await expect(card).toContainText(/Loop: 4\.00 bars/);
+  // one-bass is graded (blend-by-ear passed): following the captions, nothing is missed, not even a warning.
+  await expect(card.locator('li[data-status="notMet"]')).toHaveCount(0);
 });
 
 test("echo-out: ECHO on, A cut on the last bar's 1, B on the phrase's 1, FX off as it fades, passes", async ({ page }) => {

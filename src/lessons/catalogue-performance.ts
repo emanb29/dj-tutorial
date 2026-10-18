@@ -1,7 +1,7 @@
 // Lessons 17–19 as data (docs/lesson-catalogue.md §1, check-design §4): hot cues, the loop transition
 // and the echo out. Captions, not prose: a few words, the key in brackets. All three play one track;
 // loop-transition and echo-out bring the same track in on deck B from another phrase.
-import type { LessonTask } from "@shared/attempt.ts";
+import type { LessonId, LessonTask } from "@shared/attempt.ts";
 import { barsSec, steadyPhrase } from "./plan.ts";
 import { barStart, beatSec, cuedAt, phraseOf, phraseStart } from "./track.ts";
 import type { CheckPlan, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
@@ -132,6 +132,13 @@ function loopDecks(track: LessonTrack): DeckSetups {
   };
 }
 
+/**
+ * Whether the Check brings B in with LOW B cut and swaps the bass over A's loop, as bass-swap taught
+ * (one-bass, from blend-by-ear, warns on two basslines). Without bass-swap the LOW knobs may still be
+ * locked (loop-transition needs only sync-blend and phrases), so B comes in at full EQ.
+ */
+const swapsTheBass = (passedLessons: readonly LessonId[]) => passedLessons.includes("bass-swap");
+
 const loopTransition: LessonDefinition = {
   id: "loop-transition",
   title: "Loop to buy time",
@@ -150,10 +157,13 @@ const loopTransition: LessonDefinition = {
   practice: { caption: "LOOP IN on the phrase's 1 (D), LOOP OUT 4 bars on (F), then EXIT (G)", rep: "loop", window: 2, needed: 1 },
   checkCaption: "This one counts: loop A's last phrase, Press , on the loop's 1, EXIT on a 1",
   questions: [],
-  planCheck: (track): CheckPlan => {
+  planCheck: (track, _attempt, passedLessons = []): CheckPlan => {
     const decks = loopDecks(track);
     const loopPos = phraseStart(track.grid, loopPhrases(track).loop);
     const beat = beatSec(track.grid);
+    const swap = swapsTheBass(passedLessons);
+    // With the swap, B plays a loop over A's with its LOW cut, then the LOWs swap on the next loop's 1.
+    const loopsPlayed = swap ? 5 : 4;
     return {
       startPos: decks.A.pos,
       autoPlay: true,
@@ -161,15 +171,30 @@ const loopTransition: LessonDefinition = {
       deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       endWhen: { kind: "faded-out-then", deck: "A", bars: LOOP_TAIL_BARS },
-      timeoutSec: barsSec(track, LOOP_LEAD_BARS + 4 * LOOP_BARS + LOOP_TAIL_BARS) + 10,
-      cues: [
-        { fromPos: decks.A.pos, caption: "CUE 🎧 B on. Next phrase's 1: LOOP IN (D)" },
-        { fromPos: loopPos + beat, caption: "Count 4 bars: LOOP OUT on the 1 (F)" },
-      ],
+      timeoutSec: barsSec(track, LOOP_LEAD_BARS + loopsPlayed * LOOP_BARS + LOOP_TAIL_BARS) + 10,
+      cues: swap
+        ? [
+            { fromPos: decks.A.pos, caption: "CUE 🎧 B on. LOW B all the way down" },
+            { fromPos: loopPos - barsSec(track, 2), caption: "Next phrase's 1: LOOP IN (D)" },
+            { fromPos: loopPos + beat, caption: "Count 4 bars: LOOP OUT on the 1 (F)" },
+          ]
+        : [
+            { fromPos: decks.A.pos, caption: "CUE 🎧 B on. Next phrase's 1: LOOP IN (D)" },
+            { fromPos: loopPos + beat, caption: "Count 4 bars: LOOP OUT on the 1 (F)" },
+          ],
       stepCues: [
         { after: { kind: "loop-on" }, caption: "Looping. On the loop's 1: Press ," },
-        { after: { kind: "play", deck: "B" }, caption: "Next loop's 1: EXIT (G)" },
-        { after: { kind: "loop-exit" }, caption: "Fader A down (S)" },
+        ...(swap
+          ? [
+              { after: { kind: "play", deck: "B" } as const, caption: "Next loop's 1: swap the bass. LOW A down, LOW B up" },
+              { after: { kind: "swap" } as const, caption: "Next loop's 1: EXIT (G)" },
+              // controls-reset: LOW A back within a bar of A going quiet.
+              { after: { kind: "loop-exit" } as const, caption: "Fader A down (S), then LOW A to the middle" },
+            ]
+          : [
+              { after: { kind: "play", deck: "B" } as const, caption: "Next loop's 1: EXIT (G)" },
+              { after: { kind: "loop-exit" } as const, caption: "Fader A down (S)" },
+            ]),
       ],
     };
   },

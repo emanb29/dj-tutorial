@@ -165,8 +165,11 @@ describe.each(OUTPUTS)("following the captions by ear on $what", ({ latencySec }
     const inPos = plan.startPos + 8 * bar;
     const swapPos = inPos + 8 * bar;
     const outPos = inPos + 16 * bar;
-    await hearPos(run, playAt, plan.startPos, plan.startPos + 2 * beat);
-    expect(caption(run)).toContain("Match it: TEMPO B, then jog B");
+    // The set-up leaves LOW B where it was (centred): the Learner cuts it, as on an FLX4.
+    expect(run.engine.mixerState().channels.B["eq-low"]).toBe(0);
+    await follow(run, playAt, plan.startPos, [{ pos: plan.startPos + 0.6, command: { control: "eq-low", deck: "B", value: -1 }, caption: "LOW B all the way down" }]);
+    await hearPos(run, playAt, plan.startPos, plan.startPos + bar + 2 * beat);
+    expect(caption(run)).toContain("match B: TEMPO B, then jog B");
     matchTempoB(run, 0.03);
     await hearPos(run, playAt, plan.startPos, plan.startPos + 2 * bar);
     await nudgeInLine(run);
@@ -247,16 +250,19 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     const outcome = await gradedAfterEnd(run, passedBefore(LESSON_IDS, "hot-cues"));
     expectClean(outcome);
   });
-  it("loop-transition passes", { timeout: 120_000 }, async () => {
+  it("loop-transition passes with no warning after the whole course: LOW B cut, the bass swapped over A's loop", { timeout: 120_000 }, async () => {
     const run = await pairHarness("loop-transition", latencySec, { renderSec: 170, sameOnB: true });
     const beat = 60 / run.track.grid.bpm;
     const bar = 4 * beat;
-    const playAt = await startedCheck(run);
+    // bass-swap and blend-by-ear passed: the captions swap the bass, and one-bass (warn) is graded.
+    const passed = passedBefore(LESSON_IDS, "loop-transition");
+    const playAt = await startedCheck(run, passed);
     const plan = planOf(run);
     // The loop is A's last phrase: it starts 4 bars after the Check's.
     const loopPos = plan.startPos + 4 * bar;
     await follow(run, playAt, plan.startPos, [
       { pos: plan.startPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true }, caption: "CUE 🎧 B on" },
+      { pos: plan.startPos + 1, command: { control: "eq-low", deck: "B", value: -1 }, caption: "LOW B all the way down" },
       { pos: loopPos, command: { control: "loop-in", deck: "A" }, caption: "LOOP IN (D)" },
       { pos: loopPos + 4 * bar, command: { control: "loop-out", deck: "A" }, caption: "LOOP OUT on the 1" },
     ]);
@@ -266,15 +272,47 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     expect(caption(run)).toContain("On the loop's 1: Press ,");
     press(run, { control: "play", deck: "B" });
     await run.renderToHeard(loopOneAt + 8 * bar);
+    expect(caption(run)).toContain("swap the bass. LOW A down, LOW B up");
+    press(run, { control: "eq-low", deck: "A", value: -1 });
+    press(run, { control: "eq-low", deck: "B", value: 0 });
+    await run.renderToHeard(loopOneAt + 12 * bar);
+    expect(caption(run)).toContain("EXIT");
+    press(run, { control: "loop-exit", deck: "A" });
+    await run.renderToHeard(loopOneAt + 12 * bar + 0.5);
+    expect(caption(run)).toContain("Fader A down (S), then LOW A to the middle");
+    press(run, { control: "channel-fader", deck: "A", value: 0 });
+    await run.renderToHeard(loopOneAt + 12 * bar + 0.5 + beat);
+    press(run, { control: "eq-low", deck: "A", value: 0 });
+    const outcome = await gradedAfterEnd(run, passed);
+    expectClean(outcome);
+  });
+
+  it("loop-transition passes straight after sync-blend: B in at full EQ, no LOW asked for", { timeout: 120_000 }, async () => {
+    const run = await pairHarness("loop-transition", latencySec, { renderSec: 170, sameOnB: true });
+    const beat = 60 / run.track.grid.bpm;
+    const bar = 4 * beat;
+    // An elective: sync-blend and phrases are all it needs. The LOW knobs may be locked, one-bass is not graded.
+    const passed = passedBefore(LESSON_IDS, "crossfader");
+    const playAt = await startedCheck(run, passed);
+    const plan = planOf(run);
+    const loopPos = plan.startPos + 4 * bar;
+    await follow(run, playAt, plan.startPos, [
+      { pos: plan.startPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true }, caption: "CUE 🎧 B on" },
+      { pos: loopPos, command: { control: "loop-in", deck: "A" }, caption: "LOOP IN (D)" },
+      { pos: loopPos + 4 * bar, command: { control: "loop-out", deck: "A" }, caption: "LOOP OUT on the 1" },
+    ]);
+    const loopOneAt = playAt + (loopPos + 4 * bar - plan.startPos);
+    await run.renderToHeard(loopOneAt + 4 * bar);
+    expect(caption(run)).toContain("On the loop's 1: Press ,");
+    press(run, { control: "play", deck: "B" });
+    await run.renderToHeard(loopOneAt + 8 * bar);
     expect(caption(run)).toContain("EXIT");
     press(run, { control: "loop-exit", deck: "A" });
     await run.renderToHeard(loopOneAt + 8 * bar + 0.5);
-    expect(caption(run)).toContain("Fader A down");
+    expect(caption(run)).toBe("Fader A down (S)");
     press(run, { control: "channel-fader", deck: "A", value: 0 });
-    const outcome = await gradedAfterEnd(run, passedBefore(LESSON_IDS, "loop-transition"));
-    // The loop transition brings B in at full EQ over A's loop for a phrase, as the captions ask: one-bass
-    // (warn only) reads the LOW knobs, not the music, so it warns whatever A's loop holds.
-    expectClean(outcome, ["standing.one-bass"]);
+    const outcome = await gradedAfterEnd(run, passed);
+    expectClean(outcome);
   });
 
   it("echo-out passes", { timeout: 120_000 }, async () => {

@@ -152,6 +152,25 @@ describe("loop-transition", () => {
   /** A's loop from its outro's phrase start; B on the loop's 1 after one pass; EXIT one pass later. */
   const heardLoop = CUED + 4 * BAR;
 
+  it("brings B in at full EQ for a Learner who has not swapped the bass yet (the LOWs may be locked)", () => {
+    const captions = [...plan.cues.map((cue) => cue.caption), ...(plan.stepCues ?? []).map((step) => step.caption)];
+    expect(captions.some((caption) => caption.includes("LOW"))).toBe(false);
+  });
+
+  it("after bass-swap, cuts LOW B before B comes in and swaps the bass over A's loop, before EXIT", () => {
+    const swapping = definition.planCheck(track, 1, ["eq-basics", "sync-blend", "bass-swap"]);
+    expect(swapping.cues[0]?.caption).toBe("CUE 🎧 B on. LOW B all the way down");
+    expect(swapping.cues.map((cue) => cue.caption)).toContain("Next phrase's 1: LOOP IN (D)");
+    expect(swapping.stepCues).toEqual([
+      { after: { kind: "loop-on" }, caption: "Looping. On the loop's 1: Press ," },
+      { after: { kind: "play", deck: "B" }, caption: "Next loop's 1: swap the bass. LOW A down, LOW B up" },
+      { after: { kind: "swap" }, caption: "Next loop's 1: EXIT (G)" },
+      { after: { kind: "loop-exit" }, caption: "Fader A down (S), then LOW A to the middle" },
+    ]);
+    // One more loop to play: the swap's.
+    expect(swapping.timeoutSec).toBeCloseTo(plan.timeoutSec + LOOP, 6);
+  });
+
   function loopAttempt(options: { bInPasses?: number } = {}) {
     const bIn = heardLoop + (options.bInPasses ?? 2) * LOOP;
     const exitAt = bIn + LOOP;

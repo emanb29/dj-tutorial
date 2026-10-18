@@ -262,6 +262,8 @@ const BLEND_TAIL_BARS = 4;
  * the crossfader's centre), so a slow fade from the swap to bar 16 measured under 14 bars.
  */
 const BLEND_FADE_BARS = 2;
+/** Bars the first caption gives the Learner to cut LOW B, before it asks for the match. */
+const BLEND_CUT_BARS = 1;
 /** B against A in the Check (catalogue: ≤ 2% apart), by attempt. */
 const BLEND_CHECK_APART = [-1.1, 0.8, -1.6, 1.4] as const;
 const RIDE_DRILL: PracticeDrill = {
@@ -287,8 +289,9 @@ function blendCheckDecks(track: LessonTrack, apartPercent: number): DeckSetups {
   const { posA, posB } = byEarPositions(track, 4);
   return {
     A: { pos: posA, fader: 1, play: true, headphoneCue: false, eqCentred: true, ...tempoSetup(0) },
-    // B starts with A, in the headphones only, and with no bass: match it there, then blend it in.
-    B: { pos: posB, fader: 0, play: true, headphoneCue: true, eqCentred: true, lowCut: true, ...tempoSetup(apartFader(track, apartPercent)) },
+    // B starts with A, in the headphones only: the Learner cuts LOW B, matches it there, then blends it
+    // in. LOW B is theirs to cut, not the set-up's, so an FLX4's knob and the app agree (soft takeover).
+    B: { pos: posB, fader: 0, play: true, headphoneCue: true, eqCentred: true, ...tempoSetup(apartFader(track, apartPercent)) },
   };
 }
 
@@ -328,7 +331,8 @@ const blendByEar: LessonDefinition = {
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
       timeoutSec: barsSec(track, BLEND_MATCH_BARS + BLEND_BARS + BLEND_TAIL_BARS + 8) + 15,
       cues: [
-        { fromPos: pos, caption: "B's in your headphones. Match it: TEMPO B, then jog B" },
+        { fromPos: pos, caption: "B's in your headphones. LOW B all the way down" },
+        { fromPos: pos + barsSec(track, BLEND_CUT_BARS), caption: "Now match B: TEMPO B, then jog B" },
         { fromPos: inPos - barsSec(track, 1), caption: "Next 1: fader B up" },
         { fromPos: inPos + beat, caption: "Both play now. Keep B in line" },
         { fromPos: swapPos - barsSec(track, 1), caption: "Next 1: swap the bass. LOW A down, LOW B up" },
@@ -344,8 +348,8 @@ const blendByEar: LessonDefinition = {
     "blend-by-ear.blend-length": [`Both up for the whole 16 bars, then fader A down over ${String(BLEND_FADE_BARS)} bars.`],
     "blend-by-ear.phase-hold": ["Match in the headphones first, before fader B comes up.", "Hear two kicks? A short nudge on jog B, then listen."],
     "blend-by-ear.swap-time": ["Swap on the 1 of the middle phrase: LOW A down, LOW B up, together."],
-    "blend-by-ear.clash-short": ["Both LOWs up means two basslines: swap them in one move."],
-    "blend-by-ear.loud-steady": ["LOW B stays down till the swap: two full basslines are too loud."],
+    "blend-by-ear.clash-short": ["Cut LOW B before fader B comes up.", "Both LOWs up means two basslines: swap them in one move."],
+    "blend-by-ear.loud-steady": ["LOW B all the way down from the start, up only at the swap: two full basslines are too loud."],
   },
 };
 

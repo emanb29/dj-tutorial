@@ -639,10 +639,6 @@ export class LessonSession {
       this.send({ control: "filter", deck, value: 0 });
       if (deck === "A") this.sweep = null;
     }
-    if (setup.lowCut === true) {
-      this.send({ control: "eq-low", deck, value: -1 });
-      this.lowCut[deck] = true;
-    }
     setup.hotCues?.forEach((pos, slot) => {
       if (this.engine.deckState(deck).hotCues[slot] !== null) this.send({ control: "hot-cue-clear", deck, slot });
       if (pos !== null) this.send({ control: "hot-cue-set", deck, slot, pos });
@@ -788,15 +784,18 @@ export class LessonSession {
     });
   }
 
-  /** Starts (or restarts) the Check's audio part: auto-jump, record, and watch for its end. */
-  startCheck(): void {
+  /**
+   * Starts (or restarts) the Check's audio part: auto-jump, record, and watch for its end.
+   * `passedLessons`: the Learner's, before this Check (the plan's captions may build on them).
+   */
+  startCheck(passedLessons: readonly LessonId[] = []): void {
     this.stopPreview();
     this.abandonCheck();
     this.stopDrill();
     this.stopClip();
     const generation = ++this.generation;
     this.checksStarted += 1;
-    const plan = this.definition.planCheck(this.track, this.checksStarted);
+    const plan = this.definition.planCheck(this.track, this.checksStarted, passedLessons);
     void this.checkTracksReady(plan).then((ready) => {
       if (generation !== this.generation || this.closed) return;
       if (!ready) {

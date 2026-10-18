@@ -199,11 +199,12 @@ export function startedPractice(run: LessonHarness): Promise<number> {
 /**
  * Starts the Check and waits, with the render suspended, until the session has cued and played deck A.
  * Returns when A's Play takes effect (render time = when A's start position is rendered, and heard
- * `latencySec` later). Sets `run.plan` to the plan the session used.
+ * `latencySec` later). Sets `run.plan` to the plan the session used, for a Learner who has passed
+ * `passed` (the plan's captions may build on them).
  */
-export async function startedCheck(run: LessonHarness): Promise<number> {
+export async function startedCheck(run: LessonHarness, passed: readonly LessonId[] = []): Promise<number> {
   const playAt = await untilPlayedA(run, () => {
-    run.session.startCheck();
+    run.session.startCheck(passed);
   }, "the session to play the Check");
   run.plan = run.session.runningPlan();
   run.endsBeforeCheck = run.audioEnded();

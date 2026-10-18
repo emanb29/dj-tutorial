@@ -339,7 +339,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   useEffect(() => {
     if (session === null || attempt === null) return;
     setTaps([]);
-    session.startCheck();
+    session.startCheck(passedLessons(learnerRef.current));
   }, [session, attempt]);
 
   // Grading: stop the recorder, run the Check, write the Skill profile, save it in the background.

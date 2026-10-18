@@ -252,12 +252,18 @@ describe("blend-by-ear", () => {
   const definition = lessonDefinition("blend-by-ear");
   const plan = definition.planCheck(paired, 1);
 
-  it("starts B with A in the headphones only, no bass, off A's tempo; ends 4 bars after A is out", () => {
-    expect(plan.deckB).toMatchObject({ play: true, fader: 0, headphoneCue: true, lowCut: true, sync: false });
+  it("starts B with A in the headphones only, off A's tempo; ends 4 bars after A is out", () => {
+    expect(plan.deckB).toMatchObject({ play: true, fader: 0, headphoneCue: true, eqCentred: true, sync: false });
     expect(Math.abs(plan.deckB?.tempoPercent ?? 0)).toBeGreaterThan(0);
     expect(plan.startPos).toBeCloseTo(phraseStart(single.grid, 1));
     expect(plan.endWhen).toEqual({ kind: "faded-out-then", deck: "A", bars: 4 });
     expect(definition.headphones).toBe(true);
+  });
+
+  it("leaves LOW B for the Learner to cut, first thing, so an FLX4 knob and the app agree", () => {
+    expect(plan.deckB).not.toHaveProperty("lowCut");
+    expect(plan.cues[0]).toEqual({ fromPos: plan.startPos, caption: "B's in your headphones. LOW B all the way down" });
+    expect(plan.cues[1]?.caption).toContain("match B: TEMPO B, then jog B");
   });
 
   it("is graded with every aid off, on A and the partner on B", () => {
