@@ -461,6 +461,18 @@ export function unlocksAfter(lessons: readonly LessonId[]): ReadonlySet<ControlI
   return new Set(LESSONS.filter((lesson) => lessons.includes(lesson.id)).flatMap((lesson) => lesson.unlocks));
 }
 
+/**
+ * The controller during `definition`: `passed` Lessons' unlocks plus this Lesson's, as its hook reaches them
+ * (`hookStep`), then all of them. After the hook that includes every control the hook handed over, so a
+ * Lesson that unlocks nothing new (Count phrases) still has the TAP its hook used, even before the Lesson
+ * that unlocks TAP is passed.
+ */
+export function lessonUnlocks(definition: LessonDefinition, passed: readonly LessonId[], hookStep: number | null): ReadonlySet<ControlId> {
+  const steps = hookStep === null ? definition.hook : definition.hook.slice(0, hookStep + 1);
+  const handed = steps.flatMap((step) => [step.control, ...(step.reveals ?? [])]);
+  return new Set([...unlocksAfter(passed.filter((id) => id !== definition.id)), ...(hookStep === null ? definition.unlocks : []), ...handed]);
+}
+
 /** How an attempt is graded: a Lesson Check (the default), or another mode such as a Placement task. */
 export interface Grading {
   readonly mode: CheckMode;

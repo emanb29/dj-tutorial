@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runCheck } from "@checks";
 import { attempt, channel, event, frames, MUSIC, SILENT, taps } from "@checks/testing/synthetic.ts";
 import type { Attempt, ControlEvent } from "@shared/attempt.ts";
-import { LESSONS, lessonDefinition, checkSpecFor, unlocksAfter } from "./catalogue.ts";
+import { LESSONS, lessonDefinition, checkSpecFor, lessonUnlocks, unlocksAfter } from "./catalogue.ts";
 import { SYNTHETIC_HOUSE, syntheticLessonTrack } from "./synthetic-track.ts";
 import { barStart, beatSec, phraseStart } from "./track.ts";
 import type { CheckPlan, LessonDefinition, LessonTrack } from "./types.ts";
@@ -39,6 +39,22 @@ describe("the Lesson catalogue for Lessons 1–3", () => {
   it("grows the controller: each Lesson's unlocks add to the ones before", () => {
     expect([...unlocksAfter(["deck-basics"])]).toEqual(["A.play", "A.channel-fader", "master-level", "master-meter"]);
     expect([...unlocksAfter(["deck-basics", "beats-and-bars"])]).toContain("tap");
+  });
+
+  it("keeps the hook's controls unlocked after the hook, so Count phrases taps on the FLX4 before Beats and bars is passed", () => {
+    const phrases = lessonDefinition("phrases");
+    expect(lessonUnlocks(phrases, ["deck-basics"], null).has("tap")).toBe(true);
+    expect(lessonUnlocks(phrases, ["deck-basics"], 0).has("tap")).toBe(true);
+  });
+
+  it("hands over a Lesson's controls step by step in the hook, and all of them after it", () => {
+    for (const lesson of LESSONS) {
+      const after = lessonUnlocks(lesson, [], null);
+      for (const control of [...lesson.unlocks, ...lesson.hook.map((step) => step.control)]) expect(after.has(control)).toBe(true);
+      const first = lessonUnlocks(lesson, [], 0);
+      const later = lesson.hook.slice(1).map((step) => step.control).filter((control) => control !== lesson.hook[0]?.control && !(lesson.hook[0]?.reveals ?? []).includes(control));
+      for (const control of later) expect(first.has(control)).toBe(false);
+    }
   });
 });
 

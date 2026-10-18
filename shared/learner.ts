@@ -153,7 +153,11 @@ export const FinalProjectSchema = z.strictObject({
 });
 export type FinalProject = z.output<typeof FinalProjectSchema>;
 
-/** The optional "do it in rekordbox" cards (ISS-97): one per Lesson that has one, and the library set-up. */
+/**
+ * The optional "do it in rekordbox" cards (ISS-97): one per Lesson that has one. "library" was a
+ * one-time folder set-up card, retired by the owner as too prescriptive; it stays here so records
+ * that answered it still parse.
+ */
 export const REKORDBOX_CARD_IDS = ["cut-on-phrase", "sync-blend", "blend-by-ear", "final-mix", "library"] as const;
 export const RekordboxCardIdSchema = z.enum(REKORDBOX_CARD_IDS);
 export type RekordboxCardId = z.infer<typeof RekordboxCardIdSchema>;

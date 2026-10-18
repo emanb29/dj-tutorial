@@ -13,6 +13,7 @@ export {
   practiceDecksFor,
   practiceLoopFor,
   readyUsedIn,
+  lessonUnlocks,
   unlocksAfter,
   withPlannedGrids,
   type BuiltLesson,

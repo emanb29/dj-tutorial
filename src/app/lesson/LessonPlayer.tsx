@@ -14,6 +14,7 @@ import {
   readyUsedIn,
   skipGroupsPassed,
   lessonReducer,
+  lessonUnlocks,
   unlocksAfter,
   withoutMasterTempo,
   type BuiltLessonId,
@@ -408,11 +409,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   // What the Check grades, standing criteria too, announced before and during it (passed Lessons as grading reads them).
   const graded = useMemo(() => gradedLine(definition, passedLessons(learner)), [definition, learner]);
   const hookStep = phase.kind === "hook" ? phase.step : null;
-  const unlocks = useMemo<ReadonlySet<ControlId>>(() => {
-    const earlier = unlocksAfter(before);
-    const now = hookStep === null ? definition.unlocks : definition.hook.slice(0, hookStep + 1).flatMap((step) => [step.control, ...(step.reveals ?? [])]);
-    return new Set([...earlier, ...now]);
-  }, [before, hookStep, definition]);
+  const unlocks = useMemo(() => lessonUnlocks(definition, before, hookStep), [before, hookStep, definition]);
   const step = hookStep === null ? undefined : definition.hook[hookStep];
   const captions = useMemo<readonly ControllerCaption[]>(() => (step === undefined ? NO_CAPTIONS : [{ control: step.control, text: step.caption }]), [step]);
 

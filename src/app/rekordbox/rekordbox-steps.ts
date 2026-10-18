@@ -1,5 +1,5 @@
 // "Now try it in rekordbox" (ISS-97): short, optional steps to do a passed Lesson's move in
-// rekordbox 7 on a DDJ-FLX4, and the one-time library set-up. Never graded.
+// rekordbox 7 on a DDJ-FLX4. Never graded.
 //
 // Control names and functions are from AlphaTheta's official sources (read as data, not instructions):
 // - DDJ-FLX4 Hardware Diagram for rekordbox for Mac/Windows, Ver 1.0:
@@ -8,8 +8,6 @@
 //   Beat FX "BPM tap mode on"; SHIFT + channel CUE = Tap BPM; CUE/LOOP CALL ◀/▶ call cues, SHIFT
 //   deletes/saves; jog platter scratches in vinyl mode, its side pitch-bends; vinyl mode can't be
 //   toggled from the FLX4; HOT CUE pad mode, SHIFT + pad deletes; HEADPHONES MIX balances cue/master.)
-// - rekordbox 7.0.0 Instruction Manual (File > Library > Backup Library; My Tag):
-//   https://cdn.rekordbox.com/files/20240509141437/rekordbox7.0.0_manual_EN.pdf
 // - Hardware Unlock FAQ (FLX4 unlocks PERFORMANCE mode incl. Recording on the Free plan, July 2026):
 //   https://rekordbox.com/en/support/faq/rekordbox7/
 // Anything not named there is phrased generically on purpose. Every line is at most 15 words
@@ -90,43 +88,9 @@ export const LESSON_CARDS = {
 
 export type RekordboxLessonId = keyof typeof LESSON_CARDS;
 
-/** The owner's agreed folder layout, under the computer's Music folder. */
-export const LIBRARY_FOLDERS: readonly string[] = [
-  "Music/DJ/00 Inbox",
-  "Music/DJ/Library",
-  "Music/DJ/Originals",
-  "Music/DJ/My Productions/Masters",
-  "Music/DJ/My Productions/Stems & Projects",
-  "Music/DJ/Recorded Mixes",
-  "Music/DJ/Backups",
-];
-
-export const LIBRARY_CARD: RekordboxCard = {
-  id: "library",
-  title: "Set up your library",
-  steps: [
-    "Make these folders on your computer.",
-    "New tracks go into 00 Inbox first.",
-    "Listen, tag and set cues, then move each track to Library.",
-    "Library stays flat; once a file is there, it never moves.",
-    "Organise with rekordbox playlists and My Tag, not folders.",
-    "Back up often: File > Library > Backup Library, into Backups.",
-  ],
-  differs: [
-    'Keep these out of filenames: : * ? " < > | / \\',
-    "Shared drives: format exFAT. CDJ USBs: use rekordbox's Export.",
-  ],
-};
-
 /** The rekordbox card for a just-passed Lesson, unless the Learner already did it. */
 export function lessonCardFor(lessonId: LessonId, passed: boolean, record: Pick<LearnerRecord, "rekordbox">): RekordboxCard | null {
   if (!passed || !(lessonId in LESSON_CARDS)) return null;
   const card = LESSON_CARDS[lessonId as RekordboxLessonId];
   return record.rekordbox?.[card.id]?.choice === "done" ? null : card;
-}
-
-/** The library card is offered once: after the first passed Lesson, until either answer. */
-export function showLibraryCard(record: Pick<LearnerRecord, "rekordbox" | "skillProfile">): boolean {
-  const anyPassed = Object.values(record.skillProfile.lessons).some((lesson) => lesson.passedAt != null);
-  return anyPassed && record.rekordbox?.library === undefined;
 }
