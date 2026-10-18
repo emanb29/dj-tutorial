@@ -6,7 +6,11 @@
 //
 // Mapping decisions beyond AlphaTheta's list (docs/research/flx4-midi.md):
 // - BEAT SYNC long press = MASTER TEMPO (the FLX4 has no MASTER TEMPO button); SHIFT + BEAT SYNC = tempo range.
-// - BROWSE press = TAP (no TAP button; the knob sits where the screen's TAP is).
+// - TAP: SHIFT + BEAT ▶ always (the panel prints TAP under BEAT ▶ as its SHIFT function), and the
+//   BROWSE press always. Tapping is a Lesson's ear-training input, so TAP also borrows controls the
+//   Learner has not been handed yet: any performance pad while the pads are locked (before hot cues),
+//   and plain BEAT ◀ / BEAT ▶ while Beat FX is locked. Never BEAT SYNC. Borrowed pads light while they
+//   are TAP, and the pad pressed blinks when its tap lands on the beat.
 // - LOAD = Enter (into the Check / again), SHIFT + LOAD = P (practice), SHIFT + BROWSE press = R (Ready):
 //   pressed as the Lesson keys, so Lessons have one path for them.
 //
@@ -17,6 +21,7 @@
 import type { DeckId, EngineEvents } from "@audio";
 import { allLedsOff, Flx4Decoder, JogDriver, ledMessages, levelMeterMessage, SoftTakeover, type ContinuousName, type Flx4Input, type LedId, type MidiMessage } from "@midi";
 import { deckControl, type ControlId } from "./control-ids.ts";
+import { onTapJudged, publishTapOnHardware } from "./tap-feedback.ts";
 import { meterFraction } from "./displays.tsx";
 import { continuousSpec, type ContinuousControlId } from "./gestures.ts";
 import type { ControllerEngine, ControllerSession, JogFeel, Schedule } from "./session.ts";
@@ -38,6 +43,33 @@ export const HARDWARE_JOG: JogFeel = { bendGain: 0.02, searchSecPerRadian: 1.8 /
 const CENTRE_SNAP_FRACTION = 0.01;
 const FLASH_STEP_MS = 150;
 const FLASH_STEPS = 6;
+/** How long a pad goes dark when its tap lands on the beat. */
+const TAP_BLINK_MS = 90;
+
+/**
+ * Beat FX's BEAT ◀ / ▶ control. TODO(lessons-17-19): that branch adds "beat-fx-beat" to control-ids.ts;
+ * until it lands no Lesson can unlock it, so BEAT ◀ / ▶ are always TAP. Once it does, unlocking it hands
+ * the buttons back to Beat FX with no change here.
+ */
+const BEAT_FX_BEAT = "beat-fx-beat" as string as ControlId;
+
+/** Which borrowed controls TAP has on the hardware now, or null while TAP itself is locked. */
+export interface HardwareTap {
+  /** Every performance pad on both decks (the pads are not unlocked yet). */
+  readonly pads: boolean;
+  /** BEAT ◀ and BEAT ▶ (Beat FX is not unlocked yet). */
+  readonly beatButtons: boolean;
+}
+
+export function hardwareTap(isUnlocked: (id: ControlId) => boolean): HardwareTap | null {
+  if (!isUnlocked("tap")) return null;
+  return { pads: !isUnlocked("A.hot-cue") && !isUnlocked("B.hot-cue"), beatButtons: !isUnlocked(BEAT_FX_BEAT) };
+}
+
+/** The hardware controls a caption names for TAP, before "or Space": the panel's TAP, and the pads while they are TAP. */
+export function hardwareTapName(tap: HardwareTap): string {
+  return tap.pads ? "SHIFT + BEAT ▶ (TAP), any pad" : "SHIFT + BEAT ▶ (TAP)";
+}
 
 const DECKS: readonly DeckId[] = ["A", "B"];
 
@@ -90,6 +122,10 @@ export interface HardwareBridgeOptions {
   readonly schedule?: Schedule;
   /** Presses a Lesson key (Enter, KeyP, KeyR). Defaults to a key press on the window. */
   readonly lessonKey?: (code: string) => void;
+  /** Where judged taps are announced (on the beat or not). Defaults to the Lesson's announcements. */
+  readonly tapJudged?: (listener: (onBeat: boolean) => void) => () => void;
+  /** Where the hardware's TAP control is named for captions (null: none). Defaults to the shared one. */
+  readonly publishTap?: (name: string | null) => void;
 }
 
 const browserSchedule: Schedule = (run, delayMs) => {
@@ -120,6 +156,11 @@ export class HardwareBridge {
   private readonly flashing = new Map<LedId, number>();
   private cancelFlash: (() => void) | null = null;
   private wasConnected = false;
+  private readonly tapJudged: (listener: (onBeat: boolean) => void) => () => void;
+  private readonly publishTap: (name: string | null) => void;
+  /** The pad the last tap came from, to blink when that tap is judged on the beat. */
+  private tapPad: LedId | null = null;
+  private readonly blinking = new Set<LedId>();
 
   constructor(
     private readonly session: ControllerSession,
@@ -129,6 +170,8 @@ export class HardwareBridge {
   ) {
     this.schedule = options.schedule ?? browserSchedule;
     this.lessonKey = options.lessonKey ?? pressLessonKey;
+    this.tapJudged = options.tapJudged ?? onTapJudged;
+    this.publishTap = options.publishTap ?? publishTapOnHardware;
     const jog = (deck: DeckId) =>
       new JogDriver({
         begin: () => this.session.beginJog(deck, "midi", HARDWARE_JOG),
@@ -156,10 +199,15 @@ export class HardwareBridge {
       this.engine.on("meter", (frame: EngineEvents["meter"]) => {
         if (frame.bus !== "master") this.meter(frame.bus, meterFraction(frame.samplePeakDb));
       }),
+      this.tapJudged((onBeat) => {
+        if (onBeat && this.tapPad !== null) this.blink(this.tapPad);
+        this.tapPad = null;
+      }),
     ];
     this.connectionChanged();
     return () => {
       for (const stop of stops) stop();
+      this.publishTap(null);
       this.letGo();
       this.cancelFlash?.();
       this.cancelFlash = null;
@@ -180,6 +228,11 @@ export class HardwareBridge {
         return;
       case "pad":
         if (!input.pressed) return;
+        if (this.tap()?.pads === true) {
+          this.session.tap(this.input(timeMs));
+          this.tapPad = `${input.deck}.pad-${String(input.pad + 1)}` as LedId;
+          return;
+        }
         if (input.mode !== "hot-cue") {
           // TODO(lessons-17-19): BEAT LOOP and the other pad modes. For now only HOT CUE does anything.
           this.session.refuse(deckControl(input.deck, "hot-cue"));
@@ -208,9 +261,13 @@ export class HardwareBridge {
   private button(input: Extract<Flx4Input, { kind: "button" }>, timeMs: number): void {
     const timed = this.input(timeMs);
     if (input.deck === null) {
-      if (input.control === "browse-press" && input.pressed) {
+      if (!input.pressed) return;
+      if (input.control === "browse-press") {
         if (input.shift) this.lessonKey("KeyR");
-        else if (this.unlockedOrRefuse("tap")) this.session.tap(timed);
+        else this.tapOrRefuse(timed);
+      } else if ((input.control === "fx-beat-forward" && input.shift) || ((input.control === "fx-beat-back" || input.control === "fx-beat-forward") && this.tap()?.beatButtons !== false)) {
+        // TODO(lessons-17-19): BEAT ◀ / ▶ change the Beat FX beat once "beat-fx-beat" is unlocked.
+        this.tapOrRefuse(timed);
       }
       return;
     }
@@ -284,6 +341,25 @@ export class HardwareBridge {
     return (this.session.valueOf(id) - spec.min) / (spec.max - spec.min);
   }
 
+  private tap(): HardwareTap | null {
+    return hardwareTap((id) => this.session.isUnlocked(id));
+  }
+
+  private tapOrRefuse(timed: { device: "midi"; eventTimeMs: number }): void {
+    this.tapPad = null;
+    if (this.unlockedOrRefuse("tap")) this.session.tap(timed);
+  }
+
+  /** A pad that is TAP goes dark for a moment: that tap was on the beat. */
+  private blink(led: LedId): void {
+    this.blinking.add(led);
+    this.refreshLeds();
+    this.schedule(() => {
+      this.blinking.delete(led);
+      this.refreshLeds();
+    }, TAP_BLINK_MS);
+  }
+
   private unlockedOrRefuse(control: ControlId): boolean {
     if (this.session.isUnlocked(control)) return true;
     this.session.refuse(control);
@@ -304,6 +380,7 @@ export class HardwareBridge {
     }
     if (!connected && this.wasConnected) this.letGo();
     this.wasConnected = connected;
+    this.publishTapName();
   }
 
   /** Releases whatever the hardware holds: a CUE, a jog; forgets where the faders were. */
@@ -332,6 +409,12 @@ export class HardwareBridge {
     for (const led of unlockedNow) if (!this.unlockedLeds.has(led)) this.flash(led);
     this.unlockedLeds = unlockedNow;
     this.refreshLeds();
+    this.publishTapName();
+  }
+
+  private publishTapName(): void {
+    const tap = this.tap();
+    this.publishTap(this.port.connected && tap !== null ? hardwareTapName(tap) : null);
   }
 
   private ledUnlocked(led: LedId): boolean {
@@ -358,6 +441,7 @@ export class HardwareBridge {
   private ledState(led: LedId): boolean {
     const flashing = this.flashing.get(led);
     if (flashing !== undefined) return flashing % 2 === 0;
+    if (/\.pad-\d$/.test(led) && this.tap()?.pads === true) return !this.blinking.has(led);
     if (!this.ledUnlocked(led)) return false;
     const { decks, mixer, hotCues } = this.session.snapshot();
     const deck: DeckId = led.startsWith("A.") ? "A" : "B";

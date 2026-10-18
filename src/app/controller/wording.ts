@@ -93,10 +93,18 @@ function wordsFor(label: string): TouchWords {
   return words;
 }
 
-/** A caption in the wording for the Learner's input: unchanged for keys, control names for touch. */
-export function inputWording(text: string, wording: Wording): string {
-  if (wording === "keys") return text;
-  return text
+/**
+ * A caption in the wording for the Learner's input: unchanged for keys, control names for touch. With a
+ * controller connected, `tapOnHardware` names its TAP controls first: "Tap SHIFT + BEAT ▶ (TAP), any
+ * pad or Space on every kick", "Tap every beat (SHIFT + BEAT ▶, any pad or Space)".
+ */
+export function inputWording(text: string, wording: Wording, tapOnHardware: string | null = null): string {
+  const tapped =
+    tapOnHardware === null
+      ? text
+      : text.replace(/\bTap Space\b/g, `Tap ${tapOnHardware} or Space`).replace(/ \(Space\)/g, ` (${tapOnHardware.replace(" (TAP)", "")} or Space)`);
+  if (wording === "keys") return tapped;
+  return tapped
     .replace(PRESS, (_match, label: string) => wordsFor(label).press)
     .replace(ASIDE, (_match, label: string) => {
       const aside = wordsFor(label).aside;

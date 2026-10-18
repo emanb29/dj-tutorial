@@ -30,6 +30,7 @@ import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { withHeadphonesChecked, withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
 import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
+import { announceTapJudged, useTapOnHardware } from "../controller/tap-feedback.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
 import { currentOutputPlan } from "../audio-output.ts";
 import type { SaveStatus } from "../save-queue.ts";
@@ -130,6 +131,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   const marginsRef = useRef(state.margins);
   const { phase, margins } = state;
   const wording = useWording();
+  const tapOnHardware = useTapOnHardware();
   useEffect(() => {
     learnerRef.current = learner;
     phaseRef.current = phase;
@@ -157,6 +159,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       dispatch({ type: "observed", observation });
       const mark = tapMark(observation);
       if (mark !== null) setTaps((marks) => [...marks, mark].slice(-TAP_MARKS_KEPT));
+      if (observation.kind === "tap") announceTapJudged(observation.onBeat);
     };
     void (async () => {
       try {
@@ -329,7 +332,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       const node = cueLine.current;
       if (node !== null) {
         const cue = session.checkCue();
-        const text = inputWording(cue?.caption ?? definition.checkCaption, wording);
+        const text = inputWording(cue?.caption ?? definition.checkCaption, wording, tapOnHardware);
         // Written only on change: the checkpoint tick's animation restarts when its attribute flips.
         if (node.textContent !== text) node.textContent = text;
         const checkpoint = String(cue?.checkpoint === true);
@@ -342,7 +345,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [session, attempt, definition, wording]);
+  }, [session, attempt, definition, wording, tapOnHardware]);
 
   // Lesson keys: Enter = into the Check (again), P = practice, Escape = back to the list, 1–8 = answers.
   const answering = phase.kind === "answering" ? phase.answers : null;
@@ -540,7 +543,8 @@ interface CaptionProps {
 /** One line: what to do now. The concept just named sits before it, smaller. */
 function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, graded }: CaptionProps) {
   const wording = useWording();
-  const say = (text: string | undefined) => (text === undefined ? undefined : inputWording(text, wording));
+  const tapOnHardware = useTapOnHardware();
+  const say = (text: string | undefined) => (text === undefined ? undefined : inputWording(text, wording, tapOnHardware));
   switch (phase.kind) {
     case "loading":
       return <span>{setupStatus ?? "Getting the deck ready…"}</span>;

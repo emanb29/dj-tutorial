@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { learner, openLesson } from "./lesson-support.ts";
+import { checkPlayingPast, learner, openLesson, playingPast, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // The DDJ-FLX4 without the hardware: navigator.requestMIDIAccess is replaced (before the app loads) by a
 // fake MIDI access with a "DDJ-FLX4" port. Messages are the official list's bytes; LED output is kept
@@ -7,6 +7,8 @@ import { learner, openLesson } from "./lesson-support.ts";
 
 interface FakeFlx4 {
   send(bytes: number[]): void;
+  /** Sends with this MIDIMessageEvent.timeStamp (Chrome on macOS gives 0 when CoreMIDI stamps a packet 0). */
+  sendStamped(bytes: number[], timeStamp: number): void;
   readonly sent: number[][];
 }
 
@@ -38,12 +40,16 @@ async function fakeMidi(page: Page, options: { controller: boolean; outputs?: { 
         configurable: true,
       });
     }
+    const sendStamped = (bytes: number[], timeStamp: number) => {
+      const event = new Event("midimessage");
+      Object.defineProperties(event, { data: { value: new Uint8Array(bytes) }, timeStamp: { value: timeStamp } });
+      input.dispatchEvent(event);
+    };
     window.__flx4 = {
       send(bytes) {
-        const event = new Event("midimessage");
-        Object.defineProperties(event, { data: { value: new Uint8Array(bytes) }, timeStamp: { value: performance.now() } });
-        input.dispatchEvent(event);
+        sendStamped(bytes, performance.now());
       },
+      sendStamped,
       sent,
     };
   }, options);
@@ -102,6 +108,123 @@ test("deck-basics passes with only the FLX4: PLAY, LOAD for Enter, and the chann
   await expect(card).toContainText("Fade out: fader ended at 0%");
 });
 
+/** The hardware controls that are TAP in Lesson 2, as note-on bytes (the release is the same at velocity 0). */
+const TAP_PRESSES = {
+  pad: [0x97, 0x00, 0x7f],
+  "BEAT ▶": [0x94, 0x4b, 0x7f],
+  "SHIFT + BEAT ▶": [0x94, 0x6b, 0x7f],
+  BROWSE: [0x96, 0x41, 0x7f],
+} as const;
+type TapControl = keyof typeof TAP_PRESSES;
+
+/**
+ * Presses a TAP control on beats of deck A's heard playhead, timed in the page as `keysAtBeats` times
+ * Space. `stamp` "event" stamps each press with its performance.now() time, as Chrome normally does;
+ * "zero" stamps it 0, as Chrome does when CoreMIDI hands it a packet stamped 0 ("now").
+ */
+async function tapsAtBeats(page: Page, control: TapControl, beats: readonly number[], stamp: "event" | "zero"): Promise<void> {
+  await page.evaluate(
+    async ({ targets, zero, press }) => {
+      const lesson = (window as LessonWindow).learnToDjLesson;
+      const flx4 = window.__flx4;
+      if (lesson === undefined || flx4 === undefined) throw new Error("No Lesson or no fake FLX4.");
+      const beatMs = 60_000 / (lesson.deckTrack("A")?.grid ?? lesson.track.grid).bpm;
+      const beatAtMs = (beat: number) => {
+        const now = performance.now();
+        const heard = lesson.engine.heardTime(now);
+        const reading = heard.ok && heard.ctx !== undefined ? lesson.engine.playheadAt("A", heard.ctx) : null;
+        if (reading?.beat == null) throw new Error("Deck A has no playhead reading.");
+        return now + (beat - reading.beat) * beatMs;
+      };
+      for (const beat of targets) {
+        let atMs = beatAtMs(beat);
+        for (let remainingMs = atMs - performance.now(); remainingMs > 0.5; remainingMs = atMs - performance.now()) {
+          // A 0-stamped press is timed when its handler runs, so a late timer would make it late: wake
+          // well early and spin the last stretch.
+          const marginMs = zero ? 30 : 8;
+          if (remainingMs > marginMs + 4) await new Promise((resolve) => setTimeout(resolve, remainingMs - marginMs));
+          atMs = beatAtMs(beat);
+        }
+        flx4.sendStamped([...press], zero ? 0 : atMs);
+        flx4.sendStamped([press[0], press[1], 0], zero ? 0 : atMs);
+      }
+    },
+    { targets: beats, zero: stamp === "zero", press: TAP_PRESSES[control] },
+  );
+}
+
+const TAP_RUNS: readonly { control: TapControl; stamp: "event" | "zero" }[] = [
+  { control: "pad", stamp: "event" },
+  { control: "BEAT ▶", stamp: "event" },
+  { control: "BROWSE", stamp: "event" },
+  { control: "BROWSE", stamp: "zero" },
+];
+
+for (const { control, stamp } of TAP_RUNS) {
+  test(`beats-and-bars passes with only ${control} presses as TAP (MIDI timeStamp ${stamp === "zero" ? "0" : "on the event clock"})`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await fakeMidi(page, { controller: true });
+    const learnerId = learner(`flx4-tap-${stamp}`);
+    await seedPassed(page, learnerId, ["deck-basics"]);
+    await openLesson(page, learnerId, "beats-and-bars");
+    // On hardware the caption names the borrowed TAP control: the pads, before hot cues.
+    await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("Tap SHIFT + BEAT ▶ (TAP), any pad or Space on every kick");
+    await playingPast(page, "hook", 66);
+    // LOAD is Enter: into the Check.
+    await midi(page, [0x96, 0x46, 0x7f], [0x96, 0x46, 0x00]);
+    await checkPlayingPast(page, 28.5);
+    // Every beat of bars 9–16 (beats 32–63), then the 1s of bars 17–24.
+    await tapsAtBeats(page, control, [...Array.from({ length: 32 }, (_, index) => 32 + index), ...Array.from({ length: 8 }, (_, index) => 64 + 4 * index)], stamp);
+
+    const card = page.getByRole("region", { name: "Result" });
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
+    await expect(card).toContainText(/Beats: (29|3[0-2]) of 32 on time/);
+    await expect(card).toContainText(/Downbeats: [78] of 8 on time/);
+  });
+}
+
+test("every TAP (pad, BEAT ▶, SHIFT + BEAT ▶, BROWSE, a 0-stamped press, Space) leaves an early/late mark in the hook and in practice", async ({ page }) => {
+  test.setTimeout(90_000);
+  await fakeMidi(page, { controller: true });
+  const learnerId = learner("flx4-marks");
+  await seedPassed(page, learnerId, ["deck-basics"]);
+  await openLesson(page, learnerId, "beats-and-bars");
+  await playingPast(page, "hook", 2);
+  const marks = page.getByRole("list", { name: "Your last taps" }).locator("li");
+  const tapEach = async () => {
+    for (const press of Object.values(TAP_PRESSES)) {
+      await midi(page, [...press], [press[0], press[1], 0]);
+      await page.waitForTimeout(120);
+    }
+    await page.evaluate(() => {
+      window.__flx4?.sendStamped([0x96, 0x41, 0x7f], 0);
+    });
+    await page.waitForTimeout(120);
+    await page.keyboard.press("Space");
+  };
+  await tapEach();
+  await expect(marks).toHaveCount(6);
+
+  // Finish the hook on the pads (four beats, then three 1s) to reach practice.
+  const beat = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.playhead("A").beat ?? 0);
+  const next = Math.ceil(beat) + 2;
+  const firstOne = Math.ceil((next + 5) / 4) * 4;
+  await tapsAtBeats(page, "pad", [next, next + 1, next + 2, next + 3, firstOne, firstOne + 4, firstOne + 8], "event");
+  await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice", { timeout: 15_000 });
+  // The strip keeps the last 12 marks: each TAP must still change it.
+  const strip = () => marks.evaluateAll((items) => items.map((item) => `${item.getAttribute("title") ?? ""}@${(item as HTMLElement).style.left}`).join("|"));
+  for (const press of Object.values(TAP_PRESSES)) {
+    const before = await strip();
+    await midi(page, [...press], [press[0], press[1], 0]);
+    await expect.poll(strip).not.toBe(before);
+    await page.waitForTimeout(150);
+  }
+  const before = await strip();
+  await page.keyboard.press("Space");
+  await expect.poll(strip).not.toBe(before);
+});
+
 test("a hardware fader away from the screen's value shows a pickup mark and does not jump the value", async ({ page }) => {
   await fakeMidi(page, { controller: true });
   await openLesson(page, learner("pickup"), "deck-basics");
@@ -144,6 +267,16 @@ test("the Controller page connects, ticks off moved controls, and decodes them i
   await expect(page.getByRole("button", { name: "Test the lights" })).toBeEnabled({ timeout: 10_000 });
   const last = await page.evaluate(() => window.__flx4?.sent.at(-1));
   expect(last?.[2]).toBe(0);
+});
+
+test("the Controller page's tap test shows how early or late a BEAT ▶ press landed", async ({ page }) => {
+  await fakeMidi(page, { controller: true });
+  await page.goto("/controller");
+  await expect(page.getByTestId("midi-status")).toContainText("Connected: DDJ-FLX4");
+  await page.getByRole("button", { name: "Start the tap test" }).click();
+  await page.waitForTimeout(1200);
+  await midi(page, [0x94, 0x4b, 0x7f], [0x94, 0x4b, 0x00]);
+  await expect(page.getByTestId("tap-offset")).toHaveText(/^Last tap [+-]?\d+ ms · typical [+-]?\d+ ms over 1 tap$/);
 });
 
 test("the Controller page works without a controller and says what to plug in", async ({ page }) => {

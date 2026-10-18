@@ -50,3 +50,12 @@ describe("startingWording", () => {
     expect(startingWording({ coarsePointer: false })).toBe("keys");
   });
 });
+
+describe("captions with a controller connected", () => {
+  it("name the hardware's TAP before Space", () => {
+    expect(inputWording("Tap Space on every kick", "keys", "SHIFT + BEAT ▶ (TAP), any pad")).toBe("Tap SHIFT + BEAT ▶ (TAP), any pad or Space on every kick");
+    expect(inputWording("Tap every beat (Space)", "keys", "SHIFT + BEAT ▶ (TAP), any pad")).toBe("Tap every beat (SHIFT + BEAT ▶, any pad or Space)");
+    expect(inputWording("Tap every beat (Space)", "keys", "SHIFT + BEAT ▶ (TAP)")).toBe("Tap every beat (SHIFT + BEAT ▶ or Space)");
+    expect(inputWording("Press X to play", "keys", "any pad")).toBe("Press X to play");
+  });
+});

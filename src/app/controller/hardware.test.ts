@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandInput, DeckId, EngineCommand, EngineDeckSnapshot, EngineEvents, EngineMixerSnapshot, Result } from "@audio";
 import type { MidiMessage } from "@midi";
 import { ALL_CONTROL_IDS, type ControlId } from "./control-ids.ts";
-import { HARDWARE_JOG, HardwareBridge, type HardwarePort } from "./hardware.ts";
+import { HARDWARE_JOG, HardwareBridge, type HardwareBridgeOptions, type HardwarePort } from "./hardware.ts";
 import { ControllerSession, HARDWARE_SETTLE_MS, NOT_YET_MS, type ControllerEngine } from "./session.ts";
 
 interface Sent {
@@ -116,7 +116,7 @@ class FakePort implements HardwarePort {
 
 const everything: ReadonlySet<ControlId> = new Set(ALL_CONTROL_IDS);
 
-function rig(unlocks: ReadonlySet<ControlId> = everything) {
+function rig(unlocks: ReadonlySet<ControlId> = everything, options: Pick<HardwareBridgeOptions, "tapJudged" | "publishTap"> = {}) {
   const { engine, sent, emit } = statefulEngine();
   let timers: { run: () => void; delayMs: number }[] = [];
   const schedule = (run: () => void, delayMs: number) => {
@@ -133,6 +133,8 @@ function rig(unlocks: ReadonlySet<ControlId> = everything) {
   const bridge = new HardwareBridge(session, engine, port, {
     schedule,
     lessonKey: (code) => keys.push(code),
+    tapJudged: options.tapJudged ?? (() => () => undefined),
+    publishTap: options.publishTap ?? (() => undefined),
   });
   const detach = bridge.attach();
   return {
@@ -233,6 +235,90 @@ describe("buttons go through the session as midi input, at the message's time", 
     ]);
     port.midi([0x98, 0x02, 0x7f]);
     expect(session.snapshot().hotCues.A[2]).toBeNull();
+  });
+});
+
+describe("TAP borrows the controls a Learner has not been handed yet", () => {
+  // Lesson 2 (beats-and-bars): TAP is unlocked, the pads and Beat FX are not.
+  const lesson2 = new Set<ControlId>(["tap", "A.play", "A.channel-fader"]);
+  const tapAt = (eventTimeMs: number) => ({ command: { control: "tap" }, input: { device: "midi", eventTimeMs, gestureEnd: true } });
+
+  it("any performance pad, on either deck, in any pad mode, with or without SHIFT, is TAP while the pads are locked", () => {
+    const { port, sent, session } = rig(lesson2);
+    port.midi([0x97, 0x00, 0x7f], 501);
+    port.midi([0x97, 0x00, 0x00], 502);
+    port.midi([0x99, 0x07, 0x7f], 503);
+    port.midi([0x98, 0x03, 0x7f], 504);
+    port.midi([0x97, 0x32, 0x7f], 505);
+    expect(sent).toEqual([tapAt(501), tapAt(503), tapAt(504), tapAt(505)]);
+    expect(session.snapshot().notYet).toBeNull();
+  });
+
+  it("pads are hot cues, not TAP, once the pads are unlocked", () => {
+    const { port, sent } = rig(new Set<ControlId>([...lesson2, "A.hot-cue", "B.hot-cue"]));
+    port.midi([0x97, 0x02, 0x7f]);
+    port.midi([0x97, 0x02, 0x7f]);
+    expect(commands(sent).map((command) => command.control)).toEqual(["seek", "play"]);
+  });
+
+  it("BEAT ◀ and BEAT ▶ (TAP printed under it), with or without SHIFT, are TAP while Beat FX is locked", () => {
+    const { port, sent } = rig(lesson2);
+    port.midi([0x94, 0x4b, 0x7f], 601);
+    port.midi([0x94, 0x4b, 0x00], 602);
+    port.midi([0x94, 0x6b, 0x7f], 603);
+    port.midi([0x94, 0x4a, 0x7f], 604);
+    port.midi([0x94, 0x66, 0x7f], 605);
+    expect(sent).toEqual([tapAt(601), tapAt(603), tapAt(604), tapAt(605)]);
+  });
+
+  it("plain BEAT ◀ / ▶ do not tap once Beat FX's beat buttons are unlocked; SHIFT + BEAT ▶ (the panel's TAP) still does", () => {
+    const { port, sent } = rig(new Set<ControlId>([...lesson2, "beat-fx-beat" as string as ControlId]));
+    port.midi([0x94, 0x4b, 0x7f]);
+    port.midi([0x94, 0x4a, 0x7f]);
+    port.midi([0x94, 0x66, 0x7f]);
+    expect(sent).toEqual([]);
+    port.midi([0x94, 0x6b, 0x7f], 701);
+    expect(sent).toEqual([tapAt(701)]);
+  });
+
+  it("BEAT SYNC is never TAP", () => {
+    const { port, sent } = rig(lesson2);
+    port.midi([0x90, 0x58, 0x7f]);
+    expect(sent).toEqual([]);
+  });
+
+  it("borrowed pads stay lit, and the pad tapped blinks when the Lesson judges that tap on the beat", () => {
+    let judged: ((onBeat: boolean) => void) | null = null;
+    const { port, fire } = rig(lesson2, {
+      tapJudged: (listener) => {
+        judged = listener;
+        return () => undefined;
+      },
+    });
+    const padLed = (status: number, note: number) => port.out.filter((message) => message[0] === status && message[1] === note).at(-1)?.[2];
+    expect(padLed(0x97, 0x05)).toBe(0x7f);
+    expect(padLed(0x99, 0x00)).toBe(0x7f);
+    port.midi([0x97, 0x05, 0x7f]);
+    (judged as ((onBeat: boolean) => void) | null)?.(false);
+    expect(padLed(0x97, 0x05)).toBe(0x7f);
+    port.midi([0x97, 0x05, 0x7f]);
+    (judged as ((onBeat: boolean) => void) | null)?.(true);
+    expect(padLed(0x97, 0x05)).toBe(0);
+    fire();
+    expect(padLed(0x97, 0x05)).toBe(0x7f);
+  });
+
+  it("names the hardware TAP for captions: the panel's TAP and the pads, then the TAP alone; nothing without a controller or TAP", () => {
+    const names: (string | null)[] = [];
+    const { session, port } = rig(lesson2, { publishTap: (name) => names.push(name) });
+    expect(names.at(-1)).toBe("SHIFT + BEAT ▶ (TAP), any pad");
+    session.setUnlocks(new Set<ControlId>([...lesson2, "A.hot-cue", "B.hot-cue"]));
+    expect(names.at(-1)).toBe("SHIFT + BEAT ▶ (TAP)");
+    session.setUnlocks(new Set<ControlId>(["A.play"]));
+    expect(names.at(-1)).toBeNull();
+    session.setUnlocks(lesson2);
+    port.setConnected(false);
+    expect(names.at(-1)).toBeNull();
   });
 });
 

@@ -48,7 +48,7 @@ class FakeAccess extends EventTarget implements MidiAccessLike {
   }
 }
 
-function connection(options: { permission?: PermissionState | null; deny?: boolean } = {}) {
+function connection(options: { permission?: PermissionState | null; deny?: boolean; now?: () => number } = {}) {
   const access = new FakeAccess();
   let asked = 0;
   const midi = new MidiConnection({
@@ -58,6 +58,7 @@ function connection(options: { permission?: PermissionState | null; deny?: boole
       return Promise.resolve(access);
     },
     permission: () => Promise.resolve(options.permission ?? "prompt"),
+    now: options.now ?? (() => 1240),
   });
   return { midi, access, asked: () => asked };
 }
@@ -121,6 +122,29 @@ describe("MidiConnection", () => {
     flx4.input.emit([0x90, 0x0b, 0x7f], 1234.5);
     other.input.emit([0x90, 0x3c, 0x7f], 1300);
     expect(messages.map((message) => [Array.from(message.data), message.timeStamp])).toEqual([[[0x90, 0x0b, 0x7f], 1234.5]]);
+  });
+
+  it("stamps a message Chrome stamped 0 with the time it arrived, and warns once with the offset", async () => {
+    const warnings: unknown[][] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args);
+    try {
+      let now = 600_000;
+      const { midi, access } = connection({ now: () => now });
+      const flx4 = access.plug("DDJ-FLX4");
+      await midi.connect();
+      const times: number[] = [];
+      midi.onMessage((message) => times.push(message.timeStamp));
+      flx4.input.emit([0x96, 0x41, 0x7f], 0);
+      now = 600_500;
+      flx4.input.emit([0x96, 0x41, 0x7f], 0);
+      flx4.input.emit([0x96, 0x41, 0x7f], 600_498);
+      expect(times).toEqual([600_000, 600_500, 600_498]);
+      expect(warnings).toHaveLength(1);
+      expect(String(warnings[0]?.[0])).toContain("-600000");
+    } finally {
+      console.warn = warn;
+    }
   });
 
   it("stops listening to a controller that was unplugged", async () => {

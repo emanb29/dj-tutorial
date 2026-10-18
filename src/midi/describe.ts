@@ -36,7 +36,7 @@ const BUTTON_NAMES: Readonly<Record<string, string>> = {
   "browse-press": "BROWSE (press)",
   "fx-select": "FX SELECT",
   "fx-beat-back": "BEAT ◀",
-  "fx-beat-forward": "BEAT ▶",
+  "fx-beat-forward": "BEAT ▶ (TAP)",
   "fx-on": "FX ON/OFF",
 };
 
@@ -141,7 +141,7 @@ export const CHECKLIST: readonly ChecklistItem[] = [
   shared("browse", "BROWSE (turn and press)", "Mixer"),
   shared("fx-select", "FX SELECT", "Beat FX"),
   shared("fx-beat-back", "BEAT ◀", "Beat FX"),
-  shared("fx-beat-forward", "BEAT ▶", "Beat FX"),
+  shared("fx-beat-forward", "BEAT ▶ (TAP)", "Beat FX"),
   shared("beat-fx-depth", "LEVEL/DEPTH", "Beat FX"),
   shared("fx-channel", "CH SELECT lever", "Beat FX"),
   shared("fx-on", "FX ON/OFF", "Beat FX"),

@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ALL_LEDS, allLedsOff, CHECKLIST, describeInput, Flx4Decoder, ledMessages, midiConnection, physicalControlOf, type MidiStatus } from "@midi";
 import { OutputPicker } from "./OutputPicker.tsx";
+import { TapTest } from "./TapTest.tsx";
 import "./controller-page.css";
 
 const MONITOR_LINES = 12;
@@ -105,6 +106,11 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
         )}
       </section>
 
+      <section aria-label="Tap test" className="hw-card">
+        <h2>Tap timing</h2>
+        <TapTest />
+      </section>
+
       <section aria-label="LED test" className="hw-card">
         <h2>Lights</h2>
         <LedTest connected={status.kind === "connected"} />
@@ -117,7 +123,7 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
             <b>LOAD</b> goes into the Check (Enter) · <b>SHIFT + LOAD</b> back to practice (P)
           </li>
           <li>
-            <b>BROWSE press</b> is TAP · <b>SHIFT + BROWSE press</b> is Ready (R)
+            <b>TAP</b> is <b>SHIFT + BEAT ▶</b> (TAP on the panel) and the <b>BROWSE press</b>; also any pad until the Lessons hand you hot cues, and <b>BEAT ◀ / ▶</b> until they hand you Beat FX · <b>SHIFT + BROWSE press</b> is Ready (R)
           </li>
           <li>
             <b>Hold BEAT SYNC</b> for MASTER TEMPO · <b>SHIFT + BEAT SYNC</b> changes the tempo range

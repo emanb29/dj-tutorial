@@ -127,7 +127,11 @@ controller keeps its own pad mode and sends the mode's notes.
   BEAT SYNC **long press** (`9n 5C`) to MASTER TEMPO, and shows Master Tempo on BEAT SYNC's SHIFT-layer
   LED (`9n 60`), which the unit shows while SHIFT is held **(unverified)**. The virtual controller's
   separate MASTER TEMPO button does not exist on the hardware.
-- **TAP.** No TAP button. The app uses the BROWSE press (the centre knob, where the virtual TAP sits).
+- **TAP.** No TAP button, but the panel prints **TAP** under BEAT ▷ as its SHIFT function (and AUTO
+  under BEAT ◁); rekordbox's hardware diagram lists SHIFT + BEAT ▷ as "BPM tap mode on" and SHIFT +
+  channel CUE as "Tap BPM" [cdn.rekordbox.com DDJ-FLX4_Hardware_Diagram_en.pdf]. The app's TAP is
+  SHIFT + BEAT ▷ (`94 6B`) and the BROWSE press, always; plus any performance pad while the pads are
+  locked and plain BEAT ◁ / ▷ while Beat FX is locked (src/app/controller/hardware.ts).
 - **Position query / keep-alive.** Mixxx sends a reverse-engineered SysEx (`F0 00 40 05 00 00 04 05
   00 50 02 F7`) every 200 ms that "seems to double as a keep alive" and makes the unit report its
   control positions [X1]. It is not official and needs SysEx permission, so the app does not send it:
@@ -149,7 +153,11 @@ controller keeps its own pad mode and sends the mode's notes.
 - **Web MIDI:** `navigator.requestMIDIAccess()` needs a secure context (dj.example.com is HTTPS)
   and, in current Chrome, a permission prompt. `MIDIMessageEvent.timeStamp` is a
   `DOMHighResTimeStamp` on the `performance.now()` clock, the same domain as keyboard
-  `event.timeStamp`, so `audioContextClock().heardTime(timeStamp)` maps it to heard time unchanged.
+  `event.timeStamp`, so `audioContextClock().heardTime(timeStamp)` maps it to heard time unchanged,
+  **except** that Chrome returns 0 for a null packet time or one before the page's time origin
+  (`Performance::MonotonicTimeToDOMHighResTimeStamp`), and on macOS the packet time is CoreMIDI's
+  `MIDIPacket.timeStamp` via `TimeTicks::FromMachAbsoluteTime` (media/midi/midi_manager_mac.cc), which a
+  driver may leave 0 ("now"). `src/midi/event-time.ts` replaces such a stamp with the handler's time.
   MIDI input is not a user activation: an `AudioContext` still needs a click or key press to start.
 - **Output device:** `AudioContext.setSinkId(id)` and `new AudioContext({ sinkId })`, Chrome 110+;
   feature-detect with `"setSinkId" in AudioContext.prototype` [C1].

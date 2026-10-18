@@ -19,6 +19,7 @@ import { globalKeyAllowed, keyHintFor, type FocusedElement } from "./keymap.ts";
 import { KeyLegend } from "./KeyLegend.tsx";
 import { Mixer } from "./Mixer.tsx";
 import { ControllerSession, type ControllerEngine } from "./session.ts";
+import { useTapOnHardware } from "./tap-feedback.ts";
 import { inputWording, useWording } from "./wording.ts";
 import "./controller.css";
 
@@ -53,6 +54,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   const [meters] = useState<MeterLevels>(() => new Map());
   const [legendOpen, setLegendOpen] = useState(defaultLegendOpen);
   const wording = useWording();
+  const tapOnHardware = useTapOnHardware();
 
   useEffect(() => {
     session.setUnlocks(concealed.size === 0 ? unlocks : new Set([...unlocks].filter((id) => !concealed.has(id))));
@@ -105,7 +107,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   }, [session]);
 
   // Captions are authored with keys ("Press X"); on a touchscreen they name the control instead.
-  const captionMap = useMemo(() => new Map(captions.map((caption) => [caption.control, inputWording(caption.text, wording)])), [captions, wording]);
+  const captionMap = useMemo(() => new Map(captions.map((caption) => [caption.control, inputWording(caption.text, wording, tapOnHardware)])), [captions, wording, tapOnHardware]);
   const context = useMemo<ControllerContextValue>(
     () => ({ session, engine, frames, meters, pulse, captions: captionMap, unlocks, concealed, legendOpen }),
     [session, engine, frames, meters, pulse, captionMap, unlocks, concealed, legendOpen],

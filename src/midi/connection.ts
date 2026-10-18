@@ -3,6 +3,8 @@
 // hardware), and followed as it is plugged in and out. Asking for access shows Chrome's permission
 // prompt, so it happens only on the Learner's click; once granted, later visits connect by themselves.
 
+import { midiEventTime } from "./event-time.ts";
+
 /** A port name the app treats as a DDJ-FLX4 (including the DDJ-FLX4-N). */
 export function isControllerPort(name: string | null | undefined): boolean {
   return name != null && /DDJ-FLX4/i.test(name);
@@ -20,7 +22,10 @@ export type MidiStatus =
 
 export interface MidiMessage {
   readonly data: Uint8Array;
-  /** performance.now() milliseconds when the message arrived (MIDIMessageEvent.timeStamp). */
+  /**
+   * performance.now() milliseconds when the message arrived: MIDIMessageEvent.timeStamp, or the time the
+   * handler ran when that stamp is unusable (0 on macOS for some drivers; see event-time.ts).
+   */
   readonly timeStamp: number;
 }
 
@@ -44,6 +49,8 @@ export interface MidiConnectionOptions {
   readonly requestAccess: (() => Promise<MidiAccessLike>) | null;
   /** The "midi" permission's state, or null when the browser cannot say. */
   readonly permission: () => Promise<PermissionState | null>;
+  /** The performance.now() clock. */
+  readonly now?: () => number;
 }
 
 type Listener = () => void;
@@ -55,10 +62,17 @@ export class MidiConnection {
   private output: MidiOutputLike | null = null;
   private readonly statusListeners = new Set<Listener>();
   private readonly messageListeners = new Set<(message: MidiMessage) => void>();
+  private warnedStamp = false;
   private readonly onMidiMessage = (event: Event) => {
+    const handlerNowMs = (this.options.now ?? (() => performance.now()))();
     const { data, timeStamp } = event as MIDIMessageEvent;
     if (data === null) return;
-    for (const listener of this.messageListeners) listener({ data, timeStamp });
+    const time = midiEventTime(timeStamp, handlerNowMs);
+    if (time.kind === "handler-time" && !this.warnedStamp) {
+      this.warnedStamp = true;
+      console.warn(`[midi] MIDIMessageEvent.timeStamp was ${String(time.offsetMs)} ms from performance.now(); timing MIDI by when the handler runs instead`);
+    }
+    for (const listener of this.messageListeners) listener({ data, timeStamp: time.timeMs });
   };
   private readonly onStateChange = () => {
     this.attachPorts();
