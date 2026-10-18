@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandInput, DeckId, EngineCommand, EngineDeckSnapshot, EngineEvents, EngineMixerSnapshot, Result } from "@audio";
 import { HardwarePositions, ledMessages, type MidiMessage } from "@midi";
 import { ALL_CONTROL_IDS, type ControlId } from "./control-ids.ts";
-import { HARDWARE_JOG, HardwareBridge, POSITION_SYNC_MS, type HardwareBridgeOptions, type HardwarePort } from "./hardware.ts";
+import { HARDWARE_JOG, HardwareBridge, type HardwareBridgeOptions, type HardwarePort } from "./hardware.ts";
 import { ControllerSession, HARDWARE_SETTLE_MS, NOT_YET_MS, type ControllerEngine } from "./session.ts";
 
 interface Sent {
@@ -110,15 +110,6 @@ function deck(id: DeckId): EngineDeckSnapshot {
 class FakePort implements HardwarePort {
   connected = true;
   readonly out: number[][] = [];
-  /** Whether the position request may be sent (SysEx allowed), and how often it was. */
-  positionsAllowed = false;
-  positionRequests = 0;
-
-  requestPositions(): boolean {
-    if (!this.positionsAllowed || !this.connected) return false;
-    this.positionRequests += 1;
-    return true;
-  }
   private readonly messageListeners = new Set<(message: MidiMessage) => void>();
   private readonly statusListeners = new Set<() => void>();
 
@@ -150,7 +141,7 @@ class FakePort implements HardwarePort {
 
 const everything: ReadonlySet<ControlId> = new Set(ALL_CONTROL_IDS);
 
-function rig(unlocks: ReadonlySet<ControlId> = everything, options: Pick<HardwareBridgeOptions, "tapJudged" | "publishTap" | "positions" | "now"> & { positionsAllowed?: boolean } = {}) {
+function rig(unlocks: ReadonlySet<ControlId> = everything, options: Pick<HardwareBridgeOptions, "tapJudged" | "publishTap" | "positions"> = {}) {
   const { engine, sent, emit } = statefulEngine();
   let timers: { run: () => void; delayMs: number }[] = [];
   const schedule = (run: () => void, delayMs: number) => {
@@ -163,7 +154,6 @@ function rig(unlocks: ReadonlySet<ControlId> = everything, options: Pick<Hardwar
   const session = new ControllerSession(engine, { unlocks, macPlatform: true, schedule });
   const stopSession = session.connect();
   const port = new FakePort();
-  port.positionsAllowed = options.positionsAllowed ?? false;
   const keys: string[] = [];
   const bridge = new HardwareBridge(session, engine, port, {
     schedule,
@@ -171,7 +161,6 @@ function rig(unlocks: ReadonlySet<ControlId> = everything, options: Pick<Hardwar
     tapJudged: options.tapJudged ?? (() => () => undefined),
     publishTap: options.publishTap ?? (() => undefined),
     positions: options.positions ?? new HardwarePositions(),
-    now: options.now ?? (() => 0),
   });
   const detach = bridge.attach();
   return {
@@ -709,27 +698,10 @@ describe("where the faders and knobs are when a controller appears on screen", (
     expect(sent).toEqual([]);
   });
 
-  it("without SysEx it asks nothing, and a fader away from the value waits for pickup", () => {
-    const { port, sent } = rig(everything, { positionsAllowed: false });
-    expect(port.positionRequests).toBe(0);
+  it("a fader away from the app's value waits for pickup", () => {
+    const { port, sent } = rig(everything);
     for (const message of fourteenBit(0xb0, 0x13, 0.9)) port.midi(message, 10);
     expect(sent).toEqual([]);
   });
 
-  it("with SysEx it sends the position request on connect, and the answers set unlocked controls outright", () => {
-    let nowMs = 1000;
-    const { port, sent, session } = rig(new Set<ControlId>(["A.channel-fader", "A.play"]), { positionsAllowed: true, now: () => nowMs });
-    expect(port.positionRequests).toBe(1);
-    for (const message of fourteenBit(0xb0, 0x13, 0.9)) port.midi(message, 1000 + POSITION_SYNC_MS - 50);
-    expect(commands(sent)).toEqual([{ control: "channel-fader", deck: "A", value: expect.closeTo(0.9, 3) as unknown }]);
-    // A locked control's answer only shows where it is, without "not yet".
-    for (const message of fourteenBit(0xb1, 0x13, 0.6)) port.midi(message, 1000 + POSITION_SYNC_MS - 40);
-    expect(session.snapshot().notYet).toBeNull();
-    expect(session.snapshot().pickup["B.channel-fader"]).toBeCloseTo(0.6, 3);
-    // After the window it is soft takeover again: a jump from 0.9 to 0.2 waits for pickup.
-    nowMs = 5000;
-    session.setValue("A.channel-fader", 0.2, { device: "trackpad" });
-    for (const message of fourteenBit(0xb0, 0x13, 0.95)) port.midi(message, 5000);
-    expect(commands(sent).at(-1)).toEqual({ control: "channel-fader", deck: "A", value: 0.2 });
-  });
 });

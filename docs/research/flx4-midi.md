@@ -148,11 +148,7 @@ controller keeps its own pad mode and sends the mode's notes.
   - The Controller page's **Sync from controller** lists the mapped faders and knobs and ticks each as
     it reports ("wiggle each knob"), and says in one line that the FLX4 cannot report positions until
     they move.
-  - Opt-in, after the page explains it: **Ask the FLX4 for its positions** requests
-    `requestMIDIAccess({ sysex: true })` (a second Chrome prompt) and remembers the choice. Then the
-    bridge sends the request once on connect, and fader/knob messages in the next 600 ms set unlocked
-    controls outright (no pickup); locked ones only show their marks. Refused or unsupported: nothing
-    changes. Whether the unit answers needs the real device.
+  - The Mixxx SysEx request was tried on the owner's FLX4-N on 2026-10-17 and got no answer, so it was removed.
 
 ## USB audio
 

@@ -1,7 +1,6 @@
 // Where the DDJ-FLX4's faders and knobs physically are, as far as the app knows. AlphaTheta's MIDI list
 // has no message that asks the unit for its positions (docs/research/flx4-midi.md, "Positions on
-// connect"), so a control's position is known once it has moved (or once the unit answered the
-// unofficial position request, when the Learner allowed SysEx). Kept for the whole tab, across Lessons,
+// connect"), so a control's position is known once it has moved. Kept for the whole tab, across Lessons,
 // and forgotten when the controller is unplugged.
 
 import { midiConnection, type MidiConnection } from "./connection.ts";

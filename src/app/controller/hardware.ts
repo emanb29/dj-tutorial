@@ -22,10 +22,7 @@
 //   of v1: they are refused, so the screen shows the control is not there yet.
 // - Positions: AlphaTheta's list has no way to ask where the faders and knobs are. A fader or knob that
 //   has moved in this tab (src/midi/positions.ts) shows its dashed pickup mark as soon as a controller
-//   appears on screen; a locked one moved shows the mark too. When the Learner allowed SysEx, the bridge
-//   sends the unofficial position request on connect, and what the unit answers within
-//   POSITION_SYNC_MS sets the unlocked controls outright (no pickup): the screen starts where the
-//   hardware is.
+//   appears on screen; a locked one moved shows the mark too.
 
 import type { BeatFxChannel, DeckId, EngineEvents } from "@audio";
 import { allLedsOff, Flx4Decoder, hardwarePositions, JogDriver, ledMessages, levelMeterMessage, SoftTakeover, type ContinuousName, type Flx4Input, type KnownPosition, type LedId, type MidiMessage } from "@midi";
@@ -41,12 +38,7 @@ export interface HardwarePort {
   send(messages: readonly (readonly number[])[]): boolean;
   subscribe(listener: () => void): () => void;
   readonly connected: boolean;
-  /** Sends the unofficial position request (SysEx); false when not allowed. */
-  requestPositions?(): boolean;
 }
-
-/** How long after the position request the unit's answers set the controls outright. */
-export const POSITION_SYNC_MS = 600;
 
 /**
  * The hardware jog: one revolution searches 1.8 s, as a record at 33⅓ rpm does, so 720 ticks land
@@ -153,8 +145,6 @@ export interface HardwareBridgeOptions {
   readonly publishTap?: (name: string | null) => void;
   /** Where the faders and knobs were last seen (physicalControlOf ids). Defaults to the shared record. */
   readonly positions?: { get(id: string): KnownPosition | null };
-  /** The performance.now() clock. */
-  readonly now?: () => number;
 }
 
 const browserSchedule: Schedule = (run, delayMs) => {
@@ -191,9 +181,6 @@ export class HardwareBridge {
   private tapPad: LedId | null = null;
   private readonly blinking = new Set<LedId>();
   private readonly positions: { get(id: string): KnownPosition | null };
-  private readonly now: () => number;
-  /** Until this time (performance.now() ms) the unit's answers to the position request set controls outright. */
-  private syncUntilMs = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly session: ControllerSession,
@@ -206,7 +193,6 @@ export class HardwareBridge {
     this.tapJudged = options.tapJudged ?? onTapJudged;
     this.publishTap = options.publishTap ?? publishTapOnHardware;
     this.positions = options.positions ?? hardwarePositions();
-    this.now = options.now ?? (() => performance.now());
     const jog = (deck: DeckId) =>
       new JogDriver({
         begin: () => this.session.beginJog(deck, "midi", HARDWARE_JOG),
@@ -386,20 +372,12 @@ export class HardwareBridge {
   private continuous(input: Extract<Flx4Input, { kind: "continuous" }>, timeMs: number): void {
     const id = continuousTarget(input);
     if (id === null) return;
-    const syncing = timeMs <= this.syncUntilMs;
     this.moved.add(id);
     if (!this.session.isUnlocked(id)) {
       // Locked: nothing changes, but the screen shows where the hardware is (and, when touched, "not yet").
-      if (!syncing) this.session.refuse(id);
+      this.session.refuse(id);
       this.takeover.observe(id, input.value);
       this.showPickup(id);
-      return;
-    }
-    if (syncing) {
-      // The unit's answer to the position request: the screen starts where the hardware is.
-      this.takeover.move(id, input.value, input.value);
-      this.session.hardwareValue(id, this.appValue(id, input.value), timeMs);
-      this.session.setPickup(id, null);
       return;
     }
     const spec = continuousSpec(id);
@@ -462,7 +440,6 @@ export class HardwareBridge {
       this.port.send(allLedsOff());
       this.refreshLeds();
       this.seedKnownPositions();
-      if (this.port.requestPositions?.() === true) this.syncUntilMs = this.now() + POSITION_SYNC_MS;
     }
     if (!connected && this.wasConnected) this.letGo();
     this.wasConnected = connected;

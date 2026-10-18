@@ -35,7 +35,6 @@ async function fakeMidi(page: Page, options: { controller: boolean; outputs?: { 
     const access = Object.assign(new EventTarget(), {
       inputs: new Map(controller ? [[input.id, input]] : []),
       outputs: new Map(controller ? [[output.id, output]] : []),
-      sysexEnabled: false,
     });
     Object.defineProperty(navigator, "requestMIDIAccess", { value: () => Promise.resolve(access), configurable: true });
     const query = navigator.permissions.query.bind(navigator.permissions);
@@ -262,7 +261,7 @@ test("Sync from controller ticks each fader as it reports, and a Lesson opened a
   await expect(card.locator('[data-control="A.channel-fader"]')).toHaveAttribute("data-known", "true");
   await expect(card.locator('[data-control="B.trim"]')).toHaveAttribute("data-known", "true");
   await expect(card.getByTestId("positions-count")).toHaveText(/^2 of \d+$/);
-  // No SysEx unless the Learner asks for it.
+  // The app never sends SysEx.
   expect(await page.evaluate(() => window.__flx4?.sent.some((bytes) => bytes[0] === 0xf0))).toBe(false);
 
   // Back to the Lesson, in the same tab: the fader's mark is there before it moves again.

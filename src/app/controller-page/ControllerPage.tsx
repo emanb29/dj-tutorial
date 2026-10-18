@@ -5,7 +5,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ALL_LEDS, allLedsOff, CHECKLIST, describeInput, Flx4Decoder, ledMessages, midiConnection, physicalControlOf, type MidiStatus } from "@midi";
 import { OutputPicker } from "./OutputPicker.tsx";
-import { sysexChosen } from "../midi-sysex.ts";
 import { PositionsCard } from "./PositionsCard.tsx";
 import { TimingCheck } from "./TimingCheck.tsx";
 import "./controller-page.css";
@@ -32,7 +31,7 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
-    void midiConnection().connectIfAllowed({ sysex: sysexChosen() });
+    void midiConnection().connectIfAllowed();
     // Offered from the first tap Lesson: /controller#timing-check.
     if (window.location.hash === "#timing-check") document.getElementById("timing-check")?.scrollIntoView({ block: "start" });
   }, []);
