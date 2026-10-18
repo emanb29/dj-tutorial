@@ -11,6 +11,7 @@ import { CUED_BEFORE_S } from "./lessons/cut-on-phrase.ts";
 import { CLIP_DBFS } from "./lessons/deck-basics.ts";
 import { EQ_BANDS } from "./lessons/eq-basics.ts";
 import { controlsReset, drift, oneBass, overcorrect, syncKept } from "./standing-mixing.ts";
+import { loopedPhraseOffsetBeats } from "./performance.ts";
 import { controlEvents, controlValueAt, firstPlayStart, isPlaying, playingFrom } from "./timeline.ts";
 
 /** Severity before `final-mix` and in it; `null` where the criterion does not apply. */
@@ -171,7 +172,8 @@ function onPhrase(context: CheckContext, severity: Severity): CriterionResult {
   const inAt = entryActionTime(context.attempt, INCOMING, context.window, "firstMove");
   const master = loadedDeck(context, OUTGOING);
   const incoming = loadedDeck(context, INCOMING);
-  const masterBeats = inAt === null || master === null ? null : phraseOffsetBeats(master, inAt);
+  // The master may be looping (loop-transition): its loop's start and end are one moment.
+  const masterBeats = inAt === null || master === null ? null : loopedPhraseOffsetBeats(context.attempt, master, inAt);
   // A Play is timed from its press, before the deck's audio starts: read the deck where it starts.
   const incomingBeats = inAt === null || incoming === null ? null : phraseOffsetBeats(incoming, playingFrom(incoming.playhead, inAt));
   const measured = masterBeats === null || incomingBeats === null ? null : Math.max(Math.abs(masterBeats), Math.abs(incomingBeats));
@@ -278,8 +280,8 @@ function noBoost(context: CheckContext, severity: Severity): CriterionResult {
 
 /**
  * Implemented standing criteria, in check-design §3 order. Deferred: key-clash (`final-mix` warns in
- * the set builder instead, check-design §5.5), technique-mix (`final-mix` reports the counts in its
- * metrics), and the FX part of controls-reset (`echo-out`).
+ * the set builder instead, check-design §5.5) and technique-mix (`final-mix` reports the counts in
+ * its metrics).
  */
 const DEFINITIONS: readonly StandingDefinition[] = [
   { id: "no-clip", from: ["gain-staging"], situation: "any", measure: noClip },
@@ -292,11 +294,11 @@ const DEFINITIONS: readonly StandingDefinition[] = [
   {
     id: "controls-reset",
     perTransition: true,
-    // Each Lesson teaches its own part: EQ from eq-basics, CFX from filter-transition.
-    from: ["eq-basics", "filter-transition"],
+    // Each Lesson teaches its own part: EQ from eq-basics, CFX from filter-transition, FX from echo-out.
+    from: ["eq-basics", "filter-transition", "echo-out"],
     situation: "transition",
     measure: (context, severity, passed) =>
-      controlsReset(context, severity, { eq: passed.has("eq-basics"), cfx: passed.has("filter-transition") }),
+      controlsReset(context, severity, { eq: passed.has("eq-basics"), cfx: passed.has("filter-transition"), fx: passed.has("echo-out") }),
   },
   // "Warn (sync Checks only)": only where the task offers sync; n/a in final-mix (severity table).
   { id: "sync-kept", from: ["sync-blend"], situation: "syncAvailable", measure: syncKept },

@@ -21,9 +21,9 @@ const captions = LESSONS.flatMap((lesson) => {
 });
 /**
  * A key label standing on its own: a deck key, the comma (PLAY B), the crossfader's C and N, the nudge
- * keys (Q, E, ← and →), Space, or R (Ready).
+ * keys (Q, E, ← and →), the loop and Beat FX keys, Space, or R (Ready).
  */
-const KEY_LEFT = /(?:^|[\s(:;,])(?:[ZXWSMOLRCNQE,←→]|Space)(?=$|[\s.,;:!?)])/;
+const KEY_LEFT = /(?:^|[\s(:;,])(?:[ZXWSMOLRCNQEDFGYUJV,[\]←→]|Space)(?=$|[\s.,;:!?)])/;
 /** The by-ear drills' lines are captions too. */
 const DRILL_LINES = [
   "✓ Held in line",

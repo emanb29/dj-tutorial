@@ -186,7 +186,8 @@ export class Mixer {
   readonly master: GainNode;
   /** Sum of the channels with CUE on, pre-fader. */
   readonly cue: GainNode;
-  private readonly masterBus: GainNode;
+  /** The channels summed, before the master level: what Beat FX on MASTER takes in (its echoes join after it). */
+  readonly masterBus: GainNode;
   private readonly state: MixerState = { crossfader: 0.5, masterLevel: 0 };
 
   constructor(context: BaseAudioContext) {

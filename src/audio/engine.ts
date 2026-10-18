@@ -6,6 +6,8 @@
 // model, the phase arithmetic and `CommandEvent.appliedCtx`, so they always agree.
 
 import SignalsmithStretch, { type StretchNode } from "signalsmith-stretch";
+import { BEAT_FX_DEFAULT } from "@shared/attempt.ts";
+import { BeatFx, BEAT_FX_BEATS, type BeatFxSnapshot } from "./beat-fx.ts";
 import { barBeatAt, beatAt, beatGridProblems } from "./beat-grid.ts";
 import { decibelsToGain, headphoneLevelToDecibels } from "./curves.ts";
 import { CONTROL_RANGES, type ChannelControl, type CommandInput, type EngineCommand } from "./commands.ts";
@@ -67,6 +69,9 @@ export interface EngineMixerSnapshot extends Readonly<MixerState> {
   readonly cueMix: number;
   /** Headphone LEVEL, 0…1 (0.5 is unity). */
   readonly headphoneLevel: number;
+  readonly beatFx: BeatFxSnapshot;
+  /** The BPM Beat FX was tapped to (TAP), or null when it follows the selected deck (AUTO). */
+  readonly beatFxBpm: number | null;
 }
 
 export interface EngineDeckSnapshot extends DeckSnapshot {
@@ -104,6 +109,11 @@ export interface EngineEvents {
 /** Track loads kept per deck for attempt timelines; older loads are dropped. */
 export const TRACK_HISTORY_LIMIT = 32;
 const RENDER_QUANTUM = 128;
+/** Beat FX follows this BPM when no deck it could follow has a beat grid. */
+const FALLBACK_FX_BPM = 120;
+/** Tapped Beat FX tempos the engine accepts (a 4-beat echo at 60 BPM is the delay's longest). */
+const MIN_FX_BPM = 60;
+const MAX_FX_BPM = 300;
 
 export async function createAudioEngine(options: Partial<AudioEngineOptions> = {}): Promise<AudioEngine> {
   const routing = options.output === undefined ? null : createOutputRouting(options.output.plan, { headphones: options.output.headphones });
@@ -163,6 +173,7 @@ const EQ_BANDS: Partial<Record<ChannelControl, EqBand>> = { "eq-low": "low", "eq
 
 export class AudioEngine {
   readonly mixer: Mixer;
+  readonly beatFx: BeatFx;
   private readonly decks: Readonly<Record<DeckId, Deck>>;
   private readonly emitter = new Emitter<EngineEvents>();
   private readonly pending = new PendingWork();
@@ -180,6 +191,8 @@ export class AudioEngine {
   private readonly stretchLeadSec: number;
   private readonly onStateChange: () => void;
   private cueMix = 0;
+  /** A tapped Beat FX tempo (TAP); null follows the selected deck (AUTO). */
+  private beatFxBpm: number | null = null;
   private headphoneLevel = 0.5;
   private follower: DeckId | null = null;
   private closed = false;
@@ -201,6 +214,8 @@ export class AudioEngine {
       B: new Deck("B", context, this.mixer.strips.B.input, stretch.nodes?.B ?? null, stretch.availability, this.pending),
     };
     monitor.attach({ context, master: this.mixer.master, cue: this.mixer.cue });
+    this.beatFx = new BeatFx(context, { A: this.mixer.strips.A.output, B: this.mixer.strips.B.output, master: this.mixer.masterBus }, BEAT_FX_DEFAULT);
+    this.beatFx.wet.connect(this.mixer.master);
 
     const masterMeter = createMeter(context, "master", (frame) => {
       this.emitter.emit("meter", frame);
@@ -215,6 +230,11 @@ export class AudioEngine {
       this.mixer.strips[deck].preFader.connect(meter);
       this.meters.push(meter);
     }
+    const fxMeter = createMeter(context, "fx", (frame) => {
+      this.emitter.emit("meter", frame);
+    });
+    this.beatFx.wet.connect(fxMeter);
+    this.meters.push(fxMeter);
 
     this.onStateChange = () => {
       if (context instanceof AudioContext && context.state !== "running") {
@@ -256,6 +276,7 @@ export class AudioEngine {
       if (history.length > TRACK_HISTORY_LIMIT) history.shift();
       this.emitter.emit("track-loaded", { deck, record: result.record });
       if (this.follower === otherDeck(deck)) this.resyncFollower();
+      this.followBeatFxTempo(this.mixerTime());
     }
     this.emitDecks();
     return result.ok ? OK : result;
@@ -266,6 +287,7 @@ export class AudioEngine {
     const heard = this.clock.heardTime(input.eventTimeMs);
     const heardCtx = heard.ok ? heard.ctx : null;
     const appliedCtx = this.appliedTimeFor(command);
+    const loopedBefore = "deck" in command ? this.decks[command.deck].loop() !== null : false;
     const result = this.closed ? fail({ kind: "engine-closed" }) : this.apply(command, heardCtx, appliedCtx);
     this.emitter.emit("command", {
       command,
@@ -275,6 +297,11 @@ export class AudioEngine {
       gestureEnd: input.gestureEnd ?? false,
       rejected: result.ok ? null : result.error,
     });
+    if (result.ok && "deck" in command) {
+      // A seek, a hot cue, a CUE return or a search left the loop: recorded as the engine's own exit.
+      if (loopedBefore && command.control !== "loop-exit" && this.decks[command.deck].loop() === null) this.endedLoop(command.deck, appliedCtx);
+    }
+    if (result.ok) this.followBeatFxTempo(appliedCtx);
     return result;
   }
 
@@ -288,6 +315,8 @@ export class AudioEngine {
       channels: { A: { ...this.channelState.A, cue: this.cueOn.A }, B: { ...this.channelState.B, cue: this.cueOn.B } },
       cueMix: this.cueMix,
       headphoneLevel: this.headphoneLevel,
+      beatFx: this.beatFx.snapshot(),
+      beatFxBpm: this.beatFxBpm,
     };
   }
 
@@ -342,6 +371,7 @@ export class AudioEngine {
       meter.port.onmessage = null;
       meter.disconnect();
     }
+    this.beatFx.disconnect();
     this.mixer.disconnect();
     if (this.context instanceof AudioContext) await this.context.close();
   }
@@ -453,11 +483,99 @@ export class AudioEngine {
           this.monitor.setHeadphoneGain(decibelsToGain(headphoneLevelToDecibels(command.value)));
           return OK;
         });
+      case "hot-cue-set": {
+        const pos = command.pos ?? this.pressPosition(command.deck, heardCtx, when);
+        if (pos === null) return fail({ kind: "no-track-loaded", deck: command.deck });
+        return this.afterDeckChange(this.decks[command.deck].hotCueSet(command.slot, pos));
+      }
+      case "hot-cue-clear":
+        return this.afterDeckChange(this.decks[command.deck].hotCueClear(command.slot));
+      case "hot-cue":
+        return this.afterDeckChange(this.decks[command.deck].hotCueTrigger(when, command.slot));
+      case "loop-in": {
+        const pos = this.pressPosition(command.deck, heardCtx, when);
+        return pos === null ? fail({ kind: "no-track-loaded", deck: command.deck }) : this.afterDeckChange(this.decks[command.deck].loopIn(pos));
+      }
+      case "loop-out": {
+        const pos = this.pressPosition(command.deck, heardCtx, when);
+        return pos === null ? fail({ kind: "no-track-loaded", deck: command.deck }) : this.afterDeckChange(this.decks[command.deck].loopOut(when, pos));
+      }
+      case "loop-auto": {
+        if (!(Number.isInteger(Math.log2(command.value)) && command.value >= 1 && command.value <= 32)) {
+          return fail({ kind: "value-out-of-range", control: "loop-auto", value: command.value, min: 1, max: 32 });
+        }
+        const deck = this.decks[command.deck];
+        const pos = this.pressPosition(command.deck, heardCtx, when);
+        if (pos === null) return fail({ kind: "no-track-loaded", deck: command.deck });
+        return this.afterDeckChange(deck.loopAuto(when, pos, command.value, deck.record()?.grid ?? null));
+      }
+      case "loop-double":
+      case "loop-halve":
+        return this.afterDeckChange(this.decks[command.deck].loopResize(when, command.control === "loop-double" ? 2 : 0.5));
+      case "loop-exit":
+        return this.afterDeckChange(this.decks[command.deck].loopExit(when));
+      case "beat-fx":
+        this.beatFx.set({ on: command.value }, when);
+        return OK;
+      case "beat-fx-channel":
+        this.beatFx.set({ channel: command.value }, when);
+        return OK;
+      case "beat-fx-beats":
+        if (!(BEAT_FX_BEATS as readonly number[]).includes(command.value)) {
+          return fail({ kind: "value-out-of-range", control: "beat-fx-beats", value: command.value, min: BEAT_FX_BEATS[0], max: BEAT_FX_BEATS[BEAT_FX_BEATS.length - 1] ?? 4 });
+        }
+        this.beatFx.set({ beats: command.value }, when);
+        return OK;
+      case "beat-fx-bpm":
+        if (command.value !== null && !(Number.isFinite(command.value) && command.value >= MIN_FX_BPM && command.value <= MAX_FX_BPM)) {
+          return fail({ kind: "value-out-of-range", control: "beat-fx-bpm", value: command.value, min: MIN_FX_BPM, max: MAX_FX_BPM });
+        }
+        this.beatFxBpm = command.value;
+        return OK;
+      case "beat-fx-depth":
+        return this.validated(command.control, command.value, () => {
+          this.beatFx.set({ depth: command.value }, when);
+          return OK;
+        });
       case "tap":
       case "done":
       case "ready":
         return OK;
     }
+  }
+
+  /**
+   * The track position a press means (a hot cue set, a loop point): what was heard at the press, but
+   * never from before the deck's latest change. A press heard before a seek or jog search reached the
+   * output (made a moment after it, inside the output latency) means the new position, which is what the
+   * Learner sees, not the one it replaced. On a paused deck that is simply where it stands.
+   */
+  private pressPosition(deck: DeckId, heardCtx: CtxTime | null, when: CtxTime): number | null {
+    const at = Math.min(when, Math.max(heardCtx ?? when, this.decks[deck].lastChangeCtx()));
+    return this.decks[deck].positionAt(at);
+  }
+
+  /** Records a loop the engine ended itself (a seek or hot cue left it), as SYNC dropped is. */
+  private endedLoop(deck: DeckId, when: CtxTime): void {
+    this.emitter.emit("command", { command: { control: "loop-exit", deck }, device: "engine", heardCtx: null, appliedCtx: when, gestureEnd: false, rejected: null });
+  }
+
+  /**
+   * Beat FX follows the tapped BPM (TAP), else the heard BPM of the deck it takes in (for MASTER: deck
+   * A, else B), from its grid and tempo. Without a grid it falls back to 120 BPM, which only changes how
+   * far apart the echoes are.
+   */
+  private followBeatFxTempo(when: CtxTime): void {
+    if (this.beatFxBpm !== null) {
+      this.beatFx.setTempo(this.beatFxBpm, when);
+      return;
+    }
+    const { channel } = this.beatFx.snapshot();
+    const candidates: readonly DeckId[] = channel === "master" ? ["A", "B"] : [channel];
+    const deck = candidates.find((candidate) => this.decks[candidate].record()?.grid != null);
+    const grid = deck === undefined ? null : (this.decks[deck].record()?.grid ?? null);
+    const bpm = deck === undefined || grid === null ? FALLBACK_FX_BPM : grid.bpm * this.decks[deck].tempoRate();
+    this.beatFx.setTempo(bpm, when);
   }
 
   private validated(control: keyof typeof CONTROL_RANGES, value: number, apply: () => Result): Result {
@@ -586,9 +704,11 @@ export class AudioEngine {
     return Math.min(followerTrack.durationSec, inTrack);
   }
 
+  /** Announces an accepted deck change. A command answers only OK or the error, never the deck's details. */
   private afterDeckChange(result: Result): Result {
-    if (result.ok) this.emitDecks();
-    return result;
+    if (!result.ok) return result;
+    this.emitDecks();
+    return OK;
   }
 
   private emitDecks(): void {

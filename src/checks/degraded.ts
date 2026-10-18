@@ -34,6 +34,11 @@ const DISCRETE_ONLY: ReadonlySet<CriterionId> = new Set<CriterionId>([
   "nudge-phase.cue-presses",
   "standing.no-recue",
   "standing.cued-first",
+  "hot-cues.hc-place",
+  "hot-cues.hc-trigger",
+  "loop-transition.loop-length",
+  "loop-transition.loop-in",
+  "loop-transition.loop-exit",
 ]);
 
 /** Criteria met by the absence of something over the attempt: data after the drop could hold it. */
@@ -51,6 +56,7 @@ const NO_VIOLATION: ReadonlySet<CriterionId> = new Set<CriterionId>([
   "standing.controls-reset",
   "standing.sync-kept",
   "standing.one-bass",
+  "loop-transition.no-double",
 ]);
 
 export function readsContinuousData(id: CriterionId): boolean {
@@ -73,6 +79,7 @@ const CONTINUOUS: ReadonlySet<ControlId> = new Set<ControlId>([
   "filter",
   "channelFader",
   "crossfader",
+  "beatFxDepth",
 ]);
 
 /** The earliest moment the recorder may have started dropping data. */

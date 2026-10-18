@@ -112,8 +112,12 @@ function withMargins(margins: LessonState["margins"], result: CheckResult): Less
 
 const inZone = (peakDb: number) => peakDb >= GAIN_ZONE_DB[0] && peakDb < GAIN_ZONE_DB[1];
 
-/** How far an observation moves a hook trigger: +1, no change (0), or start over ("reset"). */
-function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "reset" {
+/** Loop lengths a loop rep counts (bars), and how close to one it must be (an auto loop is exact; a hand-closed one is not). */
+const LOOP_REP_BARS = [4, 8] as const;
+const LOOP_REP_SLACK_BARS = 0.1;
+
+/** How far an observation moves a hook trigger (or a Check's step): +1, no change (0), or start over ("reset"). */
+export function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "reset" {
   switch (trigger.kind) {
     case "play":
       return observation.kind === "play" && observation.deck === (trigger.deck ?? "A") && observation.playing ? 1 : 0;
@@ -166,6 +170,18 @@ function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "r
       return observation.onDownbeat ? 1 : "reset";
     case "phrase-taps":
       return observation.kind === "tap" && observation.onPhraseStart ? 1 : 0;
+    case "hot-cue-set":
+      return observation.kind === "hot-cue-set" ? 1 : 0;
+    case "hot-cue-trigger":
+      return observation.kind === "hot-cue" ? 1 : 0;
+    case "loop-in":
+      return observation.kind === "loop-in" ? 1 : 0;
+    case "loop-on":
+      return observation.kind === "loop" ? 1 : 0;
+    case "loop-exit":
+      return observation.kind === "loop-exit" ? 1 : 0;
+    case "beat-fx-on":
+      return observation.kind === "beat-fx" && observation.on ? 1 : 0;
   }
 }
 
@@ -222,6 +238,13 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
       // A missed step says why at once, where the last concept was named.
       if (observation.kind !== "blend-step") return phase;
       return withRep(config, observation.mistake === null ? phase : { ...phase, named: observation.mistake }, observation.good);
+    case "hot-cue-trigger":
+      return observation.kind === "hot-cue" ? withRep(config, phase, observation.onPhrase) : phase;
+    case "loop":
+      if (observation.kind !== "loop") return phase;
+      return withRep(config, phase, observation.onDownbeat && LOOP_REP_BARS.some((bars) => Math.abs(observation.bars - bars) <= LOOP_REP_SLACK_BARS));
+    case "echo-cut":
+      return observation.kind === "echo-cut" ? withRep(config, phase, observation.onDownbeat && observation.echoOn) : phase;
   }
 }
 

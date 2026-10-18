@@ -91,7 +91,7 @@ describe("resolveKey", () => {
   });
 
   it("ignores unbound keys", () => {
-    expect(resolveKey("KeyJ", plain)).toBeNull();
+    expect(resolveKey("KeyK", plain)).toBeNull();
     expect(resolveKey("ArrowUp", plain)).toBeNull();
   });
 

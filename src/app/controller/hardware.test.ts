@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandInput, DeckId, EngineCommand, EngineDeckSnapshot, EngineEvents, EngineMixerSnapshot, Result } from "@audio";
-import type { MidiMessage } from "@midi";
+import { ledMessages, type MidiMessage } from "@midi";
 import { ALL_CONTROL_IDS, type ControlId } from "./control-ids.ts";
 import { HARDWARE_JOG, HardwareBridge, type HardwareBridgeOptions, type HardwarePort } from "./hardware.ts";
 import { ControllerSession, HARDWARE_SETTLE_MS, NOT_YET_MS, type ControllerEngine } from "./session.ts";
@@ -15,7 +15,8 @@ function statefulEngine() {
   const sent: Sent[] = [];
   const listeners: { [K in keyof EngineEvents]?: ((payload: EngineEvents[K]) => void)[] } = {};
   const channel = () => ({ trim: 0, "eq-low": 0, "eq-mid": 0, "eq-high": 0, filter: 0, "channel-fader": 0, cue: false });
-  const mixer = { crossfader: 0.5, masterLevel: 0, channels: { A: channel(), B: channel() }, cueMix: 0, headphoneLevel: 0.5 };
+  const beatFx: EngineMixerSnapshot["beatFx"] = { on: false, channel: "master", beats: 1, depth: 0.5 };
+  const mixer = { crossfader: 0.5, masterLevel: 0, channels: { A: channel(), B: channel() }, cueMix: 0, headphoneLevel: 0.5, beatFx, beatFxBpm: null as number | null };
   const decks: Record<DeckId, EngineDeckSnapshot> = {
     A: deck("A"),
     B: deck("B"),
@@ -38,6 +39,27 @@ function statefulEngine() {
       } else if (command.control === "tempo") {
         decks[command.deck] = { ...decks[command.deck], tempoFader: command.value };
         emit("deck", decks[command.deck]);
+      } else if (command.control === "hot-cue-set" || command.control === "hot-cue-clear") {
+        const hotCues = decks[command.deck].hotCues.map((pos, slot) => (slot === command.slot ? (command.control === "hot-cue-set" ? 12.5 : null) : pos));
+        decks[command.deck] = { ...decks[command.deck], hotCues };
+        emit("deck", decks[command.deck]);
+      } else if (command.control === "loop-in") {
+        decks[command.deck] = { ...decks[command.deck], loopInSec: 12.5 };
+        emit("deck", decks[command.deck]);
+      } else if (command.control === "loop-out" || command.control === "loop-auto") {
+        decks[command.deck] = { ...decks[command.deck], loop: { start: 12.5, end: 14.5 } };
+        emit("deck", decks[command.deck]);
+      } else if (command.control === "loop-exit") {
+        decks[command.deck] = { ...decks[command.deck], loop: null, loopInSec: null };
+        emit("deck", decks[command.deck]);
+      } else if (command.control === "beat-fx-bpm") {
+        mixer.beatFxBpm = command.value;
+      } else if (command.control === "beat-fx") {
+        mixer.beatFx = { ...mixer.beatFx, on: command.value };
+      } else if (command.control === "beat-fx-channel") {
+        mixer.beatFx = { ...mixer.beatFx, channel: command.value };
+      } else if (command.control === "beat-fx-beats" || command.control === "beat-fx-depth") {
+        mixer.beatFx = { ...mixer.beatFx, [command.control === "beat-fx-beats" ? "beats" : "depth"]: command.value };
       } else if (command.control === "headphone-cue") {
         mixer.channels[command.deck].cue = command.value;
       } else if (command.control === "crossfader") mixer.crossfader = command.value;
@@ -78,6 +100,9 @@ function deck(id: DeckId): EngineDeckSnapshot {
     masterTempo: false,
     masterTempoAvailability: { available: true },
     cuePointSec: 0,
+    hotCues: [null, null, null, null, null, null, null, null],
+    loop: null,
+    loopInSec: null,
     syncOn: false,
   };
 }
@@ -224,17 +249,104 @@ describe("buttons go through the session as midi input, at the message's time", 
     expect(sent).toEqual([{ command: { control: "tap" }, input: { device: "midi", eventTimeMs: 777, gestureEnd: true } }]);
   });
 
-  it("HOT CUE pads store and trigger hot cues; SHIFT + pad erases", () => {
+  it("HOT CUE pads set and trigger the engine's hot cues; SHIFT + pad clears", () => {
     const { port, session, sent } = rig();
     port.midi([0x97, 0x02, 0x7f]);
-    expect(session.snapshot().hotCues.A[2]).toBe(12.5);
+    expect(session.snapshot().decks.A.hotCues[2]).toBe(12.5);
     port.midi([0x97, 0x02, 0x7f]);
-    expect(commands(sent)).toEqual([
-      { control: "seek", deck: "A", value: 12.5 },
-      { control: "play", deck: "A" },
-    ]);
     port.midi([0x98, 0x02, 0x7f]);
-    expect(session.snapshot().hotCues.A[2]).toBeNull();
+    expect(commands(sent)).toEqual([
+      { control: "hot-cue-set", deck: "A", slot: 2 },
+      { control: "hot-cue", deck: "A", slot: 2 },
+      { control: "hot-cue-clear", deck: "A", slot: 2 },
+    ]);
+    expect(session.snapshot().decks.A.hotCues[2]).toBeNull();
+  });
+
+  it("refuses the pads and pad-mode buttons of modes other than HOT CUE", () => {
+    const { port, sent } = rig();
+    // BEAT JUMP mode's pad 1 on deck A, and the BEAT JUMP button.
+    port.midi([0x97, 0x20, 0x7f]);
+    port.midi([0x90, 0x20, 0x7f]);
+    expect(sent).toEqual([]);
+  });
+
+  it("LOOP IN, LOOP OUT and 4 BEAT/EXIT drive the deck's loop, with SHIFT for ½X and 2X", () => {
+    const { port, sent } = rig();
+    port.midi([0x90, 0x10, 0x7f], 100);
+    port.midi([0x90, 0x11, 0x7f], 200);
+    port.midi([0x90, 0x4c, 0x7f]);
+    port.midi([0x90, 0x4e, 0x7f]);
+    port.midi([0x91, 0x4d, 0x7f]);
+    port.midi([0x91, 0x4d, 0x7f]);
+    expect(commands(sent)).toEqual([
+      { control: "loop-in", deck: "A" },
+      { control: "loop-out", deck: "A" },
+      { control: "loop-halve", deck: "A" },
+      { control: "loop-double", deck: "A" },
+      { control: "loop-auto", deck: "B", value: 4 },
+      { control: "loop-exit", deck: "B" },
+    ]);
+    expect(sent[0]?.input).toEqual({ device: "midi", eventTimeMs: 100, gestureEnd: true });
+  });
+
+  it("refuses SHIFT + 4 BEAT/EXIT (RELOOP, not in v1)", () => {
+    const { port, sent } = rig();
+    port.midi([0x90, 0x50, 0x7f]);
+    expect(sent).toEqual([]);
+  });
+
+  it("Beat FX: ON/OFF, BEAT ◀/▶, LEVEL/DEPTH with soft takeover, and the CH SELECT lever", () => {
+    const { port, sent, session } = rig();
+    port.midi([0x94, 0x47, 0x7f]);
+    port.midi([0x94, 0x4b, 0x7f]);
+    port.midi([0x94, 0x4a, 0x7f]);
+    // The lever to CH2: deck B.
+    port.midi([0x94, 0x10, 0x00]);
+    port.midi([0x95, 0x11, 0x7f]);
+    // DEPTH from the middle (where the app's value is, so it is picked up at once).
+    for (const message of fourteenBit(0xb4, 0x02, 0.5)) port.midi(message);
+    expect(commands(sent).slice(0, 4)).toEqual([
+      { control: "beat-fx", value: true },
+      { control: "beat-fx-beats", value: 2 },
+      { control: "beat-fx-beats", value: 1 },
+      { control: "beat-fx-channel", value: "B" },
+    ]);
+    expect(commands(sent).at(-1)).toMatchObject({ control: "beat-fx-depth" });
+    expect(session.snapshot().mixer.beatFx).toMatchObject({ on: true, channel: "B" });
+  });
+
+  it("SHIFT + BEAT ▶ is TAP and SHIFT + BEAT ◀ is AUTO, the Beat FX tempo", () => {
+    const { port, sent } = rig();
+    for (const time of [1000, 1500, 2000, 2500]) port.midi([0x94, 0x6b, 0x7f], time);
+    port.midi([0x94, 0x66, 0x7f]);
+    // Each SHIFT + BEAT ▶ is the Lesson tap too.
+    expect(commands(sent).filter((command) => command.control === "tap")).toHaveLength(4);
+    expect(commands(sent).filter((command) => command.control !== "tap")).toEqual([
+      { control: "beat-fx-bpm", value: 120 },
+      { control: "beat-fx-bpm", value: null },
+    ]);
+  });
+
+  it("lights LOOP IN while an in point waits, LOOP OUT while looping, and FX ON while Beat FX is on", () => {
+    const { port } = rig();
+    port.out.length = 0;
+    port.midi([0x90, 0x10, 0x7f]);
+    expect(port.out).toEqual(ledMessages("A.loop-in", true));
+    port.out.length = 0;
+    port.midi([0x90, 0x11, 0x7f]);
+    expect(port.out).toEqual(expect.arrayContaining([...ledMessages("A.loop-in", false), ...ledMessages("A.loop-out", true)]));
+    port.out.length = 0;
+    port.midi([0x94, 0x47, 0x7f]);
+    expect(port.out).toEqual(ledMessages("fx-on", true));
+  });
+
+  it("refuses the loop and Beat FX controls while their Lessons have not unlocked them", () => {
+    const { port, sent } = rig(new Set<ControlId>(["A.play"]));
+    port.midi([0x90, 0x10, 0x7f]);
+    port.midi([0x94, 0x47, 0x7f]);
+    port.midi([0x95, 0x11, 0x7f]);
+    expect(sent).toEqual([]);
   });
 });
 
@@ -258,7 +370,8 @@ describe("TAP borrows the controls a Learner has not been handed yet", () => {
     const { port, sent } = rig(new Set<ControlId>([...lesson2, "A.hot-cue", "B.hot-cue"]));
     port.midi([0x97, 0x02, 0x7f]);
     port.midi([0x97, 0x02, 0x7f]);
-    expect(commands(sent).map((command) => command.control)).toEqual(["seek", "play"]);
+    // The engine's hot cues: an empty pad sets, a set one jumps and plays.
+    expect(commands(sent).map((command) => command.control)).toEqual(["hot-cue-set", "hot-cue"]);
   });
 
   it("BEAT ◀ and BEAT ▶ (TAP printed under it), with or without SHIFT, are TAP while Beat FX is locked", () => {
@@ -271,12 +384,17 @@ describe("TAP borrows the controls a Learner has not been handed yet", () => {
     expect(sent).toEqual([tapAt(601), tapAt(603), tapAt(604), tapAt(605)]);
   });
 
-  it("plain BEAT ◀ / ▶ do not tap once Beat FX's beat buttons are unlocked; SHIFT + BEAT ▶ (the panel's TAP) still does", () => {
-    const { port, sent } = rig(new Set<ControlId>([...lesson2, "beat-fx-beat" as string as ControlId]));
+  it("plain BEAT ◀ / ▶ step the Beat FX beat once its beat buttons are unlocked, not TAP; SHIFT + BEAT ▶ (the panel's TAP) still taps", () => {
+    const { port, sent } = rig(new Set<ControlId>([...lesson2, "beat-fx-beat"]));
     port.midi([0x94, 0x4b, 0x7f]);
     port.midi([0x94, 0x4a, 0x7f]);
+    // SHIFT + BEAT ◀ is AUTO: the echo already follows the deck, so nothing to send.
     port.midi([0x94, 0x66, 0x7f]);
-    expect(sent).toEqual([]);
+    expect(commands(sent)).toEqual([
+      { control: "beat-fx-beats", value: 2 },
+      { control: "beat-fx-beats", value: 1 },
+    ]);
+    sent.length = 0;
     port.midi([0x94, 0x6b, 0x7f], 701);
     expect(sent).toEqual([tapAt(701)]);
   });

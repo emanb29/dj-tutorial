@@ -9,6 +9,7 @@ import { deckControlChanges, filterAt, isSyncedAt } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { audibleSpans, overlapSpans } from "./mix.ts";
 import { overcorrection } from "./overcorrect.ts";
+import { echoingAt, fxTailEnd } from "./performance.ts";
 import { EQ_BANDS } from "./lessons/eq-basics.ts";
 import { CFX_CENTRE_BAND } from "./lessons/filter-transition.ts";
 import { controlEvents, controlValueAt } from "./timeline.ts";
@@ -22,12 +23,16 @@ const BLEND_MIN_BARS = 4;
 export interface ResetParts {
   readonly eq: boolean;
   readonly cfx: boolean;
+  /** Beat FX off (or on another channel) once the deck's echoes have died out (`echo-out`). */
+  readonly fx: boolean;
 }
 
 /**
  * `controls-reset`: within 1 bar of a deck going silent (the end of each audible span before the
  * window ends), its EQs are within ±1 dB and its CFX within ±5% of centre. Measured: the slowest
- * reset, in bars. The FX part (`echo-out`) waits for Beat FX in the recorded attempt.
+ * reset, in bars. The FX part counts from where the deck's echoes die out instead (FX return under
+ * −50 LUFS), since an echo out rings on after the deck goes silent by design: within 1 bar of that,
+ * Beat FX is off or takes in another channel.
  */
 export function controlsReset(context: CheckContext, severity: Severity, parts: ResetParts): CriterionResult {
   const { attempt, window } = context;
@@ -47,18 +52,24 @@ export function controlsReset(context: CheckContext, severity: Severity, parts: 
       ]
         .map((move) => move.ctx)
         .sort((a, b) => a - b);
+    const fxMoves = (from: CtxTime) =>
+      attempt.events.filter((event) => (event.control === "beatFx" || event.control === "beatFxChannel") && event.ctx > from && event.ctx < window.to).map((event) => event.ctx);
     return audibleSpans(attempt, deck, window)
       .filter((span) => span.to < window.to - TIME_EPSILON)
       .map((span) => {
         const silentAt = span.to;
-        const resetAt = centred(silentAt) ? silentAt : (knobMoves(silentAt).find((t) => centred(t)) ?? null);
-        return { deck, silentAt, resetAt, bar: barSeconds(loaded, silentAt) };
+        const bar = barSeconds(loaded, silentAt);
+        const knobsAt = centred(silentAt) ? silentAt : (knobMoves(silentAt).find((t) => centred(t)) ?? null);
+        const tailEnd = fxTailEnd(attempt, silentAt, window);
+        const fxOffAt = !parts.fx || !echoingAt(attempt, deck, silentAt) ? silentAt : (fxMoves(silentAt).find((t) => !echoingAt(attempt, deck, t)) ?? null);
+        const late =
+          knobsAt === null || fxOffAt === null ? null : Math.max((knobsAt - silentAt) / bar, parts.fx ? Math.max(0, fxOffAt - tailEnd) / bar : 0);
+        const resetAt = knobsAt === null || fxOffAt === null ? null : Math.max(knobsAt, fxOffAt);
+        return { deck, silentAt, resetAt, late };
       });
   });
   if (resets.length === 0) return notApplicable("standing.controls-reset", severity, "bars", { op: "<=", value: 1, unit: "bars" });
-  const slowest = resets.some((reset) => reset.resetAt === null)
-    ? null
-    : Math.max(...resets.map((reset) => ((reset.resetAt ?? reset.silentAt) - reset.silentAt) / reset.bar));
+  const slowest = resets.some((reset) => reset.late === null) ? null : Math.max(...resets.map((reset) => reset.late ?? 0));
   return judge({
     id: "standing.controls-reset",
     severity,

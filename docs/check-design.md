@@ -17,11 +17,11 @@ strings) is used only for scheduling in the Skill profile. The two are never mix
 
 | Input | Shape | Source | Notes |
 |---|---|---|---|
-| Control-event timeline | `{ctx, control, deck?, value, appliedCtx?, byEngine?}[]`, ordered; ids and units in `shared/attempt.ts` `ControlId` (mixer, tempo, jog bend, SYNC, Master Tempo, CFX, Play, CUE, Lesson buttons) | virtual controller / MIDI | Input timestamps are mapped to *heard* time: `ctx = ts.contextTime + (event.timeStamp − ts.performanceTime)/1000`, with `ts = getOutputTimestamp()`, never past `currentTime`. `appliedCtx` is when the change reached the audio and the playhead model; deck controls are lined up with the playhead on it |
-| Deck playhead models | per deck: `{startCtx, startPos, rateSegments[]}` → `pos_d(t)` (track seconds) | deck engine | Integrated from playbackRate automation we schedule; jog bends are rate segments |
+| Control-event timeline | `{ctx, control, deck?, value, appliedCtx?, byEngine?}[]`, ordered; ids and units in `shared/attempt.ts` `ControlId` (mixer, tempo, jog bend, SYNC, Master Tempo, CFX, Play, CUE, hot cues, loops, Beat FX, Lesson buttons); hot cue and loop events carry `pos` (track seconds placed or jumped to) | virtual controller / MIDI | Input timestamps are mapped to *heard* time: `ctx = ts.contextTime + (event.timeStamp − ts.performanceTime)/1000`, with `ts = getOutputTimestamp()`, never past `currentTime`. `appliedCtx` is when the change reached the audio and the playhead model; deck controls are lined up with the playhead on it |
+| Deck playhead models | per deck: `{startCtx, startPos, rateSegments[]}` → `pos_d(t)` (track seconds) | deck engine | Integrated from playbackRate automation we schedule; jog bends are rate segments; hot cue jumps and each loop wrap are segments (a jump) |
 | Beat grids | per track: `{bpm, firstBeat, downbeatIndex}` or a per-beat array, plus `rmsResidualMs` | analysis worker | `φ_d(t) = grid.beatAt(pos_d(t))` in beats; bar = 4 beats |
 | Phrase markers | per track: track-time list | Lesson track set (hand-checked) | `final-mix` only: 8-bar candidates from bar 1, confirmed by the Learner in track prep (§5.4) |
-| Level meters | 50 Hz frames per channel (post-trim/EQ, pre-fader), FX return and master: `{samplePeakDb, momentaryLufs, shortTermLufs}` | AudioWorklet meter | Momentary = 400 ms, short-term = 3 s, K-weighted (EBU R128) |
+| Level meters | 50 Hz frames per channel (post-trim/EQ, pre-fader), FX return (the Beat FX echoes alone) and master: `{samplePeakDb, momentaryLufs, shortTermLufs}` | AudioWorklet meter | Momentary = 400 ms, short-term = 3 s, K-weighted (EBU R128) |
 | Mixer and deck state | the attempt's initial snapshots (`initialMixer`, `initialDecks`) plus the event timeline: fader, crossfader, trim, EQ (dB), CFX, CUE, FX, tempo, SYNC, Master Tempo | — | Effective master gain `g_d(t)` = fader × crossfader curve, in dB |
 | Task spec | Lesson id, mode, variant, track ids, aids, task window | Lesson content | Aids = sync, quantize, BPM display, phase meter, Lesson text |
 
@@ -63,7 +63,7 @@ the pass; **warn** is reported only; **report** is a metric for the Coach (catal
 | `cued-first` | 10 | `cut-on-phrase` | incoming CUE on for `≥ 2 s` before `t_in` | warn | warn |
 | `trim-still` | 3 | `sync-blend` | no trim event during any `overlap` | warn | warn |
 | `no-boost` | 5 | `eq-basics` | no EQ band `> +3 dB` for `> 1 bar` | warn | warn |
-| `controls-reset` | 12 | `eq-basics` (EQ), `filter-transition` (CFX), `echo-out` (FX) | within 1 bar of a deck going silent: its EQs within ±1 dB, CFX within ±5% of centre, FX off | warn | warn |
+| `controls-reset` | 12 | `eq-basics` (EQ), `filter-transition` (CFX), `echo-out` (FX) | within 1 bar of a deck going silent: its EQs within ±1 dB, CFX within ±5% of centre; within 1 bar of its echoes dying out (FX return `< −50 LUFS`): Beat FX off or on another channel | warn | warn |
 | `sync-kept` | 11 | `sync-blend` | no jog bend on a synced deck | warn (sync Checks only) | n/a (sync off) |
 | `no-recue` | 7 | `nudge-phase` | ≤ 1 CUE press on the incoming deck during `overlap` or a phase task | warn | warn |
 | `one-bass` | 4 | `blend-by-ear` | `clash ≤ 1 beat` per blend | warn | warn (feeds Balance band) |
@@ -135,15 +135,16 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 | `blend-by-ear` | `blend-length` | `t_out(A) − t_in(B)` | `≥ 16 bars − 1 beat` | 8 bars |
 | | `phase-hold` | `holdFrac(overlap, 25 ms)`; `worstRun(overlap, 60 ms)` | `≥ 0.85` ∧ `≤ 1 bar` | |
 | | `swap-time`, `clash-short`, `loud-steady` | as in `bass-swap` / `sync-blend` | same | |
-| `hot-cues` | `hc-place` ×3 | `|hot cue − nearest phrase marker|` | `≤ 20 ms` on all 3 | 1 hot cue |
-| | `hc-trigger` ×3 | `|t_trigger − nearest A phrase start|` | `≤ 40 ms` on all 3 | |
-| `loop-transition` | `loop-length` | `min(|len − 16·B|, |len − 32·B|)` | `≤ 20 ms` | same |
-| | `loop-in`, `loop-exit` | `|downbeatOff|` at loop in / exit, in beats | `≤ 1 beat` | |
-| | `loop-entry` | B's `t_in` on an A downbeat and on a B phrase marker | each `≤ 1 beat` | |
-| | `no-double` | LOOP IN / 4 BEAT presses within 2 beats of each other while audible | `= 0` | |
-| `echo-out` | `echo-cut` | ECHO on A at `t_out(A)`; `|downbeatOff(t_out, A)|` | on ∧ `≤ 1 beat` | same |
-| | `echo-entry` | `|t_in(B) − A's next phrase start had it kept playing|` | `≤ 1 beat` | |
-| | `fx-off` | FX OFF time − tail end (FX return momentary `< −50 LUFS`) | `≤ 2 bars` | |
+| `hot-cues` | `hc-place` | per pad: the last hot cue set on it in the placement section (A paused near each phrase start in turn; a set counts where it took effect, the section's end included): `|pos − nearest phrase marker|`, track ms; pads not set | `≤ 20 ms` on all ∧ none unset | 1 pad |
+| | `hc-trigger` | every pad press in the trigger section (A playing), at the press: `|phraseOff(t_press, A)|`, heard ms; pads never triggered | `≤ 120 ms` (introducing Lesson; 80 later, 60 in `final-mix`) ∧ none untriggered | |
+| `loop-transition` | `loop-length` | the loop A was on at B's `t_in` (else the last): `min(|len − 16·B|, |len − 32·B|)`, heard ms | `≤ 20 ms` for a loop made with 4 BEAT (and 2X/½X); `≤ 120 ms` for one closed with LOOP OUT, a point action | same |
+| | `loop-in` | `|downbeatOff|` of the loop's start position, beats | `≤ 1 beat` | |
+| | `loop-exit` | `|downbeatOff|` of A at the Learner's EXIT press after that loop (an engine exit is not one), beats | `≤ 1 beat` | |
+| | `loop-entry` | at B's entry action: `|downbeatOff(A)|`; `|phraseOff(B)|` where B's audio starts; A looping then | each `≤ 1 beat` ∧ looping | |
+| | `no-double` | LOOP IN / 4 BEAT / EXIT presses on A less than 2 beats after the previous one, while A is audible | `= 0` | |
+| `echo-out` | `echo-cut` | Beat FX on, taking in A (or MASTER), at `t_out(A)`; `|downbeatOff|` of A at the cut's action time (fader move start) | on ∧ `≤ 1 beat` | same |
+| | `echo-entry` | `|t_play(B) − A's next phrase start had it kept playing|` (from A's position and rate at the cut), beats | `≤ 1 beat` | |
+| | `fx-off` | the first Beat FX OFF press after the cut − tail end (just after the last FX-return frame `≥ −50 LUFS` momentary after `t_out(A)`), bars; OFF before the tail ends counts as met | `≤ 2 bars` | |
 | `final-mix` | see §5 | | | full mix (no short form) |
 
 ## 5. `final-mix`
@@ -463,4 +464,5 @@ The owner noted that on a MacBook trackpad, and on a simulated deck generally, l
 - **Faders are judged on intent, not completion.** A channel-fader or crossfader move is timed from the moment it starts (first movement, or crossing 10% of travel), not when it finishes. A drag that starts on time passes even if it lands late.
 - **Wider timing in Lesson Checks, tightening toward `final-mix`.** Point-in-time actions (cut, hot-cue trigger, phrase-start Play) get ±120 ms in the Lesson that introduces them, ±80 ms in later Lessons, and ±60 ms in `final-mix`. Tap Checks keep ±40 ms, since they are keyboard taps. Continuous measures (phase error, levels, bass clash) are unchanged, because they don't depend on gesture speed.
 - **Point actions are timed from the action, not from the sound.** A Play (or a deck CUE press that starts a preview) is timed at its press, mapped to heard time like every input, so it sits on the same clock as the beats the Learner heard when pressing. The deck's audio starts later, by the output latency (Bluetooth headphones can add a few hundred ms) and the engine's lookahead; that gap never counts against the Learner. So `t_play(d)` is the heard time (`ctx`) of the `play` or `deckCue` event whose `appliedCtx` is the start of the deck's play run; an attempt without one falls back to the run start. Loudness measures (`loudJump`) stay on the audio start, and an incoming deck's own phrase position is read where its audio starts. `deck-basics.fade-in` (`t_in − t_play`, a 4-bar span, not a point action) keeps the audio start: the latency only makes that span shorter, never longer.
+- **Hot cues, loops and Beat FX (Lessons 17–19, ISS-88).** Pad presses and loop-button presses are point actions, timed at the press (`ctx`); the jump or loop takes effect later (`appliedCtx`), so the playhead at the press is what the Learner heard. Hot cues are placed on a paused deck: no gesture leeway (20 ms). A loop closed with LOOP OUT gets the point-action tolerance for its length, since its end is a press; a 4 BEAT loop (and 2X/½X of it) sits on the grid and is held to 20 ms. Audible effects (an echo's tail, a loop's audio) are read from the meters and the playhead model, not the presses. A looping deck's phrase position folds across the loop seam: within a beat before the wrap it is also just before the loop's start, so `on-phrase` measures an entry a hair early on the loop's 1 from the start, not from the loop's end.
 - **The input device is recorded with every attempt** (keyboard, trackpad, mouse, touch, and later MIDI), so these tolerances can be tuned per device once real attempts exist. There is still no per-Learner latency calibration.

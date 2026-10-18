@@ -69,6 +69,8 @@ export const SPEC_RULES: readonly SpecRule[] = [
   lessonGroup(["tempo-fader", "sync-blend", "crossfader", "eq-basics"], [], ["e2e/lessons-sync.spec.ts"]),
   lessonGroup(["bass-swap", "filter-transition"], ["src/lessons/catalogue-eq-filter.ts"], ["e2e/lessons-eq-filter.spec.ts", "e2e/placement.spec.ts"]),
   lessonGroup(["nudge-phase", "tempo-by-ear", "blend-by-ear"], ["src/lessons/catalogue-by-ear.ts"], ["e2e/lessons-by-ear.spec.ts", "e2e/placement.spec.ts"]),
+  // Electives 17–19: Placement never offers them.
+  lessonGroup(["hot-cues", "loop-transition", "echo-out"], ["src/lessons/catalogue-performance.ts"], ["e2e/lessons-performance.spec.ts"]),
   // Lesson 20, the set: its own player, catalogue file and Check (mobile.spec.ts has its phone test).
   { paths: ["src/app/final-mix/**", "src/lessons/catalogue-final.ts", "src/checks/lessons/final-mix.ts"], specs: ["e2e/final-mix.spec.ts", ...LESSON_GROUP_EXTRAS] },
   // App screens with their own spec.

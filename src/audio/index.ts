@@ -51,6 +51,9 @@ export {
 export type { OutputChoice, OutputDevice, OutputPlan } from "./output.ts";
 export { createOutputRouting, startAlignmentClicks } from "./output-routing.ts";
 export type { AlignmentClicks, OutputRouting } from "./output-routing.ts";
+export { BEAT_FX_BEATS, ECHO_FEEDBACK } from "./beat-fx.ts";
+export type { BeatFxChannel, BeatFxSnapshot } from "./beat-fx.ts";
+export { HOT_CUE_SLOTS, MAX_LOOP_SEC, MIN_LOOP_SEC } from "./deck.ts";
 export type { MonitorBuses, MonitorOutput } from "./monitor.ts";
 
 export type { BusMeterFrame, MeterBus } from "./meter.ts";

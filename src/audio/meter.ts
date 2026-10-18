@@ -5,8 +5,8 @@ import meterProcessorUrl from "./meter-processor.ts?worker&url";
 import type { MeterFrame } from "@shared/attempt.ts";
 import type { DeckId } from "./types.ts";
 
-/** Channel meters are post-trim/EQ/filter and pre-fader (check-design §1); master is post master level. */
-export type MeterBus = DeckId | "master";
+/** Channel meters are post-trim/EQ/filter and pre-fader (check-design §1); master is post master level; fx is the Beat FX return (the echoes alone). */
+export type MeterBus = DeckId | "master" | "fx";
 
 /** A meter frame (the attempt contract's MeterFrame) tagged with its bus. `ctx` is just after the frame's last sample. */
 export interface BusMeterFrame extends MeterFrame {

@@ -12,11 +12,14 @@ import { crossfader } from "./lessons/crossfader.ts";
 import { cuePoint } from "./lessons/cue-point.ts";
 import { cutOnPhrase } from "./lessons/cut-on-phrase.ts";
 import { deckBasics } from "./lessons/deck-basics.ts";
+import { echoOut } from "./lessons/echo-out.ts";
 import { eqBasics } from "./lessons/eq-basics.ts";
 import { filterTransition } from "./lessons/filter-transition.ts";
 import { finalMix } from "./lessons/final-mix.ts";
 import { gainStaging } from "./lessons/gain-staging.ts";
 import { headphoneCue } from "./lessons/headphone-cue.ts";
+import { hotCues } from "./lessons/hot-cues.ts";
+import { loopTransition } from "./lessons/loop-transition.ts";
 import { nudgePhase } from "./lessons/nudge-phase.ts";
 import { phrases } from "./lessons/phrases.ts";
 import { syncBlend } from "./lessons/sync-blend.ts";
@@ -44,6 +47,9 @@ const LESSON_CHECKS: { readonly [Id in LessonTask["lessonId"]]: LessonCheck<Task
   "nudge-phase": nudgePhase,
   "tempo-by-ear": tempoByEar,
   "blend-by-ear": blendByEar,
+  "hot-cues": hotCues,
+  "loop-transition": loopTransition,
+  "echo-out": echoOut,
   "final-mix": finalMix,
 };
 

@@ -20,7 +20,12 @@ export function phraseOffsetSeconds(loaded: LoadedDeck, t: CtxTime): number | nu
 /** `phraseOff(t, d)`: signed beats from the deck's nearest phrase marker at `t`. */
 export function phraseOffsetBeats(loaded: LoadedDeck, t: CtxTime): number | null {
   const pos = positionAt(loaded.playhead, t);
-  if (pos === null || loaded.phraseMarkers.length === 0) return null;
+  return pos === null ? null : phraseOffsetBeatsOf(loaded, pos);
+}
+
+/** Signed beats from the nearest phrase marker of a track position. */
+export function phraseOffsetBeatsOf(loaded: LoadedDeck, pos: number): number | null {
+  if (loaded.phraseMarkers.length === 0) return null;
   const nearest = loaded.phraseMarkers.reduce((best, marker) => (Math.abs(marker - pos) < Math.abs(best - pos) ? marker : best));
   return trackBeat(loaded.grid, pos) - trackBeat(loaded.grid, nearest);
 }

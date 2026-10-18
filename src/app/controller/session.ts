@@ -1,18 +1,21 @@
 // The controller's input layer, outside React: turns key presses, pointer drags, wheel turns and button
 // presses into engine commands, with the right input device and gestureEnd on release. It is the single
 // place that checks locks, so a locked control cannot reach the engine whatever the DOM does.
-// It also owns the UI-side state the engine does not have: hot cue slots and SHIFT.
+// It also owns the UI-side state the engine does not have: SHIFT. Hot cues and loops live in the engine.
 
-import { TEMPO_RANGES, type AudioEngine, type CommandInput, type DeckId, type EngineCommand, type EngineDeckSnapshot, type EngineMixerSnapshot, type InputDevice, type Result } from "@audio";
+import { BEAT_FX_BEATS, HOT_CUE_SLOTS, TEMPO_RANGES, type AudioEngine, type BeatFxChannel, type CommandInput, type DeckId, type EngineCommand, type EngineDeckSnapshot, type EngineMixerSnapshot, type InputDevice, type Result } from "@audio";
 import { deckControl, type ControlId, type ControllerUnlocks } from "./control-ids.ts";
 import { commandFor, continuousSpec, dragValue, FULL_TRAVEL_PX, nudgeValue, wheelTravelPx, wheelValue, type ContinuousControlId } from "./gestures.ts";
 import { InputDeviceDetector, type WheelDeltas } from "./input-device.ts";
-import { bindingFor, type KeyAction, type KeyModifiers } from "./keymap.ts";
+import { bindingFor, withShift, type KeyAction, type KeyModifiers } from "./keymap.ts";
+import { TapTempo } from "./tap-tempo.ts";
 
 /** The part of the audio engine the controller uses. */
 export type ControllerEngine = Pick<AudioEngine, "command" | "on" | "deckState" | "mixerState" | "playhead" | "trackHistory">;
 
-export const HOT_CUE_SLOTS = 8;
+export { HOT_CUE_SLOTS };
+/** CH SELECT steps through these, as the FLX4's lever does. */
+const BEAT_FX_CHANNELS: readonly BeatFxChannel[] = ["A", "B", "master"];
 /** A wheel gesture ends once no wheel event has arrived for this long. */
 export const WHEEL_GESTURE_END_MS = 180;
 /** Jog bend per radian-per-second of platter speed, and its cap, so a flick stays a nudge. */
@@ -42,8 +45,6 @@ const NO_MODIFIERS: KeyModifiers = { shiftKey: false, ctrlKey: false, metaKey: f
 export interface ControllerSnapshot {
   readonly decks: Readonly<Record<DeckId, EngineDeckSnapshot>>;
   readonly mixer: EngineMixerSnapshot;
-  /** Track position of each hot cue, null when the pad is empty. */
-  readonly hotCues: Readonly<Record<DeckId, readonly (number | null)[]>>;
   readonly shiftHeld: Readonly<Record<DeckId, boolean>>;
 
   /** Heard BPM from the loaded track's grid and the tempo fader, null without a grid. */
@@ -124,8 +125,6 @@ const browserSchedule: Schedule = (run, delayMs) => {
 const keyNudgeGesture = (code: string) => `key-nudge:${code}`;
 const SCREEN_JOG: JogFeel = { bendGain: JOG_GAIN, searchSecPerRadian: JOG_SEARCH_SEC_PER_RADIAN };
 
-const emptySlots = (): (number | null)[] => Array.from({ length: HOT_CUE_SLOTS }, () => null);
-
 export class ControllerSession {
   readonly devices: InputDeviceDetector;
   readonly naturalScrolling: boolean;
@@ -137,6 +136,7 @@ export class ControllerSession {
   private readonly wheelTimers = new Map<string, () => void>();
   private readonly heldKeys = new Set<string>();
   private nextGestureId = 0;
+  private readonly tapTempo = new TapTempo();
   private legendToggle: (() => void) | null = null;
   private cancelNotYet: (() => void) | null = null;
 
@@ -151,7 +151,6 @@ export class ControllerSession {
     this.current = {
       decks: { A: engine.deckState("A"), B: engine.deckState("B") },
       mixer: engine.mixerState(),
-      hotCues: { A: emptySlots(), B: emptySlots() },
       shiftHeld: { A: false, B: false },
       notYet: null,
       pickup: {},
@@ -171,9 +170,6 @@ export class ControllerSession {
       }),
       this.engine.on("command", (event) => {
         if (event.rejected === null) this.update({ mixer: this.engine.mixerState() });
-      }),
-      this.engine.on("track-loaded", ({ deck }) => {
-        this.update({ hotCues: { ...this.current.hotCues, [deck]: emptySlots() } });
       }),
     ];
     this.update({ decks: { A: this.engine.deckState("A"), B: this.engine.deckState("B") }, mixer: this.engine.mixerState() });
@@ -235,6 +231,8 @@ export class ControllerSession {
         return mixer.cueMix;
       case "headphone-level":
         return mixer.headphoneLevel;
+      case "beat-fx-depth":
+        return mixer.beatFx.depth;
       default: {
         const deck: DeckId = id.startsWith("A.") ? "A" : "B";
         const part = id.slice(2) as Exclude<ContinuousControlId, "crossfader" | "master-level" | "cue-mix" | "headphone-level"> extends `${DeckId}.${infer P}` ? P : never;
@@ -453,28 +451,83 @@ export class ControllerSession {
   }
 
   /**
-   * A hot cue pad. Empty: store the heard playhead there. Set: jump there and play. With `erase`
-   * (SHIFT + pad), empty it. The engine has no hot cue command yet, so a trigger is recorded as a seek.
+   * A hot cue pad, as on the FLX4 in HOT CUE mode. Empty: store the position heard at the press. Set:
+   * jump there and play. With `erase` (SHIFT + pad), empty it.
    */
   hotCue(deck: DeckId, slot: number, erase: boolean, input: CommandInput): void {
     if (!this.isUnlocked(deckControl(deck, "hot-cue"))) return;
-    const slots = this.current.hotCues[deck];
-    const stored = slots[slot] ?? null;
-    if (erase || stored === null) {
-      let position: number | null = null;
-      if (!erase) {
-        const reading = this.engine.playhead(deck, input.eventTimeMs);
-        if (!reading.ok) return;
-        position = reading.positionSec;
-      }
-      const next = slots.map((value, index) => (index === slot ? position : value));
-      this.update({ hotCues: { ...this.current.hotCues, [deck]: next } });
-      return;
-    }
-    const sent = this.send({ control: "seek", deck, value: stored }, { ...input, gestureEnd: true });
-    // Starting playback is PLAY's job; with PLAY locked the pad only jumps.
-    const mayPlay = this.isUnlocked(deckControl(deck, "play"));
-    if (sent.ok && mayPlay && !this.current.decks[deck].playing) this.send({ control: "play", deck }, { ...input, gestureEnd: true });
+    const shifted = erase || this.current.shiftHeld[deck];
+    const stored = this.current.decks[deck].hotCues[slot] ?? null;
+    const command: EngineCommand = shifted ? { control: "hot-cue-clear", deck, slot } : stored === null ? { control: "hot-cue-set", deck, slot } : { control: "hot-cue", deck, slot };
+    this.send(command, { ...input, gestureEnd: true });
+  }
+
+  /** LOOP IN; with SHIFT, ½X. */
+  loopIn(deck: DeckId, shift: boolean, input: CommandInput): void {
+    if (!this.isUnlocked(deckControl(deck, "loop-in"))) return;
+    const halve = shift || this.current.shiftHeld[deck];
+    this.send({ control: halve ? "loop-halve" : "loop-in", deck }, { ...input, gestureEnd: true });
+  }
+
+  /** LOOP OUT; with SHIFT, 2X. */
+  loopOut(deck: DeckId, shift: boolean, input: CommandInput): void {
+    if (!this.isUnlocked(deckControl(deck, "loop-out"))) return;
+    const double = shift || this.current.shiftHeld[deck];
+    this.send({ control: double ? "loop-double" : "loop-out", deck }, { ...input, gestureEnd: true });
+  }
+
+  /** 4 BEAT/EXIT: out of a loop playing now, else a 4-beat loop on the grid. */
+  loopButton(deck: DeckId, input: CommandInput): void {
+    if (!this.isUnlocked(deckControl(deck, "loop-exit"))) return;
+    const looping = this.current.decks[deck].loop !== null;
+    this.send(looping ? { control: "loop-exit", deck } : { control: "loop-auto", deck, value: 4 }, { ...input, gestureEnd: true });
+  }
+
+  beatFxToggle(input: CommandInput): void {
+    if (!this.isUnlocked("beat-fx-on")) return;
+    this.send({ control: "beat-fx", value: !this.current.mixer.beatFx.on }, { ...input, gestureEnd: true });
+  }
+
+  /**
+   * Beat FX TAP (SHIFT + BEAT ▶): one tap of the echo's tempo at `input.eventTimeMs` (now without one).
+   * From the 4th tap in a row the echo follows the taps' BPM, until AUTO. Other inputs that mean a tap
+   * on the FLX4 (its SHIFT + BEAT ▶ is also the Lesson tap) call this too.
+   */
+  beatFxTap(input: CommandInput): void {
+    if (!this.isUnlocked("beat-fx-beat")) return;
+    const bpm = this.tapTempo.tap(input.eventTimeMs ?? performance.now());
+    if (bpm !== null) this.send({ control: "beat-fx-bpm", value: Math.round(bpm * 10) / 10 }, { ...input, gestureEnd: true });
+  }
+
+  /** Beat FX AUTO (SHIFT + BEAT ◀): the echo follows the selected deck's BPM again. */
+  beatFxAuto(input: CommandInput): void {
+    if (!this.isUnlocked("beat-fx-beat")) return;
+    this.tapTempo.reset();
+    if (this.current.mixer.beatFxBpm !== null) this.send({ control: "beat-fx-bpm", value: null }, { ...input, gestureEnd: true });
+  }
+
+  /** CH SELECT set to one channel (the hardware lever's position). */
+  beatFxChannel(channel: BeatFxChannel, input: CommandInput): void {
+    if (!this.isUnlocked("beat-fx-channel") || this.current.mixer.beatFx.channel === channel) return;
+    this.send({ control: "beat-fx-channel", value: channel }, { ...input, gestureEnd: true });
+  }
+
+  /** CH SELECT: the next of channel 1, channel 2 and MASTER. */
+  beatFxChannelNext(input: CommandInput): void {
+    if (!this.isUnlocked("beat-fx-channel")) return;
+    const index = BEAT_FX_CHANNELS.indexOf(this.current.mixer.beatFx.channel);
+    const next = BEAT_FX_CHANNELS[(index + 1) % BEAT_FX_CHANNELS.length] ?? "master";
+    this.send({ control: "beat-fx-channel", value: next }, { ...input, gestureEnd: true });
+  }
+
+  /** BEAT ◀ (shorter) or ▶ (longer); stops at the ends. */
+  beatFxBeat(step: -1 | 1, input: CommandInput): void {
+    if (!this.isUnlocked("beat-fx-beat")) return;
+    const beats: readonly number[] = BEAT_FX_BEATS;
+    const index = beats.indexOf(this.current.mixer.beatFx.beats);
+    const next = beats[Math.min(beats.length - 1, Math.max(0, index + step))];
+    if (next === undefined || next === this.current.mixer.beatFx.beats) return;
+    this.send({ control: "beat-fx-beats", value: next }, { ...input, gestureEnd: true });
   }
 
   // ---- hardware controller -------------------------------------------------------------------
@@ -542,7 +595,7 @@ export class ControllerSession {
     if (binding.control !== null && !this.isUnlocked(binding.control)) return false;
     if (event.repeat) return true;
     this.heldKeys.add(event.code);
-    const action: KeyAction = binding.action.kind === "hot-cue" ? { ...binding.action, erase: event.shiftKey } : binding.action;
+    const action: KeyAction = withShift(binding.action, event.shiftKey);
     const input: CommandInput = { device: "keyboard", eventTimeMs: event.timeStamp };
     switch (action.kind) {
       case "play-pause":
@@ -565,6 +618,23 @@ export class ControllerSession {
         break;
       case "jog-nudge":
         this.keyNudge(action.deck, action.faster, event.shiftKey, event.code, input);
+        break;
+      case "loop-in":
+        this.loopIn(action.deck, action.shift, input);
+        break;
+      case "loop-out":
+        this.loopOut(action.deck, action.shift, input);
+        break;
+      case "loop-button":
+        this.loopButton(action.deck, input);
+        break;
+      case "beat-fx-on":
+        this.beatFxToggle(input);
+        break;
+      case "beat-fx-beat":
+        if (!action.shift) this.beatFxBeat(action.step, input);
+        else if (action.step > 0) this.beatFxTap(input);
+        else this.beatFxAuto(input);
         break;
       case "toggle-legend":
         this.legendToggle?.();

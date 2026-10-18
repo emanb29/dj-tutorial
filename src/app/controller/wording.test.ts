@@ -12,6 +12,18 @@ describe("inputWording on a touchscreen", () => {
     expect(touch("Press 3")).toBe("Tap pad 3");
   });
 
+  it("names the loop buttons and Beat FX for their keys", () => {
+    expect(touch("Press G: a 4-beat loop")).toBe("Tap 4 BEAT/EXIT: a 4-beat loop");
+    expect(touch("LOOP IN on a 1 (D)")).toBe("LOOP IN on a 1");
+    expect(touch("Count 4 bars: LOOP OUT on the 1 (F)")).toBe("Count 4 bars: LOOP OUT on the 1");
+    expect(touch("Next loop's 1: EXIT (G)")).toBe("Next loop's 1: EXIT");
+    expect(touch("Press J")).toBe("Tap 4 BEAT/EXIT on deck B");
+    expect(touch("Press V: BEAT FX on")).toBe("Tap BEAT FX ON: BEAT FX on");
+    expect(touch("ECHO on (V), cut A on a 1 (S), then FX off (V)")).toBe("ECHO on, cut A on a 1, then FX off");
+    expect(touch("Press ] for longer echoes")).toBe("Tap BEAT ▶ for longer echoes");
+    expect(touch("Pad 1: jog to the 1 (hold Z to check), Press 1, then R")).toBe("Pad 1: jog to the 1 (hold CUE to check), Tap pad 1, then Ready");
+  });
+
   it("drops a key that only repeats what the caption already says", () => {
     expect(touch("Push the fader up (W)")).toBe("Push the fader up");
     expect(touch("Now pull it down (S)")).toBe("Now pull it down");

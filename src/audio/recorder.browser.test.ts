@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BeatGrid } from "./beat-grid.ts";
 import { createAudioEngine } from "./engine.ts";
-import { KEYBOARD, offlineContext, toneBuffer } from "./offline-test-support.ts";
+import { at, KEYBOARD, offlineContext, toneBuffer } from "./offline-test-support.ts";
 import type { OutputClock } from "./output-clock.ts";
 import { AttemptRecorder, type AttemptDetails } from "./recorder.ts";
 
@@ -101,11 +101,63 @@ describe("AttemptRecorder", () => {
       A: { channelFader: 1, trimDb: 0, eqHighDb: 0, eqMidDb: 0, eqLowDb: 0, filter: 0, cueMonitor: false },
       B: { channelFader: 0, trimDb: 0, eqHighDb: 0, eqMidDb: 0, eqLowDb: 0, filter: 0, cueMonitor: false },
       crossfader: 0.5,
+      beatFx: { on: false, channel: "master", beats: 1, depth: 0.5 },
     });
     expect(attempt.initialDecks).toEqual({
-      A: { tempo: 1, jogBend: 0, sync: false, masterTempo: false },
-      B: { tempo: 1, jogBend: 0, sync: false, masterTempo: false },
+      A: { tempo: 1, jogBend: 0, sync: false, masterTempo: false, hotCues: [null, null, null, null, null, null, null, null], loop: null },
+      B: { tempo: 1, jogBend: 0, sync: false, masterTempo: false, hotCues: [null, null, null, null, null, null, null, null], loop: null },
     });
+    expect(attempt.meters.fxReturn).toHaveLength(50);
+  });
+
+  it("records hot cues, loops and Beat FX as contract events with their pads, positions and lengths, and loop wraps in the playhead", async () => {
+    const { context, engine } = await engineWithTrack({ seconds: 4, deckB: true });
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    recorder.start();
+    const press = (time: number, ...commands: Parameters<typeof engine.command>[0][]) =>
+      at(context, time, () => {
+        for (const command of commands) expect(engine.command(command, KEYBOARD)).toEqual({ ok: true });
+      });
+    engine.command({ control: "play", deck: "A" }, KEYBOARD);
+    const times = [
+      press(0.48, { control: "hot-cue-set", deck: "A", slot: 2 }, { control: "beat-fx-channel", value: "A" }, { control: "beat-fx-beats", value: 0.5 }),
+      press(1.0, { control: "loop-auto", deck: "A", value: 4 }, { control: "beat-fx-depth", value: 0.8 }, { control: "beat-fx", value: true }),
+      press(1.6, { control: "loop-halve", deck: "A" }, { control: "beat-fx-channel", value: "master" }),
+      press(3.4, { control: "hot-cue", deck: "A", slot: 2 }, { control: "beat-fx", value: false }, { control: "hot-cue-clear", deck: "A", slot: 2 }),
+    ];
+    void at(context, 3.9, () => {
+      engine.command({ control: "done" }, KEYBOARD);
+    });
+    const done = context.startRendering();
+    const [setAt, loopAt, halveAt, triggerAt] = await Promise.all(times);
+    await done;
+    const attempt = await stopped(recorder);
+
+    const performance = attempt.events.filter((event) => event.control !== "play" && event.control !== "done");
+    const slot3 = expect.closeTo(setAt ?? Number.NaN, 9) as number;
+    expect(performance).toEqual([
+      { ctx: setAt, control: "hotCueSet", deck: "A", value: 3, pos: slot3, appliedCtx: setAt, inputDevice: "keyboard" },
+      { ctx: setAt, control: "beatFxChannel", deck: "A", value: 1, appliedCtx: setAt, inputDevice: "keyboard" },
+      { ctx: setAt, control: "beatFxBeats", value: 0.5, appliedCtx: setAt, inputDevice: "keyboard" },
+      // 4 BEAT near 1.0 s at 120 BPM: beats 2–6, from 1 s to 3 s.
+      { ctx: loopAt, control: "loopAuto", deck: "A", value: 2, pos: 1, appliedCtx: loopAt, inputDevice: "keyboard" },
+      { ctx: loopAt, control: "beatFxDepth", value: 0.8, appliedCtx: loopAt, inputDevice: "keyboard" },
+      { ctx: loopAt, control: "beatFx", value: 1, appliedCtx: loopAt, inputDevice: "keyboard" },
+      { ctx: halveAt, control: "loopHalve", deck: "A", value: 1, pos: 1, appliedCtx: halveAt, inputDevice: "keyboard" },
+      { ctx: halveAt, control: "beatFxChannel", value: 1, appliedCtx: halveAt, inputDevice: "keyboard" },
+      { ctx: triggerAt, control: "hotCue", deck: "A", value: 3, pos: slot3, appliedCtx: triggerAt, inputDevice: "keyboard" },
+      // The hot cue left the loop: the engine's own exit, where the jump took effect.
+      { ctx: triggerAt, control: "loopExit", deck: "A", value: 1, appliedCtx: triggerAt, inputDevice: "engine", byEngine: true },
+      { ctx: triggerAt, control: "beatFx", value: 0, appliedCtx: triggerAt, inputDevice: "keyboard" },
+    ]);
+    // The loop started at 1 s; the ½X loop (1–2 s, from 1.6 s) wrapped back to 1 s at 2 s and 3 s.
+    const segments = attempt.decks.A?.playhead.segments ?? [];
+    expect(segments.filter((segment) => segment.pos === 1 && segment.rate > 0).map((segment) => segment.fromCtx)).toEqual([
+      expect.closeTo(1, 9),
+      expect.closeTo(2, 9),
+      expect.closeTo(3, 9),
+    ]);
+    expect(attempt.meters.fxReturn?.length).toBeGreaterThan(150);
   });
 
   it("records tempo as a rate ratio, jog bends, SYNC (with the engine's own drop), Master Tempo and the CFX filter", async () => {
@@ -167,9 +219,9 @@ describe("AttemptRecorder", () => {
 
     expect(attempt.initialMixer.A.filter).toBe(0);
     expect(attempt.initialMixer.B.filter).toBe(-0.3);
-    expect(attempt.initialDecks.A).toEqual({ tempo: expect.closeTo(1.05, 12) as number, jogBend: 0, sync: false, masterTempo: true });
+    expect(attempt.initialDecks.A).toEqual({ tempo: expect.closeTo(1.05, 12) as number, jogBend: 0, sync: false, masterTempo: true, hotCues: [null, null, null, null, null, null, null, null], loop: null });
     // B follows A at the same grid BPM, so it plays at A's rate.
-    expect(attempt.initialDecks.B).toEqual({ tempo: expect.closeTo(1.05, 12) as number, jogBend: 0, sync: true, masterTempo: false });
+    expect(attempt.initialDecks.B).toEqual({ tempo: expect.closeTo(1.05, 12) as number, jogBend: 0, sync: true, masterTempo: false, hotCues: [null, null, null, null, null, null, null, null], loop: null });
     expect(attempt.events.map((event) => event.control)).toEqual(["done"]);
   });
 
@@ -229,12 +281,12 @@ describe("AttemptRecorder", () => {
     expect(recorder.usage()).toBeNull();
     expect(recorder.start({ expectedDurationSec: 900 })).toEqual({ ok: true });
 
-    // 900 s × 2 active controls × 30 moves/s × 2 headroom; meters: 3 buses × 50 frames/s × 900 s × 2.
+    // 900 s × 2 active controls × 30 moves/s × 2 headroom; meters: 4 buses × 50 frames/s × 900 s × 2.
     expect(recorder.usage()).toEqual({
       controlEvents: 0,
       controlEventBudget: 108_000,
       meterFrames: 0,
-      meterFrameCapacity: 270_000,
+      meterFrameCapacity: 360_000,
       nearCapacity: false,
       degraded: false,
     });
@@ -300,7 +352,7 @@ describe("AttemptRecorder", () => {
     const attempt = await stopped(recorder);
 
     expect(attempt.degraded).toBe(true);
-    expect(attempt.meters.master.length + (attempt.meters.A?.length ?? 0) + (attempt.meters.B?.length ?? 0)).toBe(30);
+    expect(attempt.meters.master.length + (attempt.meters.A?.length ?? 0) + (attempt.meters.B?.length ?? 0) + (attempt.meters.fxReturn?.length ?? 0)).toBe(30);
   });
 
   it("is not degraded when it stays within its budget", async () => {

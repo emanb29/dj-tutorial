@@ -1,5 +1,6 @@
-// One deck column, DDJ-FLX4 style: 8 pads in HOT CUE mode above the jog wheel; SHIFT, CUE and
-// PLAY/PAUSE below it; and on the outer edge SYNC, MASTER TEMPO (SHIFT: tempo range) and the tempo fader.
+// One deck column, DDJ-FLX4 style: the loop buttons (LOOP IN, LOOP OUT, 4 BEAT/EXIT) and 8 pads in
+// HOT CUE mode above the jog wheel; SHIFT, CUE and PLAY/PAUSE below it; and on the outer edge SYNC,
+// MASTER TEMPO (SHIFT: tempo range) and the tempo fader.
 
 import type { DeckId } from "@audio";
 import { deckControl } from "./control-ids.ts";
@@ -13,7 +14,7 @@ import { HOT_CUE_SLOTS } from "./session.ts";
 
 function HotCuePads({ deck }: { readonly deck: DeckId }) {
   const { session } = useController();
-  const slots = useSessionValue((snapshot) => snapshot.hotCues[deck]);
+  const slots = useSessionValue((snapshot) => snapshot.decks[deck].hotCues);
   const shift = useSessionValue((snapshot) => snapshot.shiftHeld[deck]);
   const { legendOpen } = useController();
   return (
@@ -45,6 +46,54 @@ function HotCuePads({ deck }: { readonly deck: DeckId }) {
         })}
       </div>
     </ControlFrame>
+  );
+}
+
+/** LOOP IN (SHIFT: ½X), LOOP OUT (SHIFT: 2X) and 4 BEAT/EXIT, lit while the deck loops. */
+function LoopButtons({ deck }: { readonly deck: DeckId }) {
+  const { session } = useController();
+  const looping = useSessionValue((snapshot) => snapshot.decks[deck].loop !== null);
+  const marked = useSessionValue((snapshot) => snapshot.decks[deck].loopInSec !== null);
+  const shift = useSessionValue((snapshot) => snapshot.shiftHeld[deck]);
+  return (
+    <div className="loop-row" role="group" aria-label={`Deck ${deck} loop`}>
+      <ControlButton
+        id={deckControl(deck, "loop-in")}
+        label={shift ? "½X" : "IN"}
+        ariaLabel={`Deck ${deck} loop in`}
+        shape="small"
+        lit={marked && !looping}
+        keyHint={keyHintFor(deckControl(deck, "loop-in"))}
+        captionSide="above"
+        onPress={(input) => {
+          session.loopIn(deck, false, input);
+        }}
+      />
+      <ControlButton
+        id={deckControl(deck, "loop-out")}
+        label={shift ? "2X" : "OUT"}
+        ariaLabel={`Deck ${deck} loop out`}
+        shape="small"
+        lit={looping}
+        keyHint={keyHintFor(deckControl(deck, "loop-out"))}
+        captionSide="above"
+        onPress={(input) => {
+          session.loopOut(deck, false, input);
+        }}
+      />
+      <ControlButton
+        id={deckControl(deck, "loop-exit")}
+        label={looping ? "EXIT" : "4 BEAT"}
+        ariaLabel={`Deck ${deck} 4 beat loop or exit`}
+        shape="small"
+        lit={looping}
+        keyHint={keyHintFor(deckControl(deck, "loop-exit"))}
+        captionSide="above"
+        onPress={(input) => {
+          session.loopButton(deck, input);
+        }}
+      />
+    </div>
   );
 }
 
@@ -166,6 +215,7 @@ export function Deck({ deck }: { readonly deck: DeckId }) {
     <section className={`deck deck-${deck}`} aria-label={`Deck ${deck}`}>
       <TempoColumn deck={deck} />
       <div className="deck-main">
+        <LoopButtons deck={deck} />
         <HotCuePads deck={deck} />
         <JogWheel deck={deck} captionSide="above" />
         <Transport deck={deck} />

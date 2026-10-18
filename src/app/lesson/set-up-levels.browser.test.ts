@@ -96,8 +96,14 @@ async function until(done: () => boolean, what: string): Promise<void> {
   }
 }
 
-/** The highest sample peak each meter read over the first bars of the definition's Check, dBFS, by bus. */
-async function startingPeaks(definition: LessonDefinition, set: TrackSet): Promise<{ readonly master: number; readonly playing: Partial<Record<DeckId, number>> }> {
+/**
+ * The highest sample peak each meter read over the first bars of the definition's Check, dBFS, by bus:
+ * the master, each playing channel, and the Beat FX return (echo-out sets ECHO up; its echoes join the master).
+ */
+async function startingPeaks(
+  definition: LessonDefinition,
+  set: TrackSet,
+): Promise<{ readonly master: number; readonly fx: number; readonly playing: Partial<Record<DeckId, number>> }> {
   const { track } = set;
   const barSec = (4 * 60) / track.grid.bpm;
   const context = new OfflineAudioContext({ numberOfChannels: 2, length: Math.round((LISTEN_BARS * barSec + 2) * SAMPLE_RATE), sampleRate: SAMPLE_RATE });
@@ -110,7 +116,7 @@ async function startingPeaks(definition: LessonDefinition, set: TrackSet): Promi
     const audioB = onB.trackId === track.trackId ? set.audio : set.partnerAudio;
     expect(await running.load("B", audioB, { trackId: onB.trackId, grid: onB.grid })).toEqual({ ok: true });
   }
-  const peaks: Record<"master" | DeckId, number> = { master: Number.NEGATIVE_INFINITY, A: Number.NEGATIVE_INFINITY, B: Number.NEGATIVE_INFINITY };
+  const peaks: Record<"master" | "fx" | DeckId, number> = { master: Number.NEGATIVE_INFINITY, fx: Number.NEGATIVE_INFINITY, A: Number.NEGATIVE_INFINITY, B: Number.NEGATIVE_INFINITY };
   let trimmedA = false;
   const stops = [
     running.on("meter", (frame) => {
@@ -138,7 +144,7 @@ async function startingPeaks(definition: LessonDefinition, set: TrackSet): Promi
     if (!DECKS.some((deck) => running.deckState(deck).playing)) expect(running.command({ control: "play", deck: "A" }, { device: "touch" })).toEqual({ ok: true });
     await context.startRendering();
     const playing = Object.fromEntries(DECKS.filter((deck) => running.deckState(deck).playing).map((deck) => [deck, peaks[deck]]));
-    return { master: peaks.master, playing };
+    return { master: peaks.master, fx: peaks.fx, playing };
   } finally {
     session.close();
     for (const stop of stops) stop();
@@ -160,8 +166,8 @@ describe.each([
   it.each(DEFINITIONS)("%s starts out of the red", { timeout: 30_000 }, async (id, definition) => {
     const loaded = await tracks();
     expect(definition.trackProblems(loaded.track), `the fixture must carry ${id}`).toEqual([]);
-    const { master, playing } = await startingPeaks(definition, loaded);
-    const what = `${id} on ${loaded.name}: master ${master.toFixed(2)} dBFS, channels ${JSON.stringify(playing)}`;
+    const { master, fx, playing } = await startingPeaks(definition, loaded);
+    const what = `${id} on ${loaded.name}: master ${master.toFixed(2)} dBFS, FX return ${fx.toFixed(2)} dBFS, channels ${JSON.stringify(playing)}`;
     expect(Object.keys(playing).length, what).toBeGreaterThan(0);
     if (STARTS_IN_THE_RED.has(id)) {
       // gain-staging: A is handed in the red (its own criteria grade it); B still starts out of it.
@@ -170,6 +176,7 @@ describe.each([
       return;
     }
     expect(master, what).toBeLessThanOrEqual(CLIP_DBFS);
+    expect(fx, what).toBeLessThanOrEqual(CLIP_DBFS);
     for (const peak of Object.values(playing)) expect(peak, what).toBeLessThanOrEqual(CLIP_DBFS);
   });
 });

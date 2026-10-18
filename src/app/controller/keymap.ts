@@ -18,9 +18,21 @@ export type KeyAction =
   | { kind: "crossfader-cut"; side: DeckId }
   /** Held: bends the playing deck slower or faster, as a jog wheel nudge (Shift for a smaller bend). */
   | { kind: "jog-nudge"; deck: DeckId; faster: boolean }
+  /** LOOP IN (with SHIFT: ½X) and LOOP OUT (with SHIFT: 2X). */
+  | { kind: "loop-in" | "loop-out"; deck: DeckId; shift: boolean }
+  /** 4 BEAT/EXIT: a 4-beat loop, or out of the loop playing now. */
+  | { kind: "loop-button"; deck: DeckId }
+  | { kind: "beat-fx-on" }
+  /** BEAT ◀ (-1) or ▶ (+1); with SHIFT, AUTO (◀) and TAP (▶), the Beat FX tempo. */
+  | { kind: "beat-fx-beat"; step: -1 | 1; shift: boolean }
   | { kind: "toggle-legend" };
 
-type BoundAction = Exclude<KeyAction, { kind: "hot-cue" }> | { kind: "hot-cue"; deck: DeckId; slot: number };
+type ShiftedKind = "hot-cue" | "loop-in" | "loop-out" | "beat-fx-beat";
+type BoundAction =
+  | Exclude<KeyAction, { kind: ShiftedKind }>
+  | { kind: "hot-cue"; deck: DeckId; slot: number }
+  | { kind: "loop-in" | "loop-out"; deck: DeckId }
+  | { kind: "beat-fx-beat"; step: -1 | 1 };
 
 export interface KeyBinding {
   readonly code: string;
@@ -46,6 +58,15 @@ function controlOf(action: BoundAction): ControlId | null {
       return "crossfader";
     case "jog-nudge":
       return deckControl(action.deck, "jog-bend");
+    case "loop-in":
+    case "loop-out":
+      return deckControl(action.deck, action.kind);
+    case "loop-button":
+      return deckControl(action.deck, "loop-exit");
+    case "beat-fx-on":
+      return "beat-fx-on";
+    case "beat-fx-beat":
+      return "beat-fx-beat";
     case "tap":
       return "tap";
     case "toggle-legend":
@@ -68,6 +89,9 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   ...hotCueKeys("A", ["1", "2", "3", "4"]),
   bind("KeyQ", "Q", { kind: "jog-nudge", deck: "A", faster: false }, "Nudge slower (hold)"),
   bind("KeyE", "E", { kind: "jog-nudge", deck: "A", faster: true }, "Nudge faster (hold)"),
+  bind("KeyD", "D", { kind: "loop-in", deck: "A" }, "LOOP IN (Shift: ½X)"),
+  bind("KeyF", "F", { kind: "loop-out", deck: "A" }, "LOOP OUT (Shift: 2X)"),
+  bind("KeyG", "G", { kind: "loop-button", deck: "A" }, "4 BEAT/EXIT"),
   bind("KeyM", "M", { kind: "deck-cue", deck: "B" }, "CUE (hold)"),
   bind("Comma", ",", { kind: "play-pause", deck: "B" }, "PLAY/PAUSE"),
   bind("KeyO", "O", { kind: "cut", deck: "B", open: true }, "Fader open"),
@@ -75,8 +99,14 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   ...hotCueKeys("B", ["7", "8", "9", "0"]),
   bind("ArrowLeft", "←", { kind: "jog-nudge", deck: "B", faster: false }, "Nudge slower (hold)"),
   bind("ArrowRight", "→", { kind: "jog-nudge", deck: "B", faster: true }, "Nudge faster (hold)"),
+  bind("KeyY", "Y", { kind: "loop-in", deck: "B" }, "LOOP IN (Shift: ½X)"),
+  bind("KeyU", "U", { kind: "loop-out", deck: "B" }, "LOOP OUT (Shift: 2X)"),
+  bind("KeyJ", "J", { kind: "loop-button", deck: "B" }, "4 BEAT/EXIT"),
   bind("KeyC", "C", { kind: "crossfader-cut", side: "A" }, "Crossfader to A"),
   bind("KeyN", "N", { kind: "crossfader-cut", side: "B" }, "Crossfader to B"),
+  bind("KeyV", "V", { kind: "beat-fx-on" }, "BEAT FX ON/OFF"),
+  bind("BracketLeft", "[", { kind: "beat-fx-beat", step: -1 }, "BEAT ◀ (Shift: AUTO)"),
+  bind("BracketRight", "]", { kind: "beat-fx-beat", step: 1 }, "BEAT ▶ (Shift: TAP)"),
   bind("Space", "Space", { kind: "tap" }, "Tap the beat"),
   bind("Slash", "?", { kind: "toggle-legend" }, "Show or hide keys"),
 ];
@@ -137,6 +167,19 @@ export function hotCueKeyHint(deck: DeckId, slot: number): string | null {
 export function resolveKey(code: string, modifiers: KeyModifiers): KeyAction | null {
   const binding = bindingFor(code, modifiers);
   if (binding === null) return null;
-  const { action } = binding;
-  return action.kind === "hot-cue" ? { ...action, erase: modifiers.shiftKey } : action;
+  return withShift(binding.action, modifiers.shiftKey);
+}
+
+/** A bound action with the Shift key's meaning: erase a hot cue, ½X or 2X a loop. */
+export function withShift(action: BoundAction, shiftKey: boolean): KeyAction {
+  switch (action.kind) {
+    case "hot-cue":
+      return { ...action, erase: shiftKey };
+    case "loop-in":
+    case "loop-out":
+    case "beat-fx-beat":
+      return { ...action, shift: shiftKey };
+    default:
+      return action;
+  }
 }

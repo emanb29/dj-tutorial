@@ -81,6 +81,28 @@ export interface CtxSpan {
  *   by the engine itself (`byEngine`).
  * - `masterTempo`: Master Tempo (key lock), 1 = on, 0 = off.
  *
+ * Hot cues (deck; pads numbered 1–8, as printed). Point actions: graded at `ctx`, the press.
+ * - `hotCueSet`: a pad stored a hot cue; value = the pad (1–8); `pos` = the track position stored
+ *   (heard at the press while playing, or where the paused deck stands).
+ * - `hotCue`: a set pad was triggered: the deck jumps to it and plays (quantize off); value = the pad;
+ *   `pos` = the hot cue's position; `appliedCtx` = where the jump starts in the playhead model.
+ *
+ * Loops (deck). Each loop-button press is a point action at `ctx`; the loop it leaves on is in its
+ * value and `pos`, so the loop on at any moment is the latest of these events:
+ * - `loopIn`: LOOP IN, value 1; `pos` = the in point marked (heard at the press). No audible change.
+ * - `loopOut` (LOOP OUT), `loopAuto` (4 BEAT), `loopDouble` (2X, SHIFT + OUT), `loopHalve` (½X,
+ *   SHIFT + IN): value = the loop's length after the press, track seconds; `pos` = its start, track
+ *   seconds. `appliedCtx` = when the loop took effect in the playhead model.
+ * - `loopExit`: the loop ended, value 1: EXIT, or (`byEngine`) a seek, hot cue, CUE return or search
+ *   that left it. The loop's audio is in the playhead model, where each wrap is a jump back to the start.
+ *
+ * Beat FX (ECHO, the only effect in v1; no deck unless noted). Its echoes are metered as `fxReturn`.
+ * - `beatFx`: ON/OFF, 1 = on, 0 = off. Off stops new sound going in; the echoes ring out.
+ * - `beatFxChannel`: CH SELECT, value 1; `deck` = the channel it takes in (after its fader and the
+ *   crossfader); no deck = MASTER.
+ * - `beatFxBeats`: BEAT ◀/▶, the echo's delay in beats of the selected deck (0.125 … 4).
+ * - `beatFxDepth`: LEVEL/DEPTH, 0 … 1, the echoes' level.
+ *
  * Lesson buttons (no audio effect):
  * - `tap`: the Lesson tap key, value 1 per press, no deck.
  * - `ready`: the Learner pressed "Ready" (e.g. trim set, `gain-staging`); `deck` says which deck.
@@ -90,8 +112,10 @@ export interface CtxSpan {
  * playhead, so the playhead model holds them; master level, cue mix and headphone level only shape
  * what the Learner monitors, and no criterion grades them.
  *
- * Extension point: a new graded control (Beat FX for `echo-out`: on/off, level, beat length) gets an
- * id and a unit here, its starting state in `ChannelSnapshot` or `DeckStateSnapshot`, and its
+ * Not controls here either: clearing a hot cue (SHIFT + pad) changes no sound and no grade (a cleared
+ * pad pressed again records a new `hotCueSet`); the Beat FX select is fixed on ECHO in v1.
+ *
+ * Extension point: a new graded control gets an id and a unit here, its starting state in `ChannelSnapshot` or `DeckStateSnapshot`, and its
  * engine-to-contract mapping in the recorder (src/audio/recorder.ts: `CONTRACT_CONTROLS`,
  * `contractValue` and the snapshot functions).
  */
@@ -110,6 +134,18 @@ export type ControlId =
   | "jogBend"
   | "sync"
   | "masterTempo"
+  | "hotCueSet"
+  | "hotCue"
+  | "loopIn"
+  | "loopOut"
+  | "loopAuto"
+  | "loopDouble"
+  | "loopHalve"
+  | "loopExit"
+  | "beatFx"
+  | "beatFxChannel"
+  | "beatFxBeats"
+  | "beatFxDepth"
   | "tap"
   | "ready"
   | "done";
@@ -133,6 +169,12 @@ export interface ControlEvent {
   readonly appliedCtx?: CtxTime;
   /** The engine made this change itself, with no input (e.g. SYNC dropped). Absent = false. */
   readonly byEngine?: boolean;
+  /**
+   * Track seconds the action placed or jumped to: the hot cue (`hotCueSet`, `hotCue`), the LOOP IN
+   * point (`loopIn`), the loop's start (`loopOut`, `loopAuto`, `loopDouble`, `loopHalve`). Absent for
+   * other controls.
+   */
+  readonly pos?: number;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -148,6 +190,15 @@ export interface PlayheadSegment {
   readonly fromCtx: CtxTime;
   readonly pos: number;
   readonly rate: number;
+}
+
+/**
+ * A loop on a deck, in track seconds: the deck plays `[start, end)` and wraps from `end` back to
+ * `start`. In the playhead model each wrap is a segment at `start` (a jump back).
+ */
+export interface LoopSpan {
+  readonly start: number;
+  readonly end: number;
 }
 
 /** Segments ordered by `fromCtx`. Before the first segment the deck is stopped. */
@@ -235,11 +286,29 @@ export interface ChannelSnapshot {
   readonly cueMonitor: boolean;
 }
 
+/** What Beat FX takes in: a channel (after its fader and the crossfader) or the whole master. */
+export type BeatFxChannel = DeckId | "master";
+
+/** Beat FX (ECHO, the only effect in v1), in the units of its control events. */
+export interface BeatFxSnapshot {
+  readonly on: boolean;
+  readonly channel: BeatFxChannel;
+  /** The echo's delay in beats of the selected deck (BEAT ◀/▶): 0.125 … 4. */
+  readonly beats: number;
+  /** LEVEL/DEPTH, 0 … 1: the echoes' level. */
+  readonly depth: number;
+}
+
+/** Beat FX as the engine starts it, and for an attempt built by hand without `MixerSnapshot.beatFx`. */
+export const BEAT_FX_DEFAULT: BeatFxSnapshot = { on: false, channel: "master", beats: 1, depth: 0.5 };
+
 /** The mixer at the start of the attempt. Later state is derived from the event timeline. */
 export interface MixerSnapshot {
   readonly A: ChannelSnapshot;
   readonly B: ChannelSnapshot;
   readonly crossfader: number;
+  /** Absent (an attempt built by hand) = `BEAT_FX_DEFAULT`, off. */
+  readonly beatFx?: BeatFxSnapshot;
 }
 
 /**
@@ -253,6 +322,10 @@ export interface DeckStateSnapshot {
   readonly jogBend: number;
   readonly sync: boolean;
   readonly masterTempo: boolean;
+  /** Hot cue positions by pad (index 0 = pad 1), null = empty. Absent (built by hand) = all empty. */
+  readonly hotCues?: readonly (number | null)[];
+  /** The loop on at the start, track seconds. Absent (built by hand) = none. */
+  readonly loop?: LoopSpan | null;
 }
 
 /** Below this, a gain counts as silence (keeps margins finite). */
@@ -393,6 +466,17 @@ export type LessonTask =
       readonly matchFrom: CtxTime;
     }
   | { readonly lessonId: "blend-by-ear" }
+  | {
+      readonly lessonId: "hot-cues";
+      /** The hot cues are set here, on deck A paused near each phrase start in turn. */
+      readonly placeSection: CtxSpan;
+      /** A plays from here; each pad is triggered on one of A's phrase starts. */
+      readonly triggerSection: CtxSpan;
+      /** The pads to set and trigger (1–8): 3 in the full form, 1 in the short. */
+      readonly slots: readonly number[];
+    }
+  | { readonly lessonId: "loop-transition" }
+  | { readonly lessonId: "echo-out" }
   | {
       readonly lessonId: "final-mix";
       /** The set the Learner built, in play order, with the genre and key set in track prep. */

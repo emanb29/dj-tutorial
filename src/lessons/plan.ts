@@ -6,9 +6,9 @@ import type { CheckPlan, LessonTrack, PositionCue } from "./types.ts";
 
 export const barsSec = (track: LessonTrack, bars: number): number => bars * BEATS_PER_BAR * beatSec(track.grid);
 
-/** The position the Check cues a deck to: `plan.startPos` on A, `plan.deckB.pos` on B. */
+/** The position the Check cues a deck to first: `plan.startPos` (or its first stop) on A, `plan.deckB.pos` on B. */
 function cuePosOf(plan: CheckPlan, deck: DeckId): number | undefined {
-  return deck === "A" ? plan.startPos : plan.deckB?.pos;
+  return deck === "A" ? (plan.stops?.[0] ?? plan.startPos) : plan.deckB?.pos;
 }
 
 /**

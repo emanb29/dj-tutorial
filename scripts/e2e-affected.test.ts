@@ -17,6 +17,13 @@ describe("selectSpecs", () => {
     });
   });
 
+  it("runs the performance group's spec and mobile for Lessons 17–19's Checks and catalogue", () => {
+    expect(selectSpecs(["src/checks/lessons/echo-out.ts", "src/lessons/catalogue-performance.ts"])).toEqual({
+      all: false,
+      specs: ["e2e/lessons-performance.spec.ts", "e2e/mobile.spec.ts"],
+    });
+  });
+
   it("runs a screen's own spec", () => {
     expect(selectSpecs(["src/app/originals/OriginalsPlayer.tsx"])).toEqual({ all: false, specs: ["e2e/originals.spec.ts"] });
   });

@@ -13,6 +13,10 @@ const DECK_PARTS = [
   /** Turning the jog on a playing deck bends pitch (the nudge-phase Lesson); `jog` alone is search while paused. */
   "jog-bend",
   "hot-cue",
+  /** The loop buttons: LOOP IN (SHIFT: ½X), LOOP OUT (SHIFT: 2X) and 4 BEAT/EXIT. */
+  "loop-in",
+  "loop-out",
+  "loop-exit",
   "tempo",
   "tempo-range",
   "master-tempo",
@@ -30,7 +34,21 @@ const DECK_PARTS = [
 export type DeckPart = (typeof DECK_PARTS)[number];
 export type DeckControlId = `${DeckId}.${DeckPart}`;
 
-const SHARED_PARTS = ["crossfader", "master-level", "master-meter", "headphone-level", "cue-mix", "phase-meter", "tap"] as const;
+const SHARED_PARTS = [
+  "crossfader",
+  "master-level",
+  "master-meter",
+  "headphone-level",
+  "cue-mix",
+  "phase-meter",
+  "tap",
+  /** Beat FX: the effect shown (ECHO only in v1), CH SELECT, BEAT ◀/▶, LEVEL/DEPTH and ON/OFF. */
+  "beat-fx-select",
+  "beat-fx-channel",
+  "beat-fx-beat",
+  "beat-fx-depth",
+  "beat-fx-on",
+] as const;
 export type SharedControlId = (typeof SHARED_PARTS)[number];
 
 export type ControlId = DeckControlId | SharedControlId;

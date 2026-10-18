@@ -14,11 +14,14 @@
 // - LOAD = Enter (into the Check / again), SHIFT + LOAD = P (practice), SHIFT + BROWSE press = R (Ready):
 //   pressed as the Lesson keys, so Lessons have one path for them.
 //
-// TODO(lessons-17-19): map LOOP IN / OUT / 4 BEAT-EXIT (and their LEDs), Beat FX (FX SELECT, BEAT ◀ ▶,
-// LEVEL/DEPTH, ON/OFF, the CH SELECT lever, the FX ON LED) and the other pad modes once those control
-// ids and session methods are on main. Until then they show in the Controller page's monitor only.
+// - LOOP IN (SHIFT: ½X), LOOP OUT (SHIFT: 2X) and 4 BEAT/EXIT, as the on-screen loop buttons; LOOP IN
+//   lights while an in point waits for OUT, LOOP OUT while the deck loops.
+// - Beat FX: ON/OFF (its LED shows it), BEAT ◀/▶ (SHIFT: AUTO / TAP, the echo's tempo), LEVEL/DEPTH, and the CH SELECT lever (CH1 = deck A,
+//   CH2 = deck B, CH1&CH2 = MASTER, the one place both channels go through). FX SELECT stays on ECHO, the
+//   only effect in v1; 4 BEAT/EXIT's SHIFT layer (RELOOP) and the pad modes other than HOT CUE are out
+//   of v1: they are refused, so the screen shows the control is not there yet.
 
-import type { DeckId, EngineEvents } from "@audio";
+import type { BeatFxChannel, DeckId, EngineEvents } from "@audio";
 import { allLedsOff, Flx4Decoder, JogDriver, ledMessages, levelMeterMessage, SoftTakeover, type ContinuousName, type Flx4Input, type LedId, type MidiMessage } from "@midi";
 import { deckControl, type ControlId } from "./control-ids.ts";
 import { onTapJudged, publishTapOnHardware } from "./tap-feedback.ts";
@@ -46,12 +49,8 @@ const FLASH_STEPS = 6;
 /** How long a pad goes dark when its tap lands on the beat. */
 const TAP_BLINK_MS = 90;
 
-/**
- * Beat FX's BEAT ◀ / ▶ control. TODO(lessons-17-19): that branch adds "beat-fx-beat" to control-ids.ts;
- * until it lands no Lesson can unlock it, so BEAT ◀ / ▶ are always TAP. Once it does, unlocking it hands
- * the buttons back to Beat FX with no change here.
- */
-const BEAT_FX_BEAT = "beat-fx-beat" as string as ControlId;
+/** Beat FX's BEAT ◀ / ▶: TAP borrows them until echo-out unlocks it. */
+const BEAT_FX_BEAT: ControlId = "beat-fx-beat";
 
 /** Which borrowed controls TAP has on the hardware now, or null while TAP itself is locked. */
 export interface HardwareTap {
@@ -82,14 +81,18 @@ const DECK_CONTINUOUS: Partial<Record<ContinuousName, "tempo" | "trim" | "eq-hig
   filter: "filter",
   "channel-fader": "channel-fader",
 };
-const SHARED_CONTINUOUS: Partial<Record<ContinuousName, "crossfader" | "master-level" | "cue-mix" | "headphone-level">> = {
+const SHARED_CONTINUOUS: Partial<Record<ContinuousName, "crossfader" | "master-level" | "cue-mix" | "headphone-level" | "beat-fx-depth">> = {
   crossfader: "crossfader",
   "master-level": "master-level",
   "headphone-mix": "cue-mix",
   "headphone-level": "headphone-level",
+  "beat-fx-depth": "beat-fx-depth",
 };
 
-/** The app control a hardware fader or knob drives, or null (MIC LEVEL; LEVEL/DEPTH until Beat FX lands). */
+/** The Beat FX CH SELECT lever's positions, as the app's channels. */
+const FX_LEVER: Readonly<Record<"1" | "2" | "1&2", BeatFxChannel>> = { "1": "A", "2": "B", "1&2": "master" };
+
+/** The app control a hardware fader or knob drives, or null (MIC LEVEL). */
 export function continuousTarget(input: Extract<Flx4Input, { kind: "continuous" }>): ContinuousControlId | null {
   if (input.deck !== null) {
     const part = DECK_CONTINUOUS[input.control];
@@ -100,23 +103,28 @@ export function continuousTarget(input: Extract<Flx4Input, { kind: "continuous" 
 
 /** The control each LED shows, for its lock. */
 function ledControl(led: LedId): ControlId | null {
-  if (led === "fx-on") return null;
+  if (led === "fx-on") return "beat-fx-on";
   const deck: DeckId = led.startsWith("A.") ? "A" : "B";
   const part = led.slice(2);
   if (part.startsWith("pad")) return deckControl(deck, "hot-cue");
-  if (part === "play" || part === "cue" || part === "sync" || part === "master-tempo" || part === "headphone-cue") return deckControl(deck, part);
+  if (part === "play" || part === "cue" || part === "sync" || part === "master-tempo" || part === "headphone-cue" || part === "loop-in" || part === "loop-out") return deckControl(deck, part);
   return null;
 }
 
-const LEDS: readonly LedId[] = DECKS.flatMap((deck) => [
+const LEDS: readonly LedId[] = [
+  ...DECKS.flatMap((deck) => [
   `${deck}.play` as const,
+  `${deck}.loop-in` as const,
+  `${deck}.loop-out` as const,
   `${deck}.cue` as const,
   `${deck}.sync` as const,
   `${deck}.master-tempo` as const,
   `${deck}.headphone-cue` as const,
   `${deck}.pad-mode-hot-cue` as const,
   ...([1, 2, 3, 4, 5, 6, 7, 8] as const).map((pad) => `${deck}.pad-${String(pad)}` as LedId),
-]);
+  ]),
+  "fx-on",
+];
 
 export interface HardwareBridgeOptions {
   readonly schedule?: Schedule;
@@ -197,7 +205,7 @@ export class HardwareBridge {
         this.sessionChanged();
       }),
       this.engine.on("meter", (frame: EngineEvents["meter"]) => {
-        if (frame.bus !== "master") this.meter(frame.bus, meterFraction(frame.samplePeakDb));
+        if (frame.bus === "A" || frame.bus === "B") this.meter(frame.bus, meterFraction(frame.samplePeakDb));
       }),
       this.tapJudged((onBeat) => {
         if (onBeat && this.tapPad !== null) this.blink(this.tapPad);
@@ -234,7 +242,7 @@ export class HardwareBridge {
           return;
         }
         if (input.mode !== "hot-cue") {
-          // TODO(lessons-17-19): BEAT LOOP and the other pad modes. For now only HOT CUE does anything.
+          // HOT CUE is the only pad mode in v1.
           this.session.refuse(deckControl(input.deck, "hot-cue"));
           return;
         }
@@ -251,8 +259,10 @@ export class HardwareBridge {
         this.session.setJogTouched(input.deck, input.touched);
         this.jogs[input.deck].touch(input.touched, timeMs);
         return;
-      case "browse-turn":
       case "fx-channel":
+        if (this.unlockedOrRefuse("beat-fx-channel")) this.session.beatFxChannel(FX_LEVER[input.channels], this.input(timeMs));
+        return;
+      case "browse-turn":
       case "unknown":
         return;
     }
@@ -262,14 +272,33 @@ export class HardwareBridge {
     const timed = this.input(timeMs);
     if (input.deck === null) {
       if (!input.pressed) return;
-      if (input.control === "browse-press") {
-        if (input.shift) this.lessonKey("KeyR");
-        else this.tapOrRefuse(timed);
-      } else if ((input.control === "fx-beat-forward" && input.shift) || ((input.control === "fx-beat-back" || input.control === "fx-beat-forward") && this.tap()?.beatButtons !== false)) {
-        // TODO(lessons-17-19): BEAT ◀ / ▶ change the Beat FX beat once "beat-fx-beat" is unlocked.
-        this.tapOrRefuse(timed);
+      switch (input.control) {
+        case "browse-press":
+          if (input.shift) this.lessonKey("KeyR");
+          else this.tapOrRefuse(timed);
+          return;
+        case "fx-on":
+          if (this.unlockedOrRefuse("beat-fx-on")) this.session.beatFxToggle(timed);
+          return;
+        case "fx-beat-back":
+        case "fx-beat-forward":
+          // SHIFT + BEAT ▶ is the panel's TAP: the Lesson tap always, and the echo's tap tempo once Beat FX
+          // is unlocked. SHIFT + BEAT ◀ is AUTO. While Beat FX is locked, TAP borrows plain BEAT ◀ / ▶ (#39);
+          // once it is unlocked they step the echo's beat length.
+          if (input.shift && input.control === "fx-beat-forward") {
+            this.tapOrRefuse(timed);
+            if (this.session.isUnlocked(BEAT_FX_BEAT)) this.session.beatFxTap(timed);
+          } else if (!this.session.isUnlocked(BEAT_FX_BEAT)) this.tapOrRefuse(timed);
+          else if (input.shift) this.session.beatFxAuto(timed);
+          else this.session.beatFxBeat(input.control === "fx-beat-back" ? -1 : 1, timed);
+          return;
+        case "fx-select":
+          // ECHO is the only effect in v1: FX SELECT has nothing to choose.
+          this.unlockedOrRefuse("beat-fx-select");
+          return;
+        default:
+          return;
       }
-      return;
     }
     const { deck } = input;
     switch (input.control) {
@@ -307,8 +336,22 @@ export class HardwareBridge {
       case "headphone-cue":
         if (this.unlockedOrRefuse(deckControl(deck, "headphone-cue"))) this.session.toggle(deck, "headphone-cue", timed);
         return;
+      case "loop-in":
+        if (this.unlockedOrRefuse(deckControl(deck, "loop-in"))) this.session.loopIn(deck, input.shift, timed);
+        return;
+      case "loop-out":
+        if (this.unlockedOrRefuse(deckControl(deck, "loop-out"))) this.session.loopOut(deck, input.shift, timed);
+        return;
+      case "loop-exit":
+        // SHIFT + 4 BEAT/EXIT is RELOOP on the FLX4: not in v1.
+        if (input.shift) this.session.refuse(deckControl(deck, "loop-exit"));
+        else if (this.unlockedOrRefuse(deckControl(deck, "loop-exit"))) this.session.loopButton(deck, timed);
+        return;
+      case "pad-mode":
+        // HOT CUE is the only pad mode in v1; the others are not there yet.
+        if (input.mode !== "hot-cue") this.session.refuse(deckControl(deck, "hot-cue"));
+        return;
       default:
-        // TODO(lessons-17-19): loop-in, loop-out, loop-exit and the pad-mode buttons.
         return;
     }
   }
@@ -443,7 +486,8 @@ export class HardwareBridge {
     if (flashing !== undefined) return flashing % 2 === 0;
     if (/\.pad-\d$/.test(led) && this.tap()?.pads === true) return !this.blinking.has(led);
     if (!this.ledUnlocked(led)) return false;
-    const { decks, mixer, hotCues } = this.session.snapshot();
+    const { decks, mixer } = this.session.snapshot();
+    if (led === "fx-on") return mixer.beatFx.on;
     const deck: DeckId = led.startsWith("A.") ? "A" : "B";
     const state = decks[deck];
     const part = led.slice(2);
@@ -458,11 +502,15 @@ export class HardwareBridge {
         return state.masterTempo;
       case "headphone-cue":
         return mixer.channels[deck].cue;
+      case "loop-in":
+        return state.loopInSec !== null && state.loop === null;
+      case "loop-out":
+        return state.loop !== null;
       case "pad-mode-hot-cue":
         return true;
       default: {
         const pad = Number(/^pad-(\d)$/.exec(part)?.[1] ?? Number.NaN);
-        return Number.isInteger(pad) && (hotCues[deck][pad - 1] ?? null) !== null;
+        return Number.isInteger(pad) && (state.hotCues[pad - 1] ?? null) !== null;
       }
     }
   }

@@ -178,7 +178,7 @@
 
 .controller-display {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr auto auto 1fr;
   gap: 12px;
   align-items: stretch;
 }
@@ -433,6 +433,27 @@
   position: absolute;
   right: 3px;
   bottom: 3px;
+}
+
+/* loop buttons: LOOP IN, LOOP OUT, 4 BEAT/EXIT, in a row above the pads */
+
+.loop-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.loop-row > .control {
+  flex: 1;
+  min-width: 0;
+}
+
+.loop-row .hw-button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 4px;
+  font-size: 11px;
 }
 
 /* jog */
@@ -873,6 +894,58 @@
   width: min(320px, 100%);
 }
 
+/* Beat FX: one compact row in the display row, over the mixer (on a phone, a panel of its own). */
+
+.beat-fx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.beat-fx .control-label {
+  font-size: 9px;
+}
+
+.fx-select {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.fx-name {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fx-bpm {
+  color: var(--ink-dim);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.fx-beat {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.fx-beat .hw-button {
+  min-width: 34px;
+  padding-inline: 6px;
+}
+
+.fx-beat-value {
+  min-width: 30px;
+  font-weight: 700;
+  text-align: center;
+}
+
 /* meters */
 
 .meter-body {
@@ -974,6 +1047,14 @@
     /* A finger-sized target: the tempo-fader Lesson asks for it. */
     min-height: 44px;
   }
+  .fx-beat .hw-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .beat-fx .knob-small .knob-hit {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 /* Mid-width (a phone on its side, a small laptop window): the same three columns, tightened so the
@@ -981,6 +1062,15 @@
 @media (min-width: 880px) and (max-width: 1179px) {
   .controller {
     --fader-length: clamp(100px, 17vh, 160px);
+  }
+  /* Beat FX on a line of its own under the readouts: four columns would squeeze them. */
+  .controller-display {
+    grid-template-columns: 1fr auto 1fr;
+  }
+  .beat-fx {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: center;
   }
   .controller-body {
     gap: 8px;
@@ -1053,6 +1143,7 @@
       "display-centre display-centre display-centre"
       "deck-a deck-a channel-a"
       "mixer-centre mixer-centre mixer-centre"
+      "beat-fx beat-fx beat-fx"
       "crossfader crossfader crossfader"
       "readout-b readout-b readout-b"
       "channel-b deck-b deck-b"
@@ -1096,6 +1187,12 @@
   .crossfader {
     grid-area: crossfader;
   }
+  .beat-fx {
+    grid-area: beat-fx;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 10px;
+  }
   .key-legend {
     grid-area: legend;
     grid-template-columns: minmax(0, 1fr);
@@ -1123,6 +1220,7 @@
   /* Each half's parts are panels of their own now that the mixer box is gone. */
   .channel,
   .mixer-centre,
+  .beat-fx,
   .crossfader {
     border: 1px solid var(--panel-edge);
     border-radius: 14px;
@@ -1156,6 +1254,9 @@
   }
   .crossfader {
     padding: 8px 12px 6px;
+  }
+  .beat-fx {
+    padding: 8px 12px;
   }
   .crossfader .fader-hit {
     width: 100%;

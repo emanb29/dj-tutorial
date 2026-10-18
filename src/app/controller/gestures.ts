@@ -8,7 +8,9 @@ import type { WheelDeltas } from "./input-device.ts";
 
 type DeckContinuousPart = "trim" | "eq-high" | "eq-mid" | "eq-low" | "filter" | "channel-fader" | "tempo";
 
-export type ContinuousControlId = `${DeckId}.${DeckContinuousPart}` | "crossfader" | "master-level" | "cue-mix" | "headphone-level";
+type SharedContinuousPart = "crossfader" | "master-level" | "cue-mix" | "headphone-level" | "beat-fx-depth";
+
+export type ContinuousControlId = `${DeckId}.${DeckContinuousPart}` | SharedContinuousPart;
 
 export interface ContinuousSpec {
   readonly min: number;
@@ -32,7 +34,7 @@ const PAGE_PX = 400;
 
 const CENTRED: ContinuousSpec = { min: -1, max: 1, resetValue: 0, centreDetent: true, inverted: false };
 
-const SPECS: Readonly<Record<DeckContinuousPart | "crossfader" | "master-level" | "cue-mix" | "headphone-level", ContinuousSpec>> = {
+const SPECS: Readonly<Record<DeckContinuousPart | SharedContinuousPart, ContinuousSpec>> = {
   trim: CENTRED,
   "eq-high": CENTRED,
   "eq-mid": CENTRED,
@@ -44,7 +46,11 @@ const SPECS: Readonly<Record<DeckContinuousPart | "crossfader" | "master-level" 
   "master-level": CENTRED,
   "cue-mix": { min: 0, max: 1, resetValue: 0.5, centreDetent: true, inverted: false },
   "headphone-level": { min: 0, max: 1, resetValue: 0.5, centreDetent: false, inverted: false },
+  "beat-fx-depth": { min: 0, max: 1, resetValue: 0.5, centreDetent: false, inverted: false },
 };
+
+const SHARED_CONTINUOUS: ReadonlySet<string> = new Set<SharedContinuousPart>(["crossfader", "master-level", "cue-mix", "headphone-level", "beat-fx-depth"]);
+const isShared = (part: string): part is SharedContinuousPart => SHARED_CONTINUOUS.has(part);
 
 function splitId(id: ContinuousControlId): { deck: DeckId | null; part: keyof typeof SPECS } {
   const dot = id.indexOf(".");
@@ -63,11 +69,8 @@ export function continuousSpec(id: ContinuousControlId): ContinuousSpec {
 /** The engine command that sets a control to `value`, or null when the engine has no such control. */
 export function commandFor(id: ContinuousControlId, value: number): EngineCommand | null {
   const { deck, part } = splitId(id);
-  if (deck === null) {
-    if (part === "crossfader" || part === "master-level" || part === "cue-mix" || part === "headphone-level") return { control: part, value };
-    return null;
-  }
-  if (part === "crossfader" || part === "master-level" || part === "cue-mix" || part === "headphone-level") return null;
+  if (deck === null) return isShared(part) ? { control: part, value } : null;
+  if (isShared(part)) return null;
   return { control: part, deck, value };
 }
 

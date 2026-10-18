@@ -23,7 +23,10 @@ export type AudioEngineError =
   | { kind: "recorder-track-changed"; deck: DeckId }
   | { kind: "recorder-no-input-device" }
   | { kind: "meter-drain-timeout"; waitedMs: number }
-  | { kind: "recording-unsupported"; reason: string };
+  | { kind: "recording-unsupported"; reason: string }
+  | { kind: "hot-cue-empty"; deck: DeckId; slot: number }
+  | { kind: "loop-in-missing"; deck: DeckId }
+  | { kind: "no-loop"; deck: DeckId };
 
 export type Result<T extends object = object> = ({ ok: true } & T) | { ok: false; error: AudioEngineError };
 
@@ -76,6 +79,12 @@ export function describeError(error: AudioEngineError): string {
       return `Deck ${error.deck} loaded a second track during the attempt; v1 attempts allow one track per deck.`;
     case "recorder-no-input-device":
       return "The attempt has no commands to infer the input device from; pass inputDevice in the attempt details.";
+    case "hot-cue-empty":
+      return `Deck ${error.deck}'s hot cue ${String(error.slot + 1)} is empty; set it (hot-cue-set) before triggering it.`;
+    case "loop-in-missing":
+      return `Deck ${error.deck} has no LOOP IN point; press LOOP IN before LOOP OUT.`;
+    case "no-loop":
+      return `Deck ${error.deck} is not looping; start a loop (LOOP OUT or 4 BEAT) first.`;
     case "meter-drain-timeout":
       return `Meter frames up to the end of the attempt did not arrive within ${String(error.waitedMs)} ms; is the AudioContext running?`;
   }

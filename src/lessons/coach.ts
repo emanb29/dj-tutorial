@@ -328,6 +328,48 @@ function describeEqFilter(criterion: CriterionResult): string | null {
   }
 }
 
+const beatsOff = (label: string, measured: number | null, never: string) =>
+  measured === null ? `${label}: ${never}` : `${label}: ${measured.toFixed(2)} beats off the 1 (need 1 or less)`;
+
+/** Lessons 17–19; null for criteria of other Lessons. */
+function describePerformance(criterion: CriterionResult): string | null {
+  const measured = criterion.measured;
+  const need = thresholdValue(criterion);
+  const count = (key: string) => criterion.detail?.[key] ?? 0;
+  switch (criterion.id) {
+    case "hot-cues.hc-place": {
+      const head = measured === null ? "Hot cues: none set" : `Hot cues: worst ${round(measured)} ms off a phrase start (need ${String(need)} or less)`;
+      return count("notSet") > 0 && measured !== null ? `${head}, ${String(count("notSet"))} pad not set` : head;
+    }
+    case "hot-cues.hc-trigger": {
+      const head = measured === null ? "Pad presses: none while A played" : `Pad presses: worst ${round(measured)} ms from the phrase start (need ${String(need)} or less)`;
+      return count("untriggered") > 0 && measured !== null ? `${head}, ${String(count("untriggered"))} pad never pressed` : head;
+    }
+    case "loop-transition.loop-length": {
+      const loopBeats = criterion.detail?.["loopBeats"];
+      return measured === null || loopBeats === undefined
+        ? "Loop: A never looped"
+        : `Loop: ${(loopBeats / 4).toFixed(2)} bars, ${round(measured)} ms off 4 or 8 bars (need ${String(need)} or less)`;
+    }
+    case "loop-transition.loop-in":
+      return beatsOff("Loop start", measured, "no loop");
+    case "loop-transition.loop-exit":
+      return beatsOff("EXIT", measured, "never pressed");
+    case "loop-transition.loop-entry":
+      return measured === null ? "B in: B never came in" : criterion.status === "met" ? "B in: on the loop's 1, on B's phrase" : `B in: ${measured.toFixed(2)} beats off (need 1 or less, while A loops)`;
+    case "loop-transition.no-double":
+      return measured === 0 ? "Loop buttons: one press each" : `Loop buttons: ${String(measured ?? 0)} double presses (need none)`;
+    case "echo-out.echo-cut":
+      return count("echoOn") === 0 ? "Echo cut: ECHO was not on A as it went out" : beatsOff("Echo cut", measured, "A never went out");
+    case "echo-out.echo-entry":
+      return measured === null ? "B in: B never came in" : `B in ${measured.toFixed(2)} beats from the phrase start (need 1 or less)`;
+    case "echo-out.fx-off":
+      return measured === null ? "FX off: Beat FX stayed on" : measured <= 0 ? "FX off: before the echoes died out" : `FX off ${measured.toFixed(1)} bars after the echoes died (need ${String(need)} or less)`;
+    default:
+      return null;
+  }
+}
+
 /** One plain line per criterion for the result card: what was measured against what was needed. */
 export function describeCriterion(criterion: CriterionResult): string {
   const measured = criterion.measured;
@@ -349,7 +391,7 @@ export function describeCriterion(criterion: CriterionResult): string {
       return `Sections named: ${String(questions - (measured ?? questions))} of ${String(questions)} right`;
     }
     default: {
-      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion) ?? describeEqFilter(criterion) ?? describeByEar(criterion);
+      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion) ?? describeEqFilter(criterion) ?? describeByEar(criterion) ?? describePerformance(criterion);
       if (mixing !== null) return mixing;
       const name = criterionPlainName(criterion.id);
       const label = name.charAt(0).toUpperCase() + name.slice(1);

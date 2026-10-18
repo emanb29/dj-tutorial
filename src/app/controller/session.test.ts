@@ -22,6 +22,9 @@ function deckSnapshot(deck: DeckId, overrides: Partial<EngineDeckSnapshot> = {})
     masterTempo: false,
     masterTempoAvailability: { available: true },
     cuePointSec: 0,
+    hotCues: [null, null, null, null, null, null, null, null],
+    loop: null,
+    loopInSec: null,
     syncOn: false,
     ...overrides,
   };
@@ -30,7 +33,17 @@ function deckSnapshot(deck: DeckId, overrides: Partial<EngineDeckSnapshot> = {})
 const CHANNEL = { trim: 0, "eq-low": 0, "eq-mid": 0, "eq-high": 0, filter: 0, "channel-fader": 1, cue: false };
 
 /** Records commands; reports deck A playing when `playing.A` is set. */
-function fakeEngine(options: { playing?: Partial<Record<DeckId, boolean>>; positionSec?: number } = {}) {
+interface FakeEngineOptions {
+  readonly playing?: Partial<Record<DeckId, boolean>>;
+  readonly positionSec?: number;
+  readonly hotCues?: Partial<Record<DeckId, readonly (number | null)[]>>;
+  readonly looping?: Partial<Record<DeckId, boolean>>;
+  readonly beatFx?: Partial<EngineMixerSnapshot["beatFx"]>;
+  /** The engine's tapped Beat FX tempo (null = AUTO). */
+  readonly beatFxBpm?: number | null;
+}
+
+function fakeEngine(options: FakeEngineOptions = {}) {
   const sent: Sent[] = [];
   const engine: ControllerEngine = {
     command(command: EngineCommand, input: CommandInput): Result {
@@ -38,9 +51,14 @@ function fakeEngine(options: { playing?: Partial<Record<DeckId, boolean>>; posit
       return { ok: true };
     },
     on: () => () => undefined,
-    deckState: (deck) => deckSnapshot(deck, { playing: options.playing?.[deck] ?? false }),
+    deckState: (deck) =>
+      deckSnapshot(deck, {
+        playing: options.playing?.[deck] ?? false,
+        ...(options.hotCues?.[deck] === undefined ? {} : { hotCues: options.hotCues[deck] }),
+        ...(options.looping?.[deck] === true ? { loop: { start: 1, end: 3 } } : {}),
+      }),
     mixerState: () =>
-      ({ crossfader: 0.5, masterLevel: 0, channels: { A: CHANNEL, B: CHANNEL }, cueMix: 0, headphoneLevel: 0.5 }) satisfies EngineMixerSnapshot,
+      ({ crossfader: 0.5, masterLevel: 0, channels: { A: CHANNEL, B: CHANNEL }, cueMix: 0, headphoneLevel: 0.5, beatFxBpm: options.beatFxBpm ?? null, beatFx: { on: false, channel: "master", beats: 1, depth: 0.5, ...options.beatFx } }) satisfies EngineMixerSnapshot,
     playhead: () => ({ ok: true, ctx: 1, positionSec: options.positionSec ?? 12.5, beat: null, bar: null, beatInBar: null }),
     trackHistory: () => [],
   };
@@ -133,7 +151,7 @@ describe("keyboard", () => {
     const { engine } = fakeEngine();
     const { session: controller } = session(engine);
     expect(controller.keyDown(key("Space"))).toBe(true);
-    expect(controller.keyDown(key("KeyJ"))).toBe(false);
+    expect(controller.keyDown(key("KeyK"))).toBe(false);
   });
 
   it("ignores keys for locked controls", () => {
@@ -149,26 +167,89 @@ describe("keyboard", () => {
 });
 
 describe("hot cues", () => {
-  it("stores the playhead on an empty pad, then jumps there and plays on the next press", () => {
-    const { engine, sent } = fakeEngine({ positionSec: 31.25 });
+  it("sets an empty pad in the engine at the press, timed from the key", () => {
+    const { engine, sent } = fakeEngine();
     const { session: controller } = session(engine);
-    controller.keyDown(key("Digit2"));
-    expect(sent).toEqual([]);
-    expect(controller.snapshot().hotCues.A[1]).toBe(31.25);
+    controller.keyDown(key("Digit2", { timeStamp: 250 }));
+    expect(sent).toEqual([{ command: { control: "hot-cue-set", deck: "A", slot: 1 }, input: { device: "keyboard", eventTimeMs: 250, gestureEnd: true } }]);
+  });
 
-    controller.keyDown(key("Digit2", { timeStamp: 500 }));
+  it("triggers a set pad (the engine jumps and plays), and clears it with Shift", () => {
+    const { engine, sent } = fakeEngine({ hotCues: { B: [12, null, null, null, null, null, null, null] } });
+    const { session: controller } = session(engine);
+    controller.keyDown(key("Digit7"));
+    controller.keyUp(key("Digit7"));
+    controller.keyDown(key("Digit7", { shiftKey: true }));
     expect(sent.map((entry) => entry.command)).toEqual([
-      { control: "seek", deck: "A", value: 31.25 },
-      { control: "play", deck: "A" },
+      { control: "hot-cue", deck: "B", slot: 0 },
+      { control: "hot-cue-clear", deck: "B", slot: 0 },
+    ]);
+  });
+});
+
+describe("loops and Beat FX", () => {
+  it("LOOP IN and LOOP OUT, with Shift ½X and 2X", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine);
+    for (const [code, shiftKey] of [["KeyD", false], ["KeyF", false], ["KeyD", true], ["KeyF", true], ["KeyY", false]] as const) {
+      controller.keyDown(key(code, { shiftKey }));
+      controller.keyUp(key(code));
+    }
+    expect(sent.map((entry) => entry.command)).toEqual([
+      { control: "loop-in", deck: "A" },
+      { control: "loop-out", deck: "A" },
+      { control: "loop-halve", deck: "A" },
+      { control: "loop-double", deck: "A" },
+      { control: "loop-in", deck: "B" },
     ]);
   });
 
-  it("erases a hot cue with Shift", () => {
-    const { engine } = fakeEngine();
+  it("4 BEAT/EXIT starts a 4-beat loop, or exits the one playing", () => {
+    const { engine, sent } = fakeEngine({ looping: { B: true } });
     const { session: controller } = session(engine);
-    controller.keyDown(key("Digit7"));
-    controller.keyDown(key("Digit7", { shiftKey: true }));
-    expect(controller.snapshot().hotCues.B[0]).toBeNull();
+    controller.keyDown(key("KeyG"));
+    controller.keyDown(key("KeyJ"));
+    expect(sent.map((entry) => entry.command)).toEqual([
+      { control: "loop-auto", deck: "A", value: 4 },
+      { control: "loop-exit", deck: "B" },
+    ]);
+  });
+
+  it("toggles Beat FX, steps BEAT ◀/▶ and cycles CH SELECT", () => {
+    const { engine, sent } = fakeEngine({ beatFx: { on: true, beats: 1, channel: "B" } });
+    const { session: controller } = session(engine);
+    controller.keyDown(key("KeyV"));
+    controller.keyDown(key("BracketRight"));
+    controller.keyDown(key("BracketLeft"));
+    controller.beatFxChannelNext({ device: "touch" });
+    expect(sent.map((entry) => entry.command)).toEqual([
+      { control: "beat-fx", value: false },
+      { control: "beat-fx-beats", value: 2 },
+      { control: "beat-fx-beats", value: 0.75 },
+      { control: "beat-fx-channel", value: "master" },
+    ]);
+  });
+
+  it("Shift + ] taps the Beat FX tempo (from the 4th tap), Shift + [ goes back to AUTO", () => {
+    const { engine, sent } = fakeEngine({ beatFxBpm: 125 });
+    const { session: controller } = session(engine);
+    for (const time of [1000, 1480, 1960, 2440]) {
+      controller.keyDown(key("BracketRight", { shiftKey: true, timeStamp: time }));
+      controller.keyUp(key("BracketRight"));
+    }
+    controller.keyDown(key("BracketLeft", { shiftKey: true }));
+    expect(sent.map((entry) => entry.command)).toEqual([
+      { control: "beat-fx-bpm", value: 125 },
+      { control: "beat-fx-bpm", value: null },
+    ]);
+  });
+
+  it("leaves loop and Beat FX keys to the browser while their controls are locked", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine, new Set<ControlId>(["A.play"]));
+    expect(controller.keyDown(key("KeyD"))).toBe(false);
+    expect(controller.keyDown(key("KeyV"))).toBe(false);
+    expect(sent).toEqual([]);
   });
 });
 
@@ -274,12 +355,11 @@ describe("review fixes: locks", () => {
     expect(sent).toEqual([]);
   });
 
-  it("jumps to a hot cue without playing when PLAY is locked (H2)", () => {
-    const { engine, sent } = fakeEngine({ positionSec: 8 });
+  it("sends one trigger for a set pad, even with PLAY locked: on the FLX4 a hot cue jumps and plays", () => {
+    const { engine, sent } = fakeEngine({ hotCues: { A: [8, null, null, null, null, null, null, null] } });
     const { session: controller } = session(engine, new Set<ControlId>(["A.hot-cue"]));
     controller.keyDown(key("Digit1"));
-    controller.keyDown(key("Digit1"));
-    expect(sent.map((entry) => entry.command)).toEqual([{ control: "seek", deck: "A", value: 8 }]);
+    expect(sent.map((entry) => entry.command)).toEqual([{ control: "hot-cue", deck: "A", slot: 0 }]);
   });
 
   it("still finishes a drag with gestureEnd when the control locks mid-drag", () => {

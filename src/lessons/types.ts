@@ -1,6 +1,6 @@
 // The shape of a Lesson as data: what the Learner touches first (the hook), how they practise, and
 // how the Check is set up on the chosen track. Pure data plus pure builders; no audio, no React.
-import type { Aids, Attempt, BeatGrid, CtxSpan, DeckId, LessonId, LessonTask, TaskTrack } from "@shared/attempt.ts";
+import type { Aids, Attempt, BeatFxSnapshot, BeatGrid, CtxSpan, DeckId, LessonId, LessonTask, TaskTrack } from "@shared/attempt.ts";
 import type { CriterionId } from "@shared/check-result.ts";
 import type { ControlId } from "@app/controller/control-ids.ts";
 
@@ -94,7 +94,19 @@ export type Observation =
   /** tempo-by-ear practice: Ready (R) with the tempos `offBpm` apart; `good` within the Check's 0.1 BPM. */
   | { readonly kind: "tempo-match"; readonly offBpm: number; readonly good: boolean }
   /** sync-blend's stepped blend (blend-steps.ts): a step made in order, or missed with what went wrong. */
-  | { readonly kind: "blend-step"; readonly step: number; readonly good: boolean; readonly mistake: string | null };
+  | { readonly kind: "blend-step"; readonly step: number; readonly good: boolean; readonly mistake: string | null }
+  /** An empty pad stored a hot cue (pads 1–8). */
+  | { readonly kind: "hot-cue-set"; readonly deck: DeckId; readonly slot: number }
+  /** A set pad was pressed: the deck jumped. `offsetMs` is to the deck's nearest phrase start at the press. */
+  | { readonly kind: "hot-cue"; readonly deck: DeckId; readonly slot: number; readonly offsetMs: number | null; readonly onPhrase: boolean }
+  | { readonly kind: "loop-in"; readonly deck: DeckId }
+  /** A loop went on or changed (LOOP OUT, 4 BEAT, 2X, ½X): its length, and whether it starts within 1 beat of a downbeat. */
+  | { readonly kind: "loop"; readonly deck: DeckId; readonly bars: number; readonly onDownbeat: boolean }
+  /** EXIT pressed; `onDownbeat` = within 1 beat of a downbeat. */
+  | { readonly kind: "loop-exit"; readonly deck: DeckId; readonly onDownbeat: boolean }
+  | { readonly kind: "beat-fx"; readonly on: boolean }
+  /** Deck A's fader closed: on a downbeat (within 1 beat)? with ECHO taking A in? */
+  | { readonly kind: "echo-cut"; readonly onDownbeat: boolean; readonly echoOn: boolean };
 
 export type EqBand = "low" | "mid" | "high";
 
@@ -131,7 +143,14 @@ export type HookTrigger =
   /** A tempo-by-ear round's Ready (matched or not). */
   | { readonly kind: "tempo-match" }
   /** The stepped blend made up to and including `step` (0-based), in order. */
-  | { readonly kind: "blend-step"; readonly step: number };
+  | { readonly kind: "blend-step"; readonly step: number }
+  | { readonly kind: "hot-cue-set" }
+  | { readonly kind: "hot-cue-trigger" }
+  | { readonly kind: "loop-in" }
+  /** A loop went on (or changed). */
+  | { readonly kind: "loop-on" }
+  | { readonly kind: "loop-exit" }
+  | { readonly kind: "beat-fx-on" };
 
 export interface HookStep {
   /** What to do, a few words with the key: "Press X". */
@@ -154,10 +173,11 @@ export interface PracticeConfig {
    * (B's Play within 1 beat of A's phrase start), a Ready with B on the target BPM, a LOW brought back
    * on a phrase start (within 1 beat), a bass swap (good within 1 beat of A's phrase start), A's fader
    * closed after a high-pass sweep on CFX A (good at 70% or more, on for 8–16 bars), a drill round
-   * held in phase (`phase-hold`), a tempo-by-ear round's guess and its Ready (`tempo-ear`: each is a rep), or a step of the
-   * stepped blend (good when made in order).
+   * held in phase (`phase-hold`), a tempo-by-ear round's guess and its Ready (`tempo-ear`: each is a
+   * rep), a step of the stepped blend (good when made in order), a hot cue triggered on a phrase start
+   * (within 120 ms), a loop of 4 or 8 bars from a downbeat, or a cut of A on a downbeat with ECHO on.
    */
-  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out" | "phase-hold" | "tempo-ear" | "blend-step";
+  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out" | "phase-hold" | "tempo-ear" | "blend-step" | "hot-cue-trigger" | "loop" | "echo-cut";
   readonly window: number;
   readonly needed: number;
 }
@@ -192,6 +212,8 @@ export interface DeckSetup {
   readonly filterCentred?: true;
   /** LOW all the way down, after `eqCentred` (blend-by-ear brings B in with no bass, for the swap). */
   readonly lowCut?: true;
+  /** The 8 hot cue pads, track seconds or null for empty: every pad is cleared, then these are set. */
+  readonly hotCues?: readonly (number | null)[];
 }
 
 export interface DeckSetups {
@@ -199,6 +221,8 @@ export interface DeckSetups {
   readonly B?: DeckSetup;
   /** The crossfader, 0 (full A) … 1 (full B); absent leaves it where it is. */
   readonly crossfader?: number;
+  /** Beat FX as given (the rest left as it is). */
+  readonly beatFx?: Partial<BeatFxSnapshot>;
 }
 
 /** Practice and Check decks loop back to their set-up after this; `positions` keeps knobs and faders. */
@@ -245,7 +269,9 @@ export type CheckEnd =
       readonly bars: number;
       readonly notBeforePos: number;
       readonly orPos: number;
-    };
+    }
+  /** `bars` (of deck A's track) after the Learner did `count` of `what` in the Check (3 hot cue triggers; B's Play). */
+  | { readonly kind: "did-then"; readonly what: HookTrigger; readonly count: number; readonly bars: number };
 
 /**
  * A by-ear practice drill (Lessons 14–16): short rounds, one rep each, run live by the app. A round
@@ -290,6 +316,13 @@ export interface CheckPlan {
   readonly slices?: readonly TrackSlice[];
   /** The crossfader at the start (crossfader: full A); absent leaves it where it is. */
   readonly crossfader?: number;
+  /** Beat FX at the start (echo-out: ECHO on CH 1, off). */
+  readonly beatFx?: Partial<BeatFxSnapshot>;
+  /**
+   * hot-cues: deck A waits paused at each of these track positions in turn; once a hot cue is set there,
+   * Ready moves on. After the last, deck A is cued to `startPos` and plays (`autoPlay`).
+   */
+  readonly stops?: readonly number[];
   /** Listening clips played while a question is asked, by question id (tempo-fader). */
   readonly clips?: Readonly<Record<string, ListeningClip>>;
   /** When the audio part ends by itself. */
@@ -298,8 +331,13 @@ export interface CheckPlan {
   readonly timeoutSec: number;
   /** Live caption per stretch of the attempt, by track position (e.g. "every beat" → "only the 1"). */
   readonly cues: readonly PositionCue[];
-  /** Live caption by the number of Ready presses so far (overrides `cues` when present). */
+  /** Live caption by the number of Ready presses so far (overrides `cues` until every one is used, or always without `cues`). */
   readonly readyCues?: readonly string[];
+  /**
+   * Live captions for steps the Learner takes in order, once the first is done (position cues no
+   * longer fit a deck that loops or jumps): each caption shows after its `after` happened.
+   */
+  readonly stepCues?: readonly { readonly after: HookTrigger; readonly caption: string }[];
 }
 
 export interface CheckQuestion {

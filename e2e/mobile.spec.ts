@@ -117,6 +117,7 @@ const PHONE_REGIONS = [
   "section.deck-A",
   ".channel-A",
   ".mixer-centre",
+  ".beat-fx",
   ".control.crossfader",
   ".deck-readout.deck-B",
   ".channel-B",
@@ -627,5 +628,59 @@ test.describe("Lesson 20, the set, on a phone (412×915, portrait, touch)", () =
     const start = page.getByRole("button", { name: "Start the set" });
     await expectFingerSized(page, start);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+});
+
+// Lessons 17–19 on a phone: the pads, the loop buttons and the Beat FX strip are on screen and
+// finger-sized when a step asks for them, and the captions name them (no key).
+test.describe("Lessons 17–19 on a phone (412×915, touch)", () => {
+  test.use(phone(412, 915));
+  const FIRST_SIX = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point"];
+  const TO_SYNC_BLEND = [...FIRST_SIX, "cut-on-phrase", "tempo-fader", "sync-blend"];
+  const caption = (page: Page) => page.getByRole("status", { name: "Lesson caption" });
+
+  test("hot-cues: pad 2 is finger-sized, the captions say 'Tap pad 2', and Ready shows in the Check", async ({ page }) => {
+    await openLesson(page, "hot-cues", { touch: true, passed: FIRST_SIX });
+    await expect(caption(page)).toHaveText("Tap pad 2: pad 2 keeps this spot");
+    const pad = page.getByRole("button", { name: /Deck A hot cue 2/ });
+    await expectFingerSized(page, pad);
+    await pad.tap();
+    await expect(caption(page)).toContainText("Tap pad 2 again");
+    await pad.tap();
+    await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
+    await expect(caption(page)).toContainText("Pad 1 is the drop: Tap pad 1 on a phrase's 1");
+    await page.getByRole("button", { name: "Start the Check" }).tap();
+    await expect(page.locator(".lesson-cue")).toContainText("Pad 1: jog to this phrase's 1 (hold CUE to check), Tap pad 1, then Ready");
+    await expectFingerSized(page, page.getByRole("button", { name: "Ready", exact: true }));
+  });
+
+  test("loop-transition: 4 BEAT/EXIT and LOOP IN are finger-sized and named in the captions", async ({ page }) => {
+    await openLesson(page, "loop-transition", { touch: true, passed: TO_SYNC_BLEND, headphones: true });
+    await expect(caption(page)).toHaveText("Tap 4 BEAT/EXIT: a 4-beat loop");
+    const button = page.getByRole("button", { name: "Deck A 4 beat loop or exit" });
+    await expectFingerSized(page, button);
+    await button.tap();
+    await expect(caption(page)).toContainText("Tap 4 BEAT/EXIT again: EXIT");
+    await button.tap();
+    await expect(caption(page)).toContainText("LOOP IN on a 1");
+    await expect(caption(page)).not.toContainText("(D)");
+    await expectFingerSized(page, page.getByRole("button", { name: "Deck A loop in" }));
+  });
+
+  test("echo-out: the Beat FX panel fits the screen, every part finger-sized, nothing on anything else", async ({ page }) => {
+    await openLesson(page, "echo-out", { touch: true, passed: TO_SYNC_BLEND, headphones: true });
+    await expect(caption(page)).toHaveText("Tap BEAT FX ON: BEAT FX on");
+    const on = page.getByRole("button", { name: "Beat FX on/off" });
+    await expectFingerSized(page, on);
+    await expectFingerSized(page, page.getByRole("button", { name: /Beat FX channel CH 1/ }));
+    await on.tap();
+    await expect(caption(page)).toContainText("Turn DEPTH");
+    await expectFingerSized(page, page.getByRole("slider", { name: "DEPTH" }));
+    await command(page, { control: "beat-fx-depth", value: 0.8 });
+    await expect(caption(page)).toContainText("Tap BEAT ▶ for longer echoes");
+    await expectFingerSized(page, page.getByRole("button", { name: "Beat FX beat longer" }));
+    await expectFingerSized(page, page.getByRole("button", { name: "Beat FX beat shorter" }));
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    expect(overlaps(await controlBoxes(page))).toEqual([]);
   });
 });

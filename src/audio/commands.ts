@@ -2,6 +2,7 @@
 // send these, and the AttemptRecorder logs each one (check-design §1, "Control-event timeline").
 
 import type { TempoRangePercent } from "./tempo.ts";
+import type { BeatFxChannel } from "@shared/attempt.ts";
 import type { DeckId, InputDevice } from "./types.ts";
 
 export type EqControl = "eq-low" | "eq-mid" | "eq-high";
@@ -41,6 +42,26 @@ export type EngineCommand =
    */
   | { control: "crossfader" | "master-level" | "cue-mix" | "headphone-level"; value: number }
   /** Lesson buttons with no audio effect, recorded for the Checks: the tap key, "Done", and "Ready" for a deck. */
+  /**
+   * Hot cues, 8 pads per deck, `slot` 0–7. Set stores the heard position at the press (or `pos`, track
+   * seconds, for a Lesson's set-up); a trigger jumps there and plays at once (quantize off); clear
+   * empties the pad (SHIFT + pad).
+   */
+  | { control: "hot-cue-set"; deck: DeckId; slot: number; pos?: number }
+  | { control: "hot-cue" | "hot-cue-clear"; deck: DeckId; slot: number }
+  /**
+   * Loops. LOOP IN marks the heard position; LOOP OUT closes a loop there from the IN point; loop-auto
+   * (4 BEAT) loops `value` beats from the grid beat nearest the heard position; double and halve (SHIFT
+   * + OUT / IN) move the loop's end; exit plays straight on. Loop points are whole samples.
+   */
+  | { control: "loop-in" | "loop-out" | "loop-double" | "loop-halve" | "loop-exit"; deck: DeckId }
+  | { control: "loop-auto"; deck: DeckId; value: number }
+  /** Beat FX (ECHO): ON/OFF, CH SELECT, BEAT ◀/▶ (one of BEAT_FX_BEATS) and LEVEL/DEPTH (0…1). */
+  | { control: "beat-fx"; value: boolean }
+  | { control: "beat-fx-channel"; value: BeatFxChannel }
+  | { control: "beat-fx-beats" | "beat-fx-depth"; value: number }
+  /** Beat FX tempo: a tapped BPM (TAP, SHIFT + BEAT ▶), or null to follow the selected deck again (AUTO, SHIFT + BEAT ◀). */
+  | { control: "beat-fx-bpm"; value: number | null }
   | { control: "tap" | "done" }
   | { control: "ready"; deck: DeckId };
 
@@ -71,6 +92,7 @@ export const CONTROL_RANGES = {
   "master-level": [-1, 1],
   "cue-mix": [0, 1],
   "headphone-level": [0, 1],
+  "beat-fx-depth": [0, 1],
 } as const satisfies Partial<Record<Control, readonly [number, number]>>;
 
 /** Controls that move continuously under a pointer; the recorder coalesces their events. */

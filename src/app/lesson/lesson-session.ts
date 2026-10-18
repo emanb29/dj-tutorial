@@ -24,6 +24,7 @@ import {
   trackOnDeck,
   followBlend,
   START_BLEND,
+  triggerStep,
   withPlannedGrids,
   type BlendFollow,
   type CheckPlan,
@@ -34,6 +35,7 @@ import {
   type Grading,
   type LessonDefinition,
   type LessonTrack,
+  type HookTrigger,
   type LoopPlan,
   type Observation,
   type PositionCue,
@@ -70,6 +72,8 @@ const LEVEL_MATCH_DB = 1.5;
 const CUT_TOLERANCE_MS = 120;
 /** A "held" Check end trusts the decks between two live looks at most this far apart. */
 const HELD_GAP_MS = 150;
+/** A loop, an EXIT or an echo cut counts as on a downbeat within this (the Checks' ±1 beat). */
+const DOWNBEAT_SLACK_BEATS = 1;
 /** tempo-fader practice: B's BPM this close to the target is on it (the Check's set-bpm limit). */
 const BPM_TOLERANCE = 0.05;
 const EQ_BANDS: Readonly<Record<"eq-low" | "eq-mid" | "eq-high", EqBand>> = { "eq-low": "low", "eq-mid": "mid", "eq-high": "high" };
@@ -115,6 +119,14 @@ interface RunningCheck {
    * Check's end, so no position may end the Check or loop it before then.
    */
   readonly cueCtx: number;
+  /** hot-cues: the stop deck A waits at (index into plan.stops), and whether a pad was set there. */
+  stop: number;
+  stopSet: boolean;
+  /** Steps of plan.stepCues done so far, in order. */
+  steps: number;
+  /** How often the `did-then` end's action happened, and when it last did (performance.now()). */
+  did: number;
+  didAtMs: number | null;
 }
 
 export class LessonSession {
@@ -213,7 +225,24 @@ export class LessonSession {
   };
 
   private observe(observation: Observation): void {
-    if (!this.settingUp) this.listener.observed(observation);
+    if (this.settingUp) return;
+    this.progress(observation);
+    this.listener.observed(observation);
+  }
+
+  /** What a running Check counts from the Learner's actions: its step cues, its `did-then` end, a pad set at a stop. */
+  private progress(observation: Observation): void {
+    const check = this.check;
+    if (check?.stopped !== null) return;
+    const done = (trigger: HookTrigger) => triggerStep(trigger, observation) === 1;
+    const step = check.plan.stepCues?.[check.steps];
+    if (step !== undefined && done(step.after)) check.steps += 1;
+    const end = check.plan.endWhen;
+    if (end.kind === "did-then" && done(end.what)) {
+      check.did += 1;
+      check.didAtMs = performance.now();
+    }
+    if (observation.kind === "hot-cue-set") check.stopSet = true;
   }
 
   private onCommand(event: CommandEvent): void {
@@ -230,6 +259,40 @@ export class LessonSession {
         return;
       case "filter":
         this.onFilter(command.deck, command.value, event.heardCtx);
+        return;
+      case "hot-cue-set":
+        this.observe({ kind: "hot-cue-set", deck: command.deck, slot: command.slot + 1 });
+        return;
+      case "hot-cue": {
+        const offsetMs = this.phraseOffsetMs(command.deck, event.heardCtx);
+        this.observe({ kind: "hot-cue", deck: command.deck, slot: command.slot + 1, offsetMs, onPhrase: offsetMs !== null && Math.abs(offsetMs) <= CUT_TOLERANCE_MS });
+        return;
+      }
+      case "loop-in":
+        this.observe({ kind: "loop-in", deck: command.deck });
+        return;
+      case "loop-out":
+      case "loop-auto":
+      case "loop-double":
+      case "loop-halve":
+        this.onLoop(command.deck);
+        return;
+      case "loop-exit": {
+        const offset = this.downbeatOffsetBeats(command.deck, event.heardCtx);
+        this.observe({ kind: "loop-exit", deck: command.deck, onDownbeat: offset !== null && Math.abs(offset) <= DOWNBEAT_SLACK_BEATS });
+        return;
+      }
+      case "beat-fx":
+        this.observe({ kind: "beat-fx", on: command.value });
+        return;
+      case "beat-fx-channel":
+        this.observe({ kind: "touch", control: "beat-fx-channel" });
+        return;
+      case "beat-fx-beats":
+        this.observe({ kind: "touch", control: "beat-fx-beat" });
+        return;
+      case "beat-fx-depth":
+        this.observe({ kind: "touch", control: "beat-fx-depth" });
         return;
       case "headphone-cue":
         this.observe({ kind: "headphone-cue", deck: command.deck, on: command.value });
@@ -278,11 +341,17 @@ export class LessonSession {
   }
 
   private onFader(deck: DeckId, value: number, heardCtx: number | null): void {
-    this.observe({ kind: "fader", deck, value });
     const wasOpen = this.faderOpen[deck];
     this.faderOpen[deck] = value > FADER_DOWN;
+    this.observe({ kind: "fader", deck, value });
     if (deck === "A" && wasOpen && !this.faderOpen.A && this.definition.practice.rep === "filter-out") this.onFilterOut(heardCtx);
     if (this.definition.practice.rep === "blend-step") this.followBlend();
+    if (deck === "A" && wasOpen && value <= FADER_DOWN) {
+      // An echo out's cut: on a downbeat, with ECHO taking A in.
+      const offset = this.downbeatOffsetBeats("A", heardCtx);
+      const fx = this.engine.mixerState().beatFx;
+      this.observe({ kind: "echo-cut", onDownbeat: offset !== null && Math.abs(offset) <= DOWNBEAT_SLACK_BEATS, echoOn: fx.on && (fx.channel === "A" || fx.channel === "master") });
+    }
     const check = this.check;
     if (check !== null && check.stopped === null) {
       if (value <= FADER_DOWN) {
@@ -321,6 +390,27 @@ export class LessonSession {
     if (offsetMs === null || !this.engine.deckState("A").playing) return;
     const beatMs = 60_000 / (this.track.grid.bpm * this.engine.deckState("A").tempoRate);
     this.observe({ kind: "cut", offsetMs, onPhrase: Math.abs(offsetMs) <= CUT_TOLERANCE_MS, withinBeat: Math.abs(offsetMs) <= beatMs });
+  }
+
+  /** A loop went on or changed: its length in bars and whether it starts on a downbeat. */
+  private onLoop(deck: DeckId): void {
+    const loop = this.engine.deckState(deck).loop;
+    const track = this.onDeck[deck];
+    if (loop === null || track === null) return;
+    const beat = 60 / track.grid.bpm;
+    const fromDownbeat = (loop.start - track.grid.firstBeat) / beat - track.grid.downbeatIndex;
+    const offset = fromDownbeat - 4 * Math.round(fromDownbeat / 4);
+    this.observe({ kind: "loop", deck, bars: (loop.end - loop.start) / (4 * beat), onDownbeat: Math.abs(offset) <= DOWNBEAT_SLACK_BEATS });
+  }
+
+  /** Signed beats from the nearest downbeat of what the deck plays at `heardCtx`; null without a reading. */
+  private downbeatOffsetBeats(deck: DeckId, heardCtx: number | null): number | null {
+    const track = this.onDeck[deck];
+    if (heardCtx === null || track === null) return null;
+    const reading = this.engine.playheadAt(deck, heardCtx);
+    if (reading?.beat == null) return null;
+    const fromDownbeat = reading.beat - track.grid.downbeatIndex;
+    return fromDownbeat - 4 * Math.round(fromDownbeat / 4);
   }
 
   /** Heard ms from the deck's nearest phrase start at `heardCtx` (in track time); null without a reading. */
@@ -483,6 +573,19 @@ export class LessonSession {
       this.send({ control: "eq-low", deck, value: -1 });
       this.lowCut[deck] = true;
     }
+    setup.hotCues?.forEach((pos, slot) => {
+      if (this.engine.deckState(deck).hotCues[slot] !== null) this.send({ control: "hot-cue-clear", deck, slot });
+      if (pos !== null) this.send({ control: "hot-cue-set", deck, slot, pos });
+    });
+  }
+
+  /** Beat FX as a set-up names it. */
+  private setBeatFx(fx: DeckSetups["beatFx"]): void {
+    if (fx === undefined) return;
+    if (fx.channel !== undefined) this.send({ control: "beat-fx-channel", value: fx.channel });
+    if (fx.beats !== undefined) this.send({ control: "beat-fx-beats", value: fx.beats });
+    if (fx.depth !== undefined) this.send({ control: "beat-fx-depth", value: fx.depth });
+    if (fx.on !== undefined) this.send({ control: "beat-fx", value: fx.on });
   }
 
   private cueDecks(decks: DeckSetups): void {
@@ -491,6 +594,7 @@ export class LessonSession {
       this.cueDeck("A", decks.A);
       if (decks.B !== undefined && this.onDeck.B !== null) this.cueDeck("B", decks.B);
       if (decks.crossfader !== undefined) this.send({ control: "crossfader", value: decks.crossfader });
+      this.setBeatFx(decks.beatFx);
     });
   }
 
@@ -646,7 +750,10 @@ export class LessonSession {
   }
 
   private beginCheck(plan: CheckPlan): void {
-    const decks = checkDecksFor(plan);
+    const planned = checkDecksFor(plan);
+    // hot-cues: A waits paused at its first stop; it plays from the start once the pads are set.
+    const firstStop = plan.stops?.[0];
+    const decks: DeckSetups = firstStop === undefined ? planned : { ...planned, A: { ...planned.A, pos: firstStop, play: false } };
     if (plan.slices === undefined) this.cueDecks(decks);
     const started = this.recorder.start({ expectedDurationSec: plan.timeoutSec + 30, allowTrackChanges: plan.slices !== undefined });
     if (!started.ok) {
@@ -654,7 +761,7 @@ export class LessonSession {
       this.listener.checkFailed(`The attempt could not be recorded (${started.error.kind}). Try again with Enter.`);
       return;
     }
-    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null, cueCtx: this.engine.context.currentTime };
+    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null, cueCtx: this.engine.context.currentTime, stop: 0, stopSet: false, steps: 0, did: 0, didAtMs: null };
     this.check = check;
     this.faderWasUp = false;
     this.playDecks(decks);
@@ -707,6 +814,10 @@ export class LessonSession {
         return check.readyCount >= end.count;
       case "held":
         return this.heldLongEnough(check, end);
+      case "did-then": {
+        const barMs = (4 * 60_000) / this.track.grid.bpm;
+        return check.did >= end.count && check.didAtMs !== null && performance.now() - check.didAtMs >= end.bars * barMs;
+      }
     }
   }
 
@@ -736,6 +847,11 @@ export class LessonSession {
       if (this.definition.practice.rep === "ready") this.observe({ kind: "ready", inZone: this.levelsInZone() });
       if (this.definition.practice.rep === "tempo-set" && check === null) this.tempoSet();
       if (check === null) this.drill?.ready();
+      return;
+    }
+    const stops = check.plan.stops;
+    if (stops !== undefined && check.stop < stops.length) {
+      this.nextStop(check, stops);
       return;
     }
     const end = check.plan.endWhen;
@@ -770,6 +886,24 @@ export class LessonSession {
         if (!loaded && this.check === check) this.endAudio();
       });
     }
+  }
+
+  /**
+   * hot-cues: Ready once a pad is set at this stop moves deck A to the next stop, paused; after the last,
+   * A is cued to the Check's start and plays.
+   */
+  private nextStop(check: RunningCheck, stops: readonly number[]): void {
+    if (!check.stopSet) return;
+    this.engine.command({ control: "ready", deck: "A" }, DEVICE);
+    check.readyCount += 1;
+    check.stop += 1;
+    check.stopSet = false;
+    const next = stops[check.stop];
+    this.settingUpWith(() => {
+      this.send({ control: "pause", deck: "A" });
+      this.send({ control: "seek", deck: "A", value: next ?? check.plan.startPos });
+      if (next === undefined && check.plan.autoPlay) this.send({ control: "play", deck: "A" });
+    });
   }
 
   /** tempo-fader practice: is B on the target BPM? Then B's tempo goes back to centre for the next rep. */
@@ -880,8 +1014,10 @@ export class LessonSession {
   checkCue(): PositionCue | null {
     const check = this.check;
     if (check === null) return null;
+    const step = check.steps > 0 ? check.plan.stepCues?.[check.steps - 1] : undefined;
+    if (step !== undefined) return { fromPos: 0, caption: step.caption };
     const readyCues = check.plan.readyCues;
-    if (readyCues !== undefined) {
+    if (readyCues !== undefined && (check.readyCount < readyCues.length || check.plan.cues.length === 0)) {
       const caption = readyCues[Math.min(check.readyCount, readyCues.length - 1)];
       return caption === undefined ? null : { fromPos: 0, caption };
     }

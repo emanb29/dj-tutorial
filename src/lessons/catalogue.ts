@@ -3,6 +3,7 @@
 import type { Aids, Attempt, CheckMode, CheckVariant, CtxSpan, LessonId, LessonTask, TaskSpec, TaskTrack } from "@shared/attempt.ts";
 import { EQ_FILTER_LESSONS, type EqFilterLessonId } from "./catalogue-eq-filter.ts";
 import { BY_EAR_LESSONS, type ByEarLessonId } from "./catalogue-by-ear.ts";
+import { PERFORMANCE_LESSONS, type PerformanceLessonId } from "./catalogue-performance.ts";
 import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
 import { barsSec, fromOwnCue, heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
 import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor, UNMEASURED_PEAK_DB } from "./track.ts";
@@ -378,10 +379,10 @@ const cutOnPhrase: LessonDefinition = {
   },
 };
 
-export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase" | SyncLessonId | EqFilterLessonId | ByEarLessonId;
+export type BuiltLessonId = "deck-basics" | "beats-and-bars" | "phrases" | "gain-staging" | "headphone-cue" | "cue-point" | "cut-on-phrase" | SyncLessonId | EqFilterLessonId | ByEarLessonId | PerformanceLessonId;
 export type BuiltLesson = LessonDefinition & { readonly id: BuiltLessonId };
 
-/** The built Lessons, in catalogue order (8–11 in catalogue-sync.ts, 12–13 in catalogue-eq-filter.ts, 14–16 in catalogue-by-ear.ts). */
+/** The built Lessons, in catalogue order (8–11 in catalogue-sync.ts, 12–13 in catalogue-eq-filter.ts, 14–16 in catalogue-by-ear.ts, 17–19 in catalogue-performance.ts). */
 export const LESSONS: readonly BuiltLesson[] = [
   { ...deckBasics, id: "deck-basics" },
   { ...beatsAndBars, id: "beats-and-bars" },
@@ -393,6 +394,7 @@ export const LESSONS: readonly BuiltLesson[] = [
   ...SYNC_LESSONS,
   ...EQ_FILTER_LESSONS,
   ...BY_EAR_LESSONS,
+  ...PERFORMANCE_LESSONS,
 ];
 
 /** Practice loops for Lessons that do not set their own: tap Lessons loop deck A from the practice start. */
@@ -419,6 +421,7 @@ export function checkDecksFor(plan: CheckPlan): DeckSetups {
     A: { pos: plan.startPos, fader: plan.faderAtStart, play: plan.autoPlay, ...plan.deckA },
     ...(plan.deckB === undefined ? {} : { B: plan.deckB }),
     ...(plan.crossfader === undefined ? {} : { crossfader: plan.crossfader }),
+    ...(plan.beatFx === undefined ? {} : { beatFx: plan.beatFx }),
   };
 }
 
@@ -438,7 +441,8 @@ export function withPlannedGrids<Recorded extends Attempt>(attempt: Recorded, tr
 export function readyUsedIn(definition: LessonDefinition, track: LessonTrack): { readonly practice: boolean; readonly check: boolean } {
   const end = definition.planCheck(track).endWhen.kind;
   const rep = definition.practice.rep;
-  return { practice: rep === "ready" || rep === "tempo-set" || rep === "tempo-ear", check: end === "ready-windows" || end === "slices-done" || end === "readies" };
+  const plan = definition.planCheck(track);
+  return { practice: rep === "ready" || rep === "tempo-set" || rep === "tempo-ear", check: end === "ready-windows" || end === "slices-done" || end === "readies" || plan.stops !== undefined };
 }
 
 export function isBuiltLesson(id: string): id is BuiltLessonId {

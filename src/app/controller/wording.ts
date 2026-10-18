@@ -52,6 +52,21 @@ function touchWords(binding: KeyBinding): TouchWords | null {
       const jog = `jog ${action.deck}`;
       return { press: `Turn ${jog} ${action.faster ? "forward" : "back"}`, aside: null, bare: jog };
     }
+    case "loop-in":
+    case "loop-out": {
+      const name = `${action.kind === "loop-in" ? "LOOP IN" : "LOOP OUT"}${onDeck(action.deck)}`;
+      return { press: `Tap ${name}`, aside: null, bare: name };
+    }
+    case "loop-button": {
+      const name = `4 BEAT/EXIT${onDeck(action.deck)}`;
+      return { press: `Tap ${name}`, aside: null, bare: name };
+    }
+    case "beat-fx-on":
+      return { press: "Tap BEAT FX ON", aside: null, bare: "BEAT FX ON" };
+    case "beat-fx-beat": {
+      const name = action.step < 0 ? "BEAT ◀" : "BEAT ▶";
+      return { press: `Tap ${name}`, aside: null, bare: name };
+    }
     case "toggle-legend":
       return null;
   }

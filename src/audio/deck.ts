@@ -1,9 +1,10 @@
-// One deck: a loaded track, its transport, tempo, Master Tempo, jog bend and cue point.
+// One deck: a loaded track, its transport, tempo, Master Tempo, jog bend, cue point, 8 hot cues and a loop.
 // Every change is first written to the track's PlayheadTracker (which may refuse it with a typed error)
 // and only then sent to the voice, so what is heard and what the model says cannot diverge.
 
 import type { StretchNode } from "signalsmith-stretch";
-import type { BeatGrid } from "./beat-grid.ts";
+import type { LoopSpan } from "@shared/attempt.ts";
+import { positionOfBeat, type BeatGrid } from "./beat-grid.ts";
 import type { PendingWork } from "./pending-work.ts";
 import { PlayheadTracker } from "./playhead.ts";
 import { fail, OK, type Result } from "./result.ts";
@@ -40,7 +41,19 @@ export interface DeckSnapshot {
   readonly masterTempo: boolean;
   readonly masterTempoAvailability: MasterTempoAvailability;
   readonly cuePointSec: number;
+  /** Track position of each of the 8 hot cues, null for an empty pad. */
+  readonly hotCues: readonly (number | null)[];
+  /** The loop on now (track seconds), or null. */
+  readonly loop: LoopSpan | null;
+  /** LOOP IN pressed: where the next LOOP OUT closes a loop from, or null. */
+  readonly loopInSec: number | null;
 }
+
+export const HOT_CUE_SLOTS = 8;
+/** Loop lengths the deck accepts, track seconds: a 2X past the longest is refused (the looped copy is held in memory). */
+export const MIN_LOOP_SEC = 0.05;
+export const MAX_LOOP_SEC = 32;
+const emptyHotCues = (): (number | null)[] => Array.from({ length: HOT_CUE_SLOTS }, () => null);
 
 interface Loaded {
   readonly record: TrackRecord;
@@ -62,6 +75,8 @@ export class Deck {
   private jogBend = 0;
   private masterTempo = false;
   private cuePointSec = 0;
+  private hotCues: (number | null)[] = emptyHotCues();
+  private loopInSec: number | null = null;
   /** Context time until which the stretcher may still be playing a track's audio (its last scheduled stop). */
   private stretchAudibleUntil: CtxTime = 0;
 
@@ -111,6 +126,8 @@ export class Deck {
     this.previewing = false;
     this.jogBend = 0;
     this.cuePointSec = 0;
+    this.hotCues = emptyHotCues();
+    this.loopInSec = null;
   }
 
   /** Finishes a load started with beginLoad. `schedule` gives the start time once the audio is in place. */
@@ -190,7 +207,7 @@ export class Deck {
     }
     const moved = playhead.seek(when, positionSec);
     if (!moved.ok) return moved;
-    if (this.playing) this.voiceOf(track.track).play(when, positionSec, this.rate());
+    if (this.playing) this.voiceOf(track.track).play(when, positionSec, this.rate(), null);
     return OK;
   }
 
@@ -201,6 +218,7 @@ export class Deck {
     if (this.playing) return fail({ kind: "deck-playing", deck: this.id });
     const { durationSec, playhead } = track.track.record;
     const target = Math.min(durationSec, Math.max(0, playhead.positionAt(when) + deltaSec));
+    // Searching leaves any loop (the model's seek ends it), as a seek does.
     return playhead.seek(when, target);
   }
 
@@ -256,8 +274,116 @@ export class Deck {
     this.voiceOf(track).stop(when);
     if (!on) this.stretchAudibleUntil = Math.max(this.stretchAudibleUntil, when);
     this.masterTempo = on;
-    this.voiceOf(track).play(when, position, this.rate());
+    this.voiceOf(track).play(when, position, this.rate(), track.record.playhead.loop());
     return OK;
+  }
+
+  // ---- hot cues ------------------------------------------------------------------------------
+
+  /** Stores a hot cue at `positionSec` (the heard position at the press, or a set-up position). */
+  hotCueSet(slot: number, positionSec: number): Result<{ pos: number }> {
+    const track = this.requireTrack();
+    if (!track.ok) return track;
+    const valid = this.validSlot(slot);
+    if (!valid.ok) return valid;
+    const { durationSec } = track.track.record;
+    if (!Number.isFinite(positionSec) || positionSec < 0 || positionSec > durationSec) {
+      return fail({ kind: "value-out-of-range", control: "hot-cue-set", value: positionSec, min: 0, max: durationSec });
+    }
+    this.hotCues[slot] = positionSec;
+    return { ok: true, pos: positionSec };
+  }
+
+  hotCueClear(slot: number): Result {
+    const valid = this.validSlot(slot);
+    if (!valid.ok) return valid;
+    this.hotCues[slot] = null;
+    return OK;
+  }
+
+  /** A set pad: jump there and play (quantize off: at once). Leaves any loop. */
+  hotCueTrigger(when: CtxTime, slot: number): Result<{ pos: number }> {
+    const track = this.requireTrack();
+    if (!track.ok) return track;
+    const valid = this.validSlot(slot);
+    if (!valid.ok) return valid;
+    const pos = this.hotCues[slot] ?? null;
+    if (pos === null) return fail({ kind: "hot-cue-empty", deck: this.id, slot });
+    this.previewing = false;
+    const moved = this.playing ? this.seek(when, pos) : this.start(track.track, when, pos);
+    return moved.ok ? { ok: true, pos } : moved;
+  }
+
+  // ---- loops ---------------------------------------------------------------------------------
+
+  /** LOOP IN: marks where the next LOOP OUT closes a loop from. No audible change. */
+  loopIn(positionSec: number): Result<{ pos: number }> {
+    const track = this.requireTrack();
+    if (!track.ok) return track;
+    this.loopInSec = this.onSample(Math.min(track.track.record.durationSec, Math.max(0, positionSec)));
+    return { ok: true, pos: this.loopInSec };
+  }
+
+  /** LOOP OUT at `positionSec` (heard at the press): loops from the LOOP IN point, from `when`. */
+  loopOut(when: CtxTime, positionSec: number): Result<{ loop: LoopSpan }> {
+    if (this.loopInSec === null) return fail({ kind: "loop-in-missing", deck: this.id });
+    return this.setLoop(when, { start: this.loopInSec, end: this.onSample(positionSec) });
+  }
+
+  /** An auto loop of `beats` from the grid beat nearest `positionSec` (4 BEAT). */
+  loopAuto(when: CtxTime, positionSec: number, beats: number, grid: BeatGrid | null): Result<{ loop: LoopSpan }> {
+    if (grid === null) return fail({ kind: "no-beat-grid", deck: this.id });
+    const beat = Math.round(((positionSec - grid.firstBeat) * grid.bpm) / 60);
+    return this.setLoop(when, { start: this.onSample(positionOfBeat(grid, beat)), end: this.onSample(positionOfBeat(grid, beat + beats)) });
+  }
+
+  /** 2X (factor 2) or ½X (0.5): the loop's end moves, its start stays. */
+  loopResize(when: CtxTime, factor: number): Result<{ loop: LoopSpan }> {
+    const loop = this.loop();
+    if (loop === null) return fail({ kind: "no-loop", deck: this.id });
+    return this.setLoop(when, { start: loop.start, end: this.onSample(loop.start + (loop.end - loop.start) * factor) });
+  }
+
+  loopExit(when: CtxTime): Result {
+    const track = this.requireTrack();
+    if (!track.ok) return track;
+    if (this.loop() === null) return fail({ kind: "no-loop", deck: this.id });
+    const { playhead } = track.track.record;
+    const changed = playhead.setLoop(when, null);
+    if (!changed.ok) return changed;
+    if (this.playing) this.voiceOf(track.track).play(when, playhead.positionAt(when), this.rate(), null);
+    return OK;
+  }
+
+  /** The loop on now, owned by the track's playhead model. */
+  loop(): LoopSpan | null {
+    return this.track?.record.playhead.loop() ?? null;
+  }
+
+  private setLoop(when: CtxTime, loop: LoopSpan): Result<{ loop: LoopSpan }> {
+    const track = this.requireTrack();
+    if (!track.ok) return track;
+    const length = loop.end - loop.start;
+    if (!(length >= MIN_LOOP_SEC && length <= MAX_LOOP_SEC)) {
+      return fail({ kind: "value-out-of-range", control: "loop", value: length, min: MIN_LOOP_SEC, max: MAX_LOOP_SEC });
+    }
+    const { playhead } = track.track.record;
+    const changed = playhead.setLoop(when, loop);
+    if (!changed.ok) return changed;
+    if (this.playing) this.voiceOf(track.track).play(when, playhead.positionAt(when), this.rate(), loop);
+    return { ok: true, loop };
+  }
+
+  /** Loop points are whole samples, so the looped audio wraps exactly where the model does. */
+  private onSample(positionSec: number): number {
+    const rate = this.context.sampleRate;
+    return Math.round(positionSec * rate) / rate;
+  }
+
+  private validSlot(slot: number): Result {
+    return Number.isInteger(slot) && slot >= 0 && slot < HOT_CUE_SLOTS
+      ? OK
+      : fail({ kind: "value-out-of-range", control: "hot-cue slot", value: slot, min: 0, max: HOT_CUE_SLOTS - 1 });
   }
 
   /** Marks the deck stopped once its playhead has reached the end of the track. Returns true if it just ended. */
@@ -292,6 +418,9 @@ export class Deck {
       masterTempo: this.masterTempo,
       masterTempoAvailability: this.masterTempoAvailability,
       cuePointSec: this.cuePointSec,
+      hotCues: [...this.hotCues],
+      loop: this.loop(),
+      loopInSec: this.loopInSec,
     };
   }
 
@@ -317,9 +446,12 @@ export class Deck {
     const { playhead } = track.record;
     const allowed = playhead.canChangeAt(when);
     if (!allowed.ok) return allowed;
-    playhead.seek(when, position);
+    // A start inside a loop (or before one starting ahead) keeps it; anywhere else the seek leaves it.
+    const loop = playhead.loop();
+    const keepsLoop = loop !== null && Math.abs(position - playhead.positionAt(when)) < 1e-9;
+    if (!keepsLoop) playhead.seek(when, position);
     playhead.setRate(when, this.rate());
-    this.voiceOf(track).play(when, position, this.rate());
+    this.voiceOf(track).play(when, position, this.rate(), playhead.loop());
     this.playing = true;
     return OK;
   }
@@ -340,7 +472,7 @@ export class Deck {
     if (!allowed.ok) return allowed;
     change();
     track.record.playhead.setRate(when, this.rate());
-    this.voiceOf(track).setRate(when, this.rate());
+    this.voiceOf(track).setRate(when, this.rate(), track.record.playhead.positionAt(when));
     return OK;
   }
 

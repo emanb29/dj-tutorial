@@ -17,7 +17,7 @@ import { HardwareBridge } from "./hardware.ts";
 import { isMacPlatform } from "./input-device.ts";
 import { globalKeyAllowed, keyHintFor, type FocusedElement } from "./keymap.ts";
 import { KeyLegend } from "./KeyLegend.tsx";
-import { Mixer } from "./Mixer.tsx";
+import { BeatFx, Mixer } from "./Mixer.tsx";
 import { ControllerSession, type ControllerEngine } from "./session.ts";
 import { useTapOnHardware } from "./tap-feedback.ts";
 import { inputWording, useWording } from "./wording.ts";
@@ -141,6 +141,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
               Keys <kbd>?</kbd>
             </button>
           </div>
+          <BeatFx />
           <DeckReadout deck="B" />
         </header>
         <div className="controller-body">

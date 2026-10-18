@@ -137,7 +137,7 @@ const NEAR_CAPACITY_COALESCE_FACTOR = 0.25;
 const ESTIMATED_ACTIVE_CONTROLS = 2;
 /** Headroom over the estimate, for busy passages and attempts that run long. */
 const BUDGET_HEADROOM = 2;
-const METERED_BUSES = 3;
+const METERED_BUSES = 4;
 
 /** Discrete events kept past the ceiling, at least: a press a second for almost three hours. */
 const DISCRETE_RESERVE_MIN = 10_000;
@@ -169,9 +169,25 @@ const CONTRACT_CONTROLS: Readonly<Record<Control, ControlId | null>> = {
   "jog-bend": "jogBend",
   sync: "sync",
   "master-tempo": "masterTempo",
+  "hot-cue-set": "hotCueSet",
+  "hot-cue": "hotCue",
+  "loop-in": "loopIn",
+  "loop-out": "loopOut",
+  "loop-auto": "loopAuto",
+  "loop-double": "loopDouble",
+  "loop-halve": "loopHalve",
+  "loop-exit": "loopExit",
+  "beat-fx": "beatFx",
+  "beat-fx-channel": "beatFxChannel",
+  "beat-fx-beats": "beatFxBeats",
+  "beat-fx-depth": "beatFxDepth",
+  // The echo's tempo (TAP / AUTO) only shapes what is heard: the Checks grade the echo from the FX return meter.
+  "beat-fx-bpm": null,
   tap: "tap",
   ready: "ready",
   done: "done",
+  // Clearing a pad changes no sound and no grade: a cleared pad pressed again records a new hotCueSet.
+  "hot-cue-clear": null,
   // Pausing, seeking and jog search (the jog on a paused deck) move the playhead: the playhead model holds them.
   pause: null,
   seek: null,
@@ -198,6 +214,19 @@ function contractValue(command: EngineCommand, engine: AudioEngine): number {
     case "tempo":
     case "tempo-range":
       return engine.deckState(command.deck).tempoRate;
+    case "hot-cue-set":
+    case "hot-cue":
+      return command.slot + 1;
+    case "loop-out":
+    case "loop-auto":
+    case "loop-double":
+    case "loop-halve": {
+      const loop = engine.deckState(command.deck).loop;
+      return loop === null ? 0 : loop.end - loop.start;
+    }
+    case "beat-fx-channel":
+    case "loop-in":
+    case "loop-exit":
     case "tap":
     case "done":
     case "ready":
@@ -206,6 +235,30 @@ function contractValue(command: EngineCommand, engine: AudioEngine): number {
     default:
       return "value" in command ? Number(command.value) : 1;
   }
+}
+
+/** Track seconds the command placed or jumped to (shared/attempt.ts `ControlEvent.pos`), read after it applied. */
+function contractPos(command: EngineCommand, engine: AudioEngine): number | undefined {
+  switch (command.control) {
+    case "hot-cue-set":
+    case "hot-cue":
+      return engine.deckState(command.deck).hotCues[command.slot] ?? undefined;
+    case "loop-in":
+      return engine.deckState(command.deck).loopInSec ?? undefined;
+    case "loop-out":
+    case "loop-auto":
+    case "loop-double":
+    case "loop-halve":
+      return engine.deckState(command.deck).loop?.start;
+    default:
+      return undefined;
+  }
+}
+
+/** The deck a command is recorded on: its own, or for CH SELECT the channel it picked (none for MASTER). */
+function contractDeck(command: EngineCommand): DeckId | undefined {
+  if ("deck" in command) return command.deck;
+  return command.control === "beat-fx-channel" && command.value !== "master" ? command.value : undefined;
 }
 
 function contractMixer(state: EngineMixerSnapshot): MixerSnapshot {
@@ -221,11 +274,11 @@ function contractMixer(state: EngineMixerSnapshot): MixerSnapshot {
       cueMonitor: knobs.cue,
     };
   };
-  return { A: channel("A"), B: channel("B"), crossfader: state.crossfader };
+  return { A: channel("A"), B: channel("B"), crossfader: state.crossfader, beatFx: state.beatFx };
 }
 
-function contractDeck(state: EngineDeckSnapshot): DeckStateSnapshot {
-  return { tempo: state.tempoRate, jogBend: state.jogBend, sync: state.syncOn, masterTempo: state.masterTempo };
+function contractDeckState(state: EngineDeckSnapshot): DeckStateSnapshot {
+  return { tempo: state.tempoRate, jogBend: state.jogBend, sync: state.syncOn, masterTempo: state.masterTempo, hotCues: state.hotCues, loop: state.loop };
 }
 
 interface Recorded {
@@ -305,15 +358,15 @@ export class AttemptRecorder {
       startedCtx: started.ctx,
       startedAt: this.options.wallClock().toISOString(),
       initialMixer: contractMixer(this.engine.mixerState()),
-      initialDecks: { A: contractDeck(this.engine.deckState("A")), B: contractDeck(this.engine.deckState("B")) },
+      initialDecks: { A: contractDeckState(this.engine.deckState("A")), B: contractDeckState(this.engine.deckState("B")) },
       initialTracks: { A: this.engine.trackHistory("A").at(-1) ?? null, B: this.engine.trackHistory("B").at(-1) ?? null },
       loadedDuring: { A: [], B: [] },
       allowTrackChanges: options.allowTrackChanges ?? false,
       recorded: [],
       held: new Map(),
       lastKeptCtx: new Map(),
-      meters: { master: [], A: [], B: [] },
-      lastFrameCtx: { master: Number.NEGATIVE_INFINITY, A: Number.NEGATIVE_INFINITY, B: Number.NEGATIVE_INFINITY },
+      meters: { master: [], A: [], B: [], fx: [] },
+      lastFrameCtx: { master: Number.NEGATIVE_INFINITY, A: Number.NEGATIVE_INFINITY, B: Number.NEGATIVE_INFINITY, fx: Number.NEGATIVE_INFINITY },
       cuePoints: [],
       interruptions: [],
       deviceCounts: new Map(),
@@ -366,7 +419,7 @@ export class AttemptRecorder {
     recording.unsubscribe();
     if (!drained.ok) return drained;
 
-    const decks = this.deckRecordings(recording);
+    const decks = this.deckRecordings(recording, endedCtx);
     if (!decks.ok) return decks;
     for (const held of recording.held.values()) recording.recorded.push(held);
     const recorded = [...recording.recorded].sort((a, b) => timeOf(a.engine) - timeOf(b.engine));
@@ -397,7 +450,7 @@ export class AttemptRecorder {
         grids: decks.grids,
         phraseMarkers: details.phraseMarkers,
         cuePoints: recording.cuePoints,
-        meters: { master: framesUntilEnd("master"), A: framesUntilEnd("A"), B: framesUntilEnd("B") },
+        meters: { master: framesUntilEnd("master"), A: framesUntilEnd("A"), B: framesUntilEnd("B"), fxReturn: framesUntilEnd("fx") },
         initialMixer: recording.initialMixer,
         initialDecks: recording.initialDecks,
         answers: details.answers,
@@ -418,6 +471,7 @@ export class AttemptRecorder {
 
   private deckRecordings(
     recording: Recording,
+    endedCtx: CtxTime,
   ): Result<{ decks: Partial<Record<DeckId, DeckRecording>>; grids: Record<string, BeatGrid> }> {
     const decks: Partial<Record<DeckId, DeckRecording>> = {};
     const grids: Record<string, BeatGrid> = {};
@@ -428,7 +482,7 @@ export class AttemptRecorder {
       const held = [initial, ...loaded].filter((record) => record !== null);
       const track = held.at(-1);
       if (track === undefined) continue;
-      const onDeck = (record: TrackRecord) => ({ trackId: record.trackId, playhead: { segments: record.playhead.segments() }, loadedCtx: record.loadedAtCtx });
+      const onDeck = (record: TrackRecord) => ({ trackId: record.trackId, playhead: { segments: record.playhead.segments(endedCtx) }, loadedCtx: record.loadedAtCtx });
       const earlier = held.slice(0, -1).map(onDeck);
       decks[deck] = { ...onDeck(track), ...(earlier.length === 0 ? {} : { earlier }) };
       for (const each of held) if (each.grid != null) grids[each.trackId] = each.grid;
@@ -445,7 +499,7 @@ export class AttemptRecorder {
     const target = Math.floor(until / frameSec + 1e-9) * frameSec;
     const drained = () =>
       target <= recording.startedCtx ||
-      (["master", "A", "B"] as const).every((bus) => recording.lastFrameCtx[bus] >= target - 1e-9);
+      (["master", "A", "B", "fx"] as const).every((bus) => recording.lastFrameCtx[bus] >= target - 1e-9);
     const startedAt = performance.now();
     while (!drained()) {
       if (performance.now() - startedAt > this.options.drainTimeoutMs) {
@@ -530,6 +584,8 @@ export class AttemptRecorder {
     const control = CONTRACT_CONTROLS[event.command.control];
     if (control === null || event.rejected !== null) return null;
     const value = contractValue(event.command, this.engine);
+    const pos = contractPos(event.command, this.engine);
+    const deck = contractDeck(event.command);
     const base =
       event.device === "engine"
         ? { ctx: event.appliedCtx, control, value, appliedCtx: event.appliedCtx, inputDevice: "engine" as const, byEngine: true }
@@ -537,7 +593,7 @@ export class AttemptRecorder {
           ? null
           : { ctx: event.heardCtx, control, value, appliedCtx: event.appliedCtx, inputDevice: event.device };
     if (base === null) return null;
-    return "deck" in event.command ? { ...base, deck: event.command.deck } : base;
+    return { ...base, ...(deck === undefined ? {} : { deck }), ...(pos === undefined ? {} : { pos }) };
   }
 
   private onMeterFrame(frame: BusMeterFrame): void {
