@@ -14,7 +14,7 @@ import { FRAMES_PER_SECOND, frameCount, logMel, MODEL_SAMPLE_RATE } from "./mel.
 import type { BeatModel, ModelLoad } from "./model.ts";
 import { refinePhase, type PhaseRefinement } from "./phase.ts";
 import { phraseHints } from "./phrases.ts";
-import { aggregate, minimalPostprocess, splitPiece } from "./postprocess.ts";
+import { aggregate, minimalPostprocess, splitPiece, type DetectedBeats } from "./postprocess.ts";
 import { downmixMean, resample } from "./resample.ts";
 import {
   ANALYSIS_VERSION,
@@ -136,15 +136,18 @@ interface ModelBeats {
   readonly threads: number | null;
 }
 
-async function runModel(
+/**
+ * Beat This! over a whole signal: resample, log-mel, the model per 30 s window, minimal peak picking.
+ * `onInference` gets progress through the windows (0-1). Also used by the mix grader (mix/grade.ts).
+ */
+export async function detectBeats(
   mono: Float32Array,
   sampleRate: number,
   model: BeatModel,
-  progress: Progress,
-  timings: Record<string, number>,
-): Promise<FittedGrid | null> {
+  onInference: (within: number) => void,
+  timings: Record<string, number> = {},
+): Promise<DetectedBeats> {
   let started = performance.now();
-  progress.at("features");
   const signal = resample(mono, sampleRate, MODEL_SAMPLE_RATE);
   const spect = logMel(signal);
   const frames = frameCount(signal.length);
@@ -155,22 +158,30 @@ async function runModel(
   const beatChunks: Float32Array[] = [];
   const downbeatChunks: Float32Array[] = [];
   for (const [index, chunk] of chunks.entries()) {
-    progress.at("inference", index / chunks.length);
+    onInference(index / chunks.length);
     const logits = await model.run(chunk.spect);
     beatChunks.push(logits.beat);
     downbeatChunks.push(logits.downbeat);
   }
-  progress.at("inference", 1);
+  onInference(1);
   timings["inferenceMs"] = performance.now() - started;
-
-  started = performance.now();
-  progress.at("fitting");
   const starts = chunks.map((c) => c.start);
-  const detected = minimalPostprocess(
-    aggregate(beatChunks, starts, frames),
-    aggregate(downbeatChunks, starts, frames),
-    FRAMES_PER_SECOND,
-  );
+  return minimalPostprocess(aggregate(beatChunks, starts, frames), aggregate(downbeatChunks, starts, frames), FRAMES_PER_SECOND);
+}
+
+async function runModel(
+  mono: Float32Array,
+  sampleRate: number,
+  model: BeatModel,
+  progress: Progress,
+  timings: Record<string, number>,
+): Promise<FittedGrid | null> {
+  progress.at("features");
+  const detected = await detectBeats(mono, sampleRate, model, (within) => {
+    progress.at("inference", within);
+  }, timings);
+  const started = performance.now();
+  progress.at("fitting");
   const fit = fitGrid(detected.refinedBeats, detected.downbeats);
   timings["fitMs"] = performance.now() - started;
   return fit.ok ? fit.grid : null;

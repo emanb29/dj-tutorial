@@ -48,6 +48,10 @@ _Avoid_: Review, revision, quiz
 An optional drill the Coach offers while a skill isn't due yet, such as interleaved practice or extra work on a weak criterion. It never gates progress.
 _Avoid_: Homework, extra credit
 
+**Outside practice**:
+A mix the Learner recorded in other DJ software from their own tracks, uploaded as one audio file and checked from the sound alone (transitions, phrasing, drift, levels, clipping, dead air, bass clash). The record keeps a summary; it never gates progress or counts as a Lesson pass.
+_Avoid_: Homework, upload, external mix
+
 **Review**:
 An earlier Lesson the Coach suggests repeating after repeated failures. The Learner may decline it.
 _Avoid_: Remedial lesson, retry

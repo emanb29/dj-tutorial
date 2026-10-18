@@ -79,6 +79,8 @@ export const SPEC_RULES: readonly SpecRule[] = [
   // The optional rekordbox cards: shown on the set's result.
   { paths: ["src/app/rekordbox/**"], specs: ["e2e/final-mix.spec.ts"] },
   { paths: ["src/app/placement/**", "src/lessons/placement*.ts"], specs: ["e2e/placement.spec.ts"] },
+  // Grading a mix recorded elsewhere (ISS-96): its page and the mix grader; the home list links to it.
+  { paths: ["src/app/mix-grade/**", "src/analysis/mix/**"], specs: ["e2e/mix-upload.spec.ts"] },
   { paths: ["src/app/playground/**"], specs: ["e2e/controller.spec.ts", "e2e/mobile.spec.ts"] },
   // The DDJ-FLX4: the MIDI module and the Controller page (src/app/controller/hardware.ts stays under the shared controller rule).
   { paths: ["src/midi/**", "src/app/controller-page/**"], specs: ["e2e/hardware.spec.ts"] },

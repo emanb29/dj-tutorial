@@ -9,6 +9,7 @@ import {
   type CriterionId,
 } from "./check-types.ts";
 import { MISSION_MAX_CHARS, MissionTagSchema } from "./mission.ts";
+import { OUTSIDE_PRACTICE_KEPT, OutsidePracticeSchema, type OutsidePractice } from "./outside-practice.ts";
 import { PLACEMENTS_KEPT, PlacementResultSchema } from "./placement.ts";
 
 /** Lower-case letters, digits and dashes, so ids are safe in paths and file names. */
@@ -187,6 +188,8 @@ export const LearnerRecordSchema = z
     finalProject: FinalProjectSchema.optional(),
     /** The rekordbox cards answered so far; absent in records from before them. */
     rekordbox: z.partialRecord(RekordboxCardIdSchema, RekordboxCardChoiceSchema).optional(),
+    /** Mixes recorded elsewhere and graded here (ISS-96), oldest first; absent in records from before them. Never Lesson credit. */
+    outsidePractice: z.array(OutsidePracticeSchema).max(OUTSIDE_PRACTICE_KEPT).optional(),
     skillProfile: SkillProfileSchema,
   })
   .superRefine((record, context) => {
@@ -242,6 +245,16 @@ export function withFinalProject(
   finalProject: FinalProject,
 ): { readonly ok: true; readonly record: LearnerRecord } | { readonly ok: false; readonly issues: readonly string[] } {
   const parsed = LearnerRecordSchema.safeParse({ ...record, finalProject });
+  return parsed.success ? { ok: true, record: parsed.data } : { ok: false, issues: describeIssues(parsed.error) };
+}
+
+/** The record with one more graded mix, keeping the newest OUTSIDE_PRACTICE_KEPT, checked against the schema the server enforces. */
+export function withOutsidePractice(
+  record: LearnerRecord,
+  entry: OutsidePractice,
+): { readonly ok: true; readonly record: LearnerRecord } | { readonly ok: false; readonly issues: readonly string[] } {
+  const outsidePractice = [...(record.outsidePractice ?? []), entry].slice(-OUTSIDE_PRACTICE_KEPT);
+  const parsed = LearnerRecordSchema.safeParse({ ...record, outsidePractice });
   return parsed.success ? { ok: true, record: parsed.data } : { ok: false, issues: describeIssues(parsed.error) };
 }
 

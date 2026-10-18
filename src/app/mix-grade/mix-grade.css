@@ -1,0 +1,137 @@
+/* "Grade a mix you recorded": one column, big targets, works from 360 px up. */
+
+.mix-page {
+  box-sizing: border-box;
+  max-width: 780px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+
+.mix-head {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.mix-head h1 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.mix-pick,
+.mix-result {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+.mix-caption {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.mix-file {
+  position: relative;
+  justify-self: start;
+  min-height: 48px;
+  cursor: pointer;
+}
+
+/* The input stays in the label (and reachable by tests and assistive tech), visually hidden. */
+.mix-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.mix-file:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mix-working {
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+}
+
+.mix-working progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--accent);
+}
+
+.mix-transitions {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mix-transitions > li {
+  padding: var(--space-3);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  background: var(--body);
+}
+
+.mix-transitions h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.mix-transitions ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  list-style: none;
+}
+
+.mix-transitions ul li > span {
+  display: inline-block;
+  width: 1.3em;
+  font-weight: 800;
+}
+
+.mix-transitions ul li[data-status="met"] > span {
+  color: var(--pass);
+}
+
+.mix-transitions ul li[data-status="notMet"] {
+  font-weight: 600;
+}
+
+.mix-transitions ul li[data-status="notMet"] > span {
+  color: var(--fail);
+}
+
+.mix-transitions ul li[data-status="notApplicable"] {
+  color: var(--ink-dim);
+}
+
+.mix-result .result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.mix-result .save-problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

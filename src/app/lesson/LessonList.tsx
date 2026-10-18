@@ -32,9 +32,11 @@ interface LessonListProps {
   readonly onStart: (lessonId: CourseLessonId) => void;
   /** Placement again (placement-design §9): any time, it only adds credit. */
   readonly onRetakePlacement: () => void;
+  /** "Grade a mix you recorded": outside practice, open from the start. */
+  readonly onGradeMix: () => void;
 }
 
-export function LessonList({ learner, offline, onStart, onRetakePlacement }: LessonListProps) {
+export function LessonList({ learner, offline, onStart, onRetakePlacement, onGradeMix }: LessonListProps) {
   const startHere = startLesson(learner.skillProfile);
   return (
     <section className="lesson-list" aria-label="Lessons">
@@ -46,6 +48,9 @@ export function LessonList({ learner, offline, onStart, onRetakePlacement }: Les
       <p className="lesson-list-placement">
         <button type="button" className="btn btn-quiet" onClick={onRetakePlacement}>
           {hasPlacement(learner) ? "Re-take Placement" : "Show me what you can do"}
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={onGradeMix}>
+          Grade a mix you recorded
         </button>
       </p>
       <ol>

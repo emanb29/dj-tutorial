@@ -122,6 +122,32 @@ describe("Learner profile routes", () => {
     expect((await ProfileStore.open(server.dataDir)).get("default")).toEqual(record);
   });
 
+  it("saves and reads back a record with a graded mix as outside practice (ISS-96)", async () => {
+    server = await startTestServer({ client: null });
+    const tally = { met: 1, of: 1 };
+    const record = {
+      ...emptyLearnerRecord("default"),
+      outsidePractice: [
+        {
+          id: "mix-1",
+          kind: "mix-recording" as const,
+          gradedAt: "2026-10-18T09:00:00.000Z",
+          durationSec: 75,
+          transitions: 1,
+          blends: 0,
+          clean: true,
+          checks: { onPhrase: tally, drift: { met: 0, of: 0 }, levels: tally, clipping: tally, deadAir: tally, oneBass: { met: 0, of: 0 } },
+        },
+      ],
+    };
+
+    const saved = await appRequest(server.app, "/api/learners/default/profile", { method: "PUT", body: record });
+    const read = await appRequest(server.app, "/api/learners/default/profile");
+
+    expect(saved.status).toBe(200);
+    expect(await read.json()).toEqual({ success: true, data: record });
+  });
+
   it("creates a second Learner with PUT", async () => {
     server = await startTestServer({ client: null });
 

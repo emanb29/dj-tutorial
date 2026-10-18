@@ -18,6 +18,8 @@ const Placement = lazy(() => import("./placement/Placement.tsx").then((module) =
 // Lesson 20, the set: its own player (set builder, recording), and its own chunk.
 const FinalMixPlayer = lazy(() => import("./final-mix/FinalMixPlayer.tsx").then((module) => ({ default: module.FinalMixPlayer })));
 const ControllerPage = lazy(() => import("./controller-page/ControllerPage.tsx").then((module) => ({ default: module.ControllerPage })));
+// Grading a mix recorded elsewhere: the mix worker and its page, its own chunk.
+const MixGradePage = lazy(() => import("./mix-grade/MixGradePage.tsx").then((module) => ({ default: module.MixGradePage })));
 const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
@@ -41,6 +43,8 @@ const LESSON_PATH = /^\/lesson\/([a-z-]+)$/;
 const FINAL_MIX_PATH = "/lesson/final-mix";
 /** The hardware page: the DDJ-FLX4's connection, a MIDI monitor, a controls checklist and the sound output. */
 export const CONTROLLER_PAGE_PATH = "/controller";
+/** "Grade a mix you recorded" (ISS-96), from the Lesson list. */
+export const MIX_GRADE_PATH = "/mix";
 /** Re-taking Placement, from the Lesson list. A first run (no profile yet) shows it at "/". */
 export const PLACEMENT_PATH = "/placement";
 
@@ -178,6 +182,9 @@ export function App() {
   const retakePlacement = useCallback(() => {
     navigate(PLACEMENT_PATH);
   }, [navigate]);
+  const gradeMix = useCallback(() => {
+    navigate(MIX_GRADE_PATH);
+  }, [navigate]);
 
   if (playgroundEnabled({ pathname: path, search: window.location.search }, import.meta.env.DEV)) {
     return (
@@ -228,6 +235,14 @@ export function App() {
     );
   }
 
+  if (path.replace(/\/$/, "") === MIX_GRADE_PATH && learner.kind === "ready") {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening the mix grader…</p>}>
+        <MixGradePage learner={learner.record} onLearnerChange={changeLearner} saveStatus={saveStatus} onRetrySave={retrySave} onExit={exit} />
+      </Suspense>
+    );
+  }
+
   const lessonId = lessonInPath(path);
   if (lessonId !== null && learner.kind === "ready") {
     return (
@@ -264,7 +279,7 @@ export function App() {
         </a>
         <HealthIndicator />
       </header>
-      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} /> : <p>Loading your progress…</p>}
+      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} onGradeMix={gradeMix} /> : <p>Loading your progress…</p>}
     </main>
   );
 }
