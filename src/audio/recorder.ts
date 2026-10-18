@@ -85,10 +85,11 @@ export interface RecorderStartOptions {
    */
   readonly expectedDurationSec?: number;
   /**
-   * Allow tracks to be loaded on a deck during the attempt (a Check that runs on several tracks in turn,
-   * e.g. `cue-point`). The deck's recording is then its last track's playhead, and `grids` holds every
-   * track loaded during the attempt, so cue points (which carry their track id) grade on the right grid.
-   * Off by default: v1 attempts have one track per deck.
+   * Allow tracks to be loaded on a deck during the attempt (a Check that runs on several tracks in turn:
+   * `cue-point`'s slices, a `final-mix` set). The deck's recording is then its last track, with the
+   * tracks it held before in `earlier`, and `grids` holds every track loaded during the attempt, so
+   * cue points (which carry their track id) grade on the right grid. Off by default: a Lesson Check
+   * has one track per deck.
    */
   readonly allowTrackChanges?: boolean;
 }
@@ -424,10 +425,13 @@ export class AttemptRecorder {
       const initial = recording.initialTracks[deck];
       const loaded = recording.loadedDuring[deck];
       if (!recording.allowTrackChanges && loaded.length > (initial === null ? 1 : 0)) return fail({ kind: "recorder-track-changed", deck });
-      const track = loaded.at(-1) ?? initial;
-      if (track === null) continue;
-      decks[deck] = { trackId: track.trackId, playhead: { segments: track.playhead.segments() } };
-      for (const each of [initial, ...loaded]) if (each?.grid != null) grids[each.trackId] = each.grid;
+      const held = [initial, ...loaded].filter((record) => record !== null);
+      const track = held.at(-1);
+      if (track === undefined) continue;
+      const onDeck = (record: TrackRecord) => ({ trackId: record.trackId, playhead: { segments: record.playhead.segments() }, loadedCtx: record.loadedAtCtx });
+      const earlier = held.slice(0, -1).map(onDeck);
+      decks[deck] = { ...onDeck(track), ...(earlier.length === 0 ? {} : { earlier }) };
+      for (const each of held) if (each.grid != null) grids[each.trackId] = each.grid;
     }
     return { ok: true, decks, grids };
   }

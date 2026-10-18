@@ -14,6 +14,7 @@ import { cutOnPhrase } from "./lessons/cut-on-phrase.ts";
 import { deckBasics } from "./lessons/deck-basics.ts";
 import { eqBasics } from "./lessons/eq-basics.ts";
 import { filterTransition } from "./lessons/filter-transition.ts";
+import { finalMix } from "./lessons/final-mix.ts";
 import { gainStaging } from "./lessons/gain-staging.ts";
 import { headphoneCue } from "./lessons/headphone-cue.ts";
 import { nudgePhase } from "./lessons/nudge-phase.ts";
@@ -43,6 +44,7 @@ const LESSON_CHECKS: { readonly [Id in LessonTask["lessonId"]]: LessonCheck<Task
   "nudge-phase": nudgePhase,
   "tempo-by-ear": tempoByEar,
   "blend-by-ear": blendByEar,
+  "final-mix": finalMix,
 };
 
 /**
@@ -54,6 +56,8 @@ export const LOCKED_OFF_AIDS: Readonly<Partial<Record<LessonId, readonly (keyof 
   "nudge-phase": ["sync"],
   "tempo-by-ear": ["sync", "bpmDisplay", "phaseMeter"],
   "blend-by-ear": ["sync", "bpmDisplay", "phaseMeter"],
+  // Exam conditions (catalogue §1, check-design §5.1): no sync or quantize, display covered, no Lesson text.
+  "final-mix": ["sync", "quantize", "bpmDisplay", "phaseMeter", "lessonText"],
 };
 
 function lessonCheckFor<Id extends LessonTask["lessonId"]>(task: TaskOf<Id>): LessonCheck<TaskOf<Id>> {
@@ -190,8 +194,13 @@ export function runCheck(spec: TaskSpec, attempt: GradedAttempt): CheckResult | 
   const failedCriteria = criteria
     .filter((criterion) => criterion.severity === "fail" && criterion.status === "notMet")
     .map((criterion) => criterion.id);
-  const outcome: CheckOutcome =
-    failedCriteria.length === 0 && degraded?.blocksPass !== true ? { kind: "passed" } : { kind: "failed", failedCriteria };
+  const passed = failedCriteria.length === 0 && degraded?.blocksPass !== true;
+  // final-mix: the LCME bands of a passed set (check-design §5.3).
+  const outcome: CheckOutcome = passed
+    ? own.bands === undefined
+      ? { kind: "passed" }
+      : { kind: "passed", bands: own.bands(criteria) }
+    : { kind: "failed", failedCriteria };
 
   return {
     ...identity,

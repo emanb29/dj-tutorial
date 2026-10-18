@@ -585,3 +585,47 @@ test.describe("Lessons 12–13 on a phone (412×915, touch)", () => {
     await expectFingerSized(page, cfxB);
   });
 });
+
+test.describe("Lesson 20, the set, on a phone (412×915, portrait, touch)", () => {
+  test.use(phone(412, 915));
+  const ROUTE = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase", "tempo-fader", "sync-blend", "eq-basics", "bass-swap", "nudge-phase", "tempo-by-ear", "blend-by-ear"];
+
+  test("the set builder fits the width with finger-sized buttons, and the warm-up names controls, not keys", async ({ page }) => {
+    test.setTimeout(60_000);
+    const learnerId = `e2e-mobile-set-${String(Date.now())}`;
+    await page.goto(`/?learner=${learnerId}`);
+    const status = await page.evaluate(
+      async ({ id, lessonIds }) => {
+        const at = new Date().toISOString();
+        const lessons = Object.fromEntries(lessonIds.map((lesson) => [lesson, { lessonId: lesson, passedAt: at, passedVia: "lesson", attempts: 1, reviewSuggestedAt: null, reviewDeclinedAt: null }]));
+        const record = { schemaVersion: 1, learnerId: id, mission: "", missionTags: [], curriculum: null, headphones: { checkedAt: at }, skillProfile: { schemaVersion: 1, learnerId: id, lessons, criteria: {}, courseCompletedAt: null } };
+        return (await fetch(`/api/learners/${id}/profile`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) })).status;
+      },
+      { id: learnerId, lessonIds: ROUTE },
+    );
+    expect(status).toBe(200);
+    await page.goto(`/?learner=${learnerId}&track=synthetic`);
+    await page.locator('li[data-lesson="final-mix"]').getByRole("button").tap();
+
+    const add = page.getByRole("button", { name: "Add Set Groove C (synthetic)" });
+    await expect(add).toBeVisible();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    await expectFingerSized(page, add);
+    for (const title of ["Set Groove C (synthetic)", "Set Groove Am (synthetic)", "Set Groove Em (synthetic)"]) await page.getByRole("button", { name: `Add ${title}` }).tap();
+    await expect(page.getByRole("region", { name: "Your set" }).locator("li[data-track]")).toHaveCount(3);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    const remove = page.getByRole("button", { name: "Remove Set Groove C (synthetic)" });
+    await remove.scrollIntoViewIfNeeded();
+    await expectFingerSized(page, remove);
+    const load = page.getByRole("button", { name: "Load the set" });
+    await load.scrollIntoViewIfNeeded();
+    await expectFingerSized(page, load);
+    await load.tap();
+
+    await expect(page.locator("main.final-mix")).toHaveAttribute("data-phase", "warm-up");
+    await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("Warm up: Tap PLAY to play track 1");
+    const start = page.getByRole("button", { name: "Start the set" });
+    await expectFingerSized(page, start);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+});

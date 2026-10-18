@@ -357,6 +357,11 @@ describe("AttemptRecorder", () => {
     expect(Object.keys(attempt.grids).sort()).toEqual(["track-a", "track-b"].sort());
     expect(attempt.grids["track-b"]).toEqual(otherGrid);
     expect(attempt.cuePoints.map((cue) => [cue.trackId, cue.pos])).toEqual([["track-b", 0.5]]);
+    // The track the deck held before, with its own playhead: stopped at the load that replaced it.
+    expect(attempt.decks.A?.earlier?.map((track) => track.trackId)).toEqual(["track-a"]);
+    const replacedAt = attempt.decks.A?.loadedCtx ?? Number.NaN;
+    expect(attempt.decks.A?.earlier?.[0]?.loadedCtx).toBeLessThanOrEqual(replacedAt);
+    expect(attempt.decks.A?.earlier?.[0]?.playhead.segments.at(-1)?.rate ?? 0).toBe(0);
   });
 
   it("refuses an attempt in which a deck changed track (v1: one track per deck)", async () => {

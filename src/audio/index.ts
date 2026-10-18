@@ -30,6 +30,9 @@ export type {
   RecorderUsage,
 } from "./recorder.ts";
 
+export { containerOf, fileExtensionOf, MasterRecording, pickRecordingFormat, RECORDING_FORMATS } from "./master-recording.ts";
+export type { FinishedRecording } from "./master-recording.ts";
+
 export { MasterOnlyMonitor, SplitCueMonitor } from "./monitor.ts";
 export { ControllerCueMonitor, deviceHeadphoneSink, TwoDeviceMonitor } from "./device-monitors.ts";
 export type { HeadphoneSink } from "./device-monitors.ts";

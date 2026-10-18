@@ -12,6 +12,7 @@ import { CONTROL_RANGES, type ChannelControl, type CommandInput, type EngineComm
 import { Deck, type DeckSnapshot, type MasterTempoAvailability, type TrackInfo, type TrackRecord } from "./deck.ts";
 import { Emitter, type Unsubscribe } from "./events.ts";
 import { createMeter, loadMeterProcessor, type BusMeterFrame } from "./meter.ts";
+import { startMasterRecording, type MasterRecording } from "./master-recording.ts";
 import { Mixer, type EqBand, type MixerState } from "./mixer.ts";
 import { MasterOnlyMonitor, type MonitorOutput } from "./monitor.ts";
 import { audioContextClock, renderTimeClock, type OutputClock } from "./output-clock.ts";
@@ -320,6 +321,15 @@ export class AudioEngine {
   /** Resolves when every message sent to the stretch worklets so far has been handled; rethrows a failure. */
   async settled(): Promise<void> {
     await this.pending.settled();
+  }
+
+  /**
+   * Records the master (what the audience hears) to a compressed file, for the final project. Only on
+   * an AudioContext with MediaRecorder; an offline render cannot record.
+   */
+  recordMaster(maxBytes: number): Result<{ recording: MasterRecording }> {
+    if (this.closed) return fail({ kind: "engine-closed" });
+    return startMasterRecording(this.context, this.mixer.master, maxBytes);
   }
 
   async close(): Promise<void> {

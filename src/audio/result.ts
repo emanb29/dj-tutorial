@@ -22,7 +22,8 @@ export type AudioEngineError =
   | { kind: "recorder-full"; capacity: number }
   | { kind: "recorder-track-changed"; deck: DeckId }
   | { kind: "recorder-no-input-device" }
-  | { kind: "meter-drain-timeout"; waitedMs: number };
+  | { kind: "meter-drain-timeout"; waitedMs: number }
+  | { kind: "recording-unsupported"; reason: string };
 
 export type Result<T extends object = object> = ({ ok: true } & T) | { ok: false; error: AudioEngineError };
 
@@ -35,6 +36,8 @@ export function fail(error: AudioEngineError): { ok: false; error: AudioEngineEr
 /** One readable sentence per error, stating the problem and the fix. */
 export function describeError(error: AudioEngineError): string {
   switch (error.kind) {
+    case "recording-unsupported":
+      return `The set cannot be recorded: ${error.reason}. Use a current Chrome, Edge or Firefox.`;
     case "tempo-out-of-range":
       return `Rate ${error.requestedRate.toFixed(4)} is outside the ±${String(error.rangePercent)}% tempo range; widen the range or pick a closer track.`;
     case "value-out-of-range":

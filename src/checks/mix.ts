@@ -7,7 +7,9 @@ import {
   type CtxSpan,
   type CtxTime,
   type DeckId,
+  type DeckRecording,
   type MeterFrame,
+  type PlayheadModel,
 } from "@shared/attempt.ts";
 import { playPressTime, type GradedAttempt } from "./deck-controls.ts";
 import { TIME_EPSILON } from "./measures.ts";
@@ -86,10 +88,14 @@ export function framesIn(frames: readonly MeterFrame[] | undefined, span: CtxSpa
   return (frames ?? []).filter((frame) => frame.ctx >= span.from - TIME_EPSILON && frame.ctx < span.to - TIME_EPSILON);
 }
 
-/** `audible(d, t)`: playing ∧ gain > −24 dB ∧ channel momentary > −40 LUFS. */
+/** Every track a deck held in the attempt, oldest first: the `earlier` ones, then its last. */
+export function deckTracks(recording: DeckRecording | undefined): readonly { readonly trackId: string; readonly playhead: PlayheadModel }[] {
+  return recording === undefined ? [] : [...(recording.earlier ?? []), recording];
+}
+
+/** `audible(d, t)`: playing ∧ gain > −24 dB ∧ channel momentary > −40 LUFS. Any track the deck held may be the one playing. */
 export function isAudible(attempt: Attempt, deck: DeckId, t: CtxTime): boolean {
-  const recording = attempt.decks[deck];
-  if (recording === undefined || !isPlaying(recording.playhead, t)) return false;
+  if (!deckTracks(attempt.decks[deck]).some((track) => isPlaying(track.playhead, t))) return false;
   const level = frameAt(attempt.meters[deck], t);
   return (
     level !== null && level.momentaryLufs > AUDIBLE_CHANNEL_LUFS && channelGainDb(attempt, deck, t) > AUDIBLE_GAIN_DB

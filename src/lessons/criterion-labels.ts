@@ -52,6 +52,10 @@ const OWN_LABELS: Readonly<Record<string, string>> = {
   "blend-by-ear.swap-time": "swap on the 1",
   "blend-by-ear.clash-short": "short bass clash",
   "blend-by-ear.loud-steady": "steady level",
+  "final-mix.track-count": "3 tracks, 16 bars each",
+  "final-mix.one-genre": "one genre",
+  "final-mix.tempo-range": "tempos within 2%",
+  "final-mix.technique": "a blend and a cut",
 };
 
 const STANDING_LABELS: Readonly<Record<StandingId, string>> = {
@@ -81,7 +85,7 @@ export function criterionLabel(id: CriterionId): string {
 }
 
 /** "Graded: taps on the beat · then only the 1 · master out of the red", for a Lesson's Check. */
-export function gradedLine(definition: Pick<BuiltLesson, "id" | "aids">, passedLessons: readonly LessonId[]): string {
+export function gradedLine(definition: { readonly id: BuiltLesson["id"] | "final-mix"; readonly aids?: BuiltLesson["aids"] }, passedLessons: readonly LessonId[]): string {
   const ids = gradedCriteria(definition.id, { passedLessons, aids: { ...LESSON_AIDS, ...definition.aids } });
   // Two criteria can share a label (TRIM alone); say it once.
   const labels = [...new Set(ids.map(criterionLabel))];

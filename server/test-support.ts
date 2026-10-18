@@ -8,6 +8,7 @@ import type { Hono } from "hono";
 import { createApp } from "./app.ts";
 import { CoachService, type CoachTimings } from "./coach/coach-service.ts";
 import { memoryLogger } from "./logger.ts";
+import { FinalProjectStore } from "./final-projects.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { sameOriginPolicy } from "./same-origin.ts";
 import { SpendLedger } from "./spend-ledger.ts";
@@ -112,7 +113,7 @@ export async function startTestServer(options: {
   });
   const app = createApp({
     sameOrigin: sameOriginPolicy([APP_ORIGIN], ["127.0.0.1:5180"]),
-    services: { profiles, coach, logger, now },
+    services: { profiles, coach, logger, now, finalProjects: FinalProjectStore.forDataDir(dataDir, now) },
   });
   return {
     app,

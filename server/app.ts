@@ -1,11 +1,21 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { z } from "zod";
 import type { ApiErrorCode, ApiFailure, ApiSuccess, HealthData } from "@shared";
 import { HEALTH_PATH } from "@shared";
 import { CheckLineRequestSchema, CurriculumRequestSchema } from "@shared/coach-contract.ts";
-import { LearnerIdSchema, LearnerRecordSchema, describeIssues, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
+import {
+  FINAL_PROJECT_MIME_TYPES,
+  LearnerIdSchema,
+  LearnerRecordSchema,
+  MAX_FINAL_PROJECT_BYTES,
+  describeIssues,
+  type FinalProjectMimeType,
+  type LearnerId,
+  type LearnerRecord,
+} from "@shared/learner.ts";
 import type { CoachService } from "./coach/coach-service.ts";
+import type { FinalProjectStore } from "./final-projects.ts";
 import { consoleLogger, type Logger } from "./logger.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import { requireSameOrigin, sameOriginPolicy, type SameOriginPolicy } from "./same-origin.ts";
@@ -14,10 +24,13 @@ import { originalsRoutes } from "./originals.ts";
 import { ORIGINALS_PATH } from "@shared/originals.ts";
 
 export const MAX_BODY_BYTES = 32 * 1024;
+const FINAL_PROJECT_AUDIO_PATH = /^\/api\/learners\/[^/]+\/final-project\/audio$/;
 
 export interface AppServices {
   readonly profiles: ProfileStore;
   readonly coach: CoachService;
+  /** The final project's audio, one file per Learner. Unset = no `…/final-project/audio` route. */
+  readonly finalProjects?: FinalProjectStore;
   readonly logger?: Logger;
   readonly now?: () => Date;
 }
@@ -72,14 +85,18 @@ export function createApp(options: AppOptions = {}): Hono {
   const logger = options.services?.logger ?? options.logger ?? consoleLogger;
 
   app.use("/api/*", requireSameOrigin(policy));
-  app.use(
-    "/api/*",
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      onError: (context) =>
-        failure(context, 413, "tooLarge", `The body is over ${String(MAX_BODY_BYTES / 1024)} KB. Send less.`),
-    }),
-  );
+  const jsonLimit = bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (context) => failure(context, 413, "tooLarge", `The body is over ${String(MAX_BODY_BYTES / 1024)} KB. Send less.`),
+  });
+  const audioLimit = bodyLimit({
+    maxSize: MAX_FINAL_PROJECT_BYTES,
+    onError: (context) =>
+      failure(context, 413, "tooLarge", `The recording is over ${String(MAX_FINAL_PROJECT_BYTES / 1024 / 1024)} MB. Record a shorter set.`),
+  });
+  // The final project's audio is the one body that is not small JSON; it has its own (bounded) limit.
+  const limits: MiddlewareHandler = (context, next) => (FINAL_PROJECT_AUDIO_PATH.test(context.req.path) ? audioLimit(context, next) : jsonLimit(context, next));
+  app.use("/api/*", limits);
 
   app.get(HEALTH_PATH, (context) =>
     context.json({ success: true, data: { status: "ok" } } satisfies ApiSuccess<HealthData>),
@@ -164,6 +181,32 @@ function mountLearnerRoutes(app: Hono, services: AppServices): void {
     if (!body.ok) return body.response;
     return context.json(await coach.line(context.get("learnerId"), body.value));
   });
+
+  const { finalProjects } = services;
+  if (finalProjects !== undefined) {
+    learners.put("/:learnerId/final-project/audio", async (context) => {
+      const mimeType = (context.req.header("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+      if (!(FINAL_PROJECT_MIME_TYPES as readonly string[]).includes(mimeType)) {
+        return failure(context, 415, "badRequest", `Send the recording as ${FINAL_PROJECT_MIME_TYPES.join(", ")}; got "${mimeType}".`);
+      }
+      const bytes = new Uint8Array(await context.req.arrayBuffer());
+      if (bytes.byteLength === 0) return failure(context, 400, "badRequest", "The recording is empty. Record the set again.");
+      const meta = await finalProjects.put(context.get("learnerId"), mimeType as FinalProjectMimeType, bytes);
+      return context.json({ success: true, data: meta });
+    });
+
+    learners.get("/:learnerId/final-project/audio", async (context) => {
+      const learnerId = context.get("learnerId");
+      const kept = await finalProjects.get(learnerId);
+      if (kept === undefined) return failure(context, 404, "notFound", `Learner "${learnerId}" has kept no final project yet.`);
+      const extension = kept.meta.mimeType.split("/")[1] ?? "audio";
+      return context.body(new Uint8Array(kept.bytes), 200, {
+        "Content-Type": kept.meta.mimeType,
+        "Content-Disposition": `attachment; filename="learn-to-dj-${learnerId}-final-project.${extension === "mp4" ? "m4a" : extension}"`,
+        "Cache-Control": "no-store",
+      });
+    });
+  }
 
   learners.post("/:learnerId/coach/warm", async (context) => context.json(await coach.warm(context.get("learnerId"))));
 

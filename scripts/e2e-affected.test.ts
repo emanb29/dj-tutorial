@@ -44,8 +44,14 @@ describe("selectSpecs", () => {
   });
 
   it("runs the whole suite for a path no rule names", () => {
-    expect(selectSpecs(["src/app/final-mix/FinalMix.tsx"])).toMatchObject({ all: true });
+    expect(selectSpecs(["src/app/some-new-screen/Screen.tsx"])).toMatchObject({ all: true });
     expect(selectSpecs(["src/lessons/drill.ts"])).toMatchObject({ all: true });
+  });
+
+  it("runs the set's spec and the phone tests for Lesson 20's player, catalogue and Check", () => {
+    for (const path of ["src/app/final-mix/FinalMixPlayer.tsx", "src/lessons/catalogue-final.ts", "src/checks/lessons/final-mix.ts"]) {
+      expect(selectSpecs([path])).toEqual({ all: false, specs: ["e2e/final-mix.spec.ts", "e2e/mobile.spec.ts"] });
+    }
   });
 
   it("runs nothing for docs and tests", () => {

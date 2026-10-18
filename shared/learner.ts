@@ -107,6 +107,52 @@ export const SkillProfileSchema = z
   );
 export type SkillProfile = z.output<typeof SkillProfileSchema>;
 
+/** The recording formats the final project's audio may be (what MediaRecorder gives in Chromium and Firefox). */
+export const FINAL_PROJECT_MIME_TYPES = ["audio/webm", "audio/ogg", "audio/mp4"] as const;
+export type FinalProjectMimeType = (typeof FINAL_PROJECT_MIME_TYPES)[number];
+/** About 40 minutes at the recorder's 160 kbit/s; a set stops itself at 30. */
+export const MAX_FINAL_PROJECT_BYTES = 48 * 1024 * 1024;
+/** A set has at most 8 tracks (src/lessons SET_RULES), so 7 transitions; a few spare for re-entries. */
+const FINAL_PROJECT_TRACKS_MAX = 8;
+const FINAL_PROJECT_TRANSITIONS_MAX = 12;
+
+const NoteText = z.string().max(300);
+
+/**
+ * The final project (docs/lesson-catalogue.md "Final project"): the recorded set the Learner kept,
+ * with its track list and the Check's per-transition results. The audio itself is a file on the
+ * server (`…/final-project/audio`), one per Learner.
+ */
+export const FinalProjectSchema = z.strictObject({
+  attemptId: z.string().min(1).max(100),
+  recordedAt: IsoTimeSchema,
+  /** `lesson` = the first set (a rehearsal); `cold` = a re-pass, the final project proper (check-design C2). */
+  mode: CheckModeSchema,
+  outcome: z.enum(["passed", "failed"]),
+  band: z.enum(["pass", "merit", "distinction"]).nullable(),
+  durationSec: z.number().nonnegative(),
+  audio: z.strictObject({ mimeType: z.enum(FINAL_PROJECT_MIME_TYPES), bytes: z.int().positive().max(MAX_FINAL_PROJECT_BYTES) }),
+  tracks: z
+    .array(z.strictObject({ title: NoteText, artist: NoteText, bpm: z.number().positive(), credit: NoteText, shareable: z.boolean() }))
+    .min(1)
+    .max(FINAL_PROJECT_TRACKS_MAX),
+  transitions: z
+    .array(
+      z.strictObject({
+        number: z.int().positive(),
+        from: NoteText,
+        to: NoteText,
+        kind: z.enum(["cut", "blend", "unclassified"]),
+        met: z.boolean(),
+        phraseBeats: z.number().nullable(),
+        levelDb: z.number().nullable(),
+        phaseHold: z.number().nullable(),
+      }),
+    )
+    .max(FINAL_PROJECT_TRANSITIONS_MAX),
+});
+export type FinalProject = z.output<typeof FinalProjectSchema>;
+
 /** Everything the server keeps for one Learner. */
 export const LearnerRecordSchema = z
   .strictObject({
@@ -124,6 +170,8 @@ export const LearnerRecordSchema = z
     headphones: z.strictObject({ checkedAt: IsoTimeSchema }).nullable().optional(),
     /** Every Placement run, oldest first (placement-design §8). Absent in records from before Placement. */
     placements: z.array(PlacementResultSchema).max(PLACEMENTS_KEPT).optional(),
+    /** The set the Learner kept as their final project; absent until one is kept. */
+    finalProject: FinalProjectSchema.optional(),
     skillProfile: SkillProfileSchema,
   })
   .superRefine((record, context) => {
@@ -165,6 +213,15 @@ export function withSkillProfile(
   skillProfile: unknown,
 ): { readonly ok: true; readonly record: LearnerRecord } | { readonly ok: false; readonly issues: readonly string[] } {
   const parsed = LearnerRecordSchema.safeParse({ ...record, skillProfile });
+  return parsed.success ? { ok: true, record: parsed.data } : { ok: false, issues: describeIssues(parsed.error) };
+}
+
+/** The record with a new final project, checked against the schema the server enforces. */
+export function withFinalProject(
+  record: LearnerRecord,
+  finalProject: FinalProject,
+): { readonly ok: true; readonly record: LearnerRecord } | { readonly ok: false; readonly issues: readonly string[] } {
+  const parsed = LearnerRecordSchema.safeParse({ ...record, finalProject });
   return parsed.success ? { ok: true, record: parsed.data } : { ok: false, issues: describeIssues(parsed.error) };
 }
 

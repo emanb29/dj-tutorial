@@ -62,3 +62,30 @@ export { EQ_CENTRED_DB, EQ_CUT_DB, FILTER_CENTRED, initialLessonState, lessonRed
 export { SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, SYNTHETIC_TRACK_ID, synthesizeHouse, syntheticLessonTrack, type SyntheticLayout } from "./synthetic-track.ts";
 export { barStart, beatSec, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, peakDbfsOf, phraseStart, SET_UP_PEAK_DB, setUpTrim, setUpTrimDb, sliceTrack, trackOnDeck } from "./track.ts";
 export type * from "./types.ts";
+export {
+  camelotOf,
+  COURSE,
+  describeSetCriterion,
+  FINAL_MIX,
+  FINAL_MIX_AIDS,
+  finalMixMode,
+  finalMixSpec,
+  finalMixWindow,
+  keysCompatible,
+  preparedTrack,
+  SET_GENRES,
+  SET_RULES,
+  SYNTHETIC_SET,
+  setEntry,
+  setNotesText,
+  setProblems,
+  warningText,
+  type CourseLessonId,
+  type PlayedTrack,
+  type SetCandidate,
+  type SetEntry,
+  type SetLessonDefinition,
+  type SetProblems,
+  type SetWarning,
+  type TransitionNote,
+} from "./catalogue-final.ts";

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { curriculumRequest, isBuiltLesson, placementCurriculumRequest, withCurriculum, withPlacement, type BuiltLessonId } from "@lessons";
+import { curriculumRequest, isBuiltLesson, placementCurriculumRequest, withCurriculum, withPlacement, type BuiltLessonId, type CourseLessonId } from "@lessons";
 import type { CheckResult } from "@shared/check-result.ts";
 import type { PlacementResult } from "@shared/placement.ts";
 import { DEFAULT_LEARNER_ID, emptyLearnerRecord, LearnerIdSchema, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
@@ -15,6 +15,8 @@ const Playground = lazy(() => import("./playground/Playground.tsx").then((module
 const LessonPlayer = lazy(() => import("./lesson/LessonPlayer.tsx").then((module) => ({ default: module.LessonPlayer })));
 // The Originals player is its own small page, and its own chunk.
 const Placement = lazy(() => import("./placement/Placement.tsx").then((module) => ({ default: module.Placement })));
+// Lesson 20, the set: its own player (set builder, recording), and its own chunk.
+const FinalMixPlayer = lazy(() => import("./final-mix/FinalMixPlayer.tsx").then((module) => ({ default: module.FinalMixPlayer })));
 const ControllerPage = lazy(() => import("./controller-page/ControllerPage.tsx").then((module) => ({ default: module.ControllerPage })));
 const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
@@ -35,6 +37,8 @@ export function playgroundEnabled(location: { pathname: string; search: string }
   return devServer || new URLSearchParams(location.search).has("playground");
 }
 const LESSON_PATH = /^\/lesson\/([a-z-]+)$/;
+/** Lesson 20 has its own player. */
+const FINAL_MIX_PATH = "/lesson/final-mix";
 /** The hardware page: the DDJ-FLX4's connection, a MIDI monitor, a controls checklist and the sound output. */
 export const CONTROLLER_PAGE_PATH = "/controller";
 /** Re-taking Placement, from the Lesson list. A first run (no profile yet) shows it at "/". */
@@ -109,7 +113,7 @@ export function App() {
     window.history.pushState(null, "", `${pathname}${window.location.search}`);
     setPath(pathname);
   }, []);
-  const openLesson = useCallback((lessonId: BuiltLessonId) => {
+  const openLesson = useCallback((lessonId: CourseLessonId) => {
     navigate(`/lesson/${lessonId}`);
   }, [navigate]);
   const exit = useCallback(() => {
@@ -212,6 +216,14 @@ export function App() {
           onFinish={finishPlacement}
           onDone={placementDone}
         />
+      </Suspense>
+    );
+  }
+
+  if (path.replace(/\/$/, "") === FINAL_MIX_PATH && learner.kind === "ready") {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening your set…</p>}>
+        <FinalMixPlayer learner={learner.record} onLearnerChange={changeLearner} saveStatus={saveStatus} trackPreference={options.trackPreference} onExit={exit} />
       </Suspense>
     );
   }

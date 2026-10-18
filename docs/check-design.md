@@ -189,6 +189,48 @@ Phrase markers on the Learner's own files are only hints (research, step 5). Bef
 shows the grid, bar 1 and 8-bar phrase candidates; the Learner may shift bar 1 / the phrase anchor
 by whole bars. The Check uses the confirmed markers. Prep itself is not graded.
 
+### 5.5 Grading a set (implementation, `src/checks/lessons/final-mix.ts`, `src/checks/set.ts`)
+
+**Recording.** A set is one attempt recorded with track changes allowed: each deck's recording is its
+last track plus `earlier`, the tracks it held before (each with its own playhead model and
+`loadedCtx`; `shared/attempt.ts` `DeckRecording`). A track's playhead is stopped before its load and
+after the next one, so `audible(d, t)` asks whichever of the deck's tracks is playing.
+
+**Window.** From the set's own cue (the decks cued to their cue points after the recorder starts) to
+the end of the last master audio (frame ≥ −45 LUFS), not the "End set" press: silence after the last
+track is the set's end, not dead air.
+
+**Plays and transitions.** A *play* is one track's stay on a deck. Plays heard on the master are
+ordered by their first audible frame; each one that follows a play on the *other* deck is a
+transition (one that follows a play on the same deck has silence in between, which `no-dead-air`
+reports). A transition's **view** is the attempt with the outgoing deck relabelled A and the incoming
+B (events, meters, mixer and deck snapshots swapped; the crossfader mirrored), one track per deck,
+from when both tracks were loaded until the incoming track leaves its deck (the outgoing deck is
+often reloaded right after the handover; the incoming level 3 s in still belongs to it). Every two-deck measure of §2–§4 runs on a view unchanged.
+
+**Criteria.** Own: `final-mix.track-count` (tracks audible `≥ 16 bars − 1 beat`, `≥ 3`),
+`final-mix.one-genre` (distinct genre tags, case-insensitive, `= 1`), `final-mix.tempo-range` (largest
+`|bpm/bpm_first − 1|` of the set's grids `≤ 0.02`), `final-mix.technique` (blends `≥ 1` ∧ cuts `≥ 1`).
+Standing criteria marked per-transition (`on-phrase`, `level-match`, `cued-first`, `trim-still`,
+`controls-reset`, `no-recue`, `one-bass`, `drift`) are measured on every view and reported once, as the
+worst transition (an unmet one first, then the lowest margin), with every transition's evidence
+labelled "transition n: …"; the rest (`no-clip`, `no-dead-air`, `no-boost`, `overcorrect`) on the whole
+set. Point actions keep their press times (an entry is timed from its Play press or fader move, §2
+"Input leeway"); phase and loudness come from audible frames. `key-clash` is not graded: the set
+builder warns about clashing keys (Camelot not 0, ±1 or the A/B swap) and lets the set go ahead
+(mistake 14). `technique-mix` is the `metrics` counts (`transitions`, `blends`, `cuts`, `unclassified`).
+
+**Bands** (§5.3) are computed for a passed set from the views: Beat-syncing Merit = every blend
+`holdFrac(25 ms) ≥ 0.92` ∧ `worstRun(25 ms) ≤ 2 bars`; Distinction = `holdFrac(15 ms) ≥ 0.90` ∧ no sample
+over 40 ms. Balance uses the worst `level-match`, the worst blend's `clash`, and the `no-boost` /
+`controls-reset` results. Phrasing uses the worst `on-phrase` (`≤ ¼ beat`), every blend's `swap-time`
+(when there is a swap), and, for Distinction, every outgoing track's position at `t_out` before its last
+phrase marker.
+
+**Per-transition report** (`finalMixTransitions`): for each transition its tracks, kind, `t_in`, the
+on-phrase and level-match values, the drift hold for a blend, and whether its fail-severity rules
+were met. The result screen and the final project's notes show it.
+
 ## 6. What the Learner sees
 
 | When | Lesson Check | Cold re-pass, warm-up | `final-mix` |

@@ -5,6 +5,7 @@ import { createApp } from "./app.ts";
 import { CoachService } from "./coach/coach-service.ts";
 import { requireRuntimeConfig, requireServerConfig } from "./config.ts";
 import { consoleLogger } from "./logger.ts";
+import { FinalProjectStore } from "./final-projects.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { sameOriginPolicy } from "./same-origin.ts";
 import { SpendLedger } from "./spend-ledger.ts";
@@ -26,7 +27,7 @@ const coach = new CoachService({ client, ledger, logger: consoleLogger, logPaylo
 const ownAddress = `${host}:${String(port)}`;
 const app = createApp({
   sameOrigin: sameOriginPolicy(runtime.allowedOrigins, [ownAddress, `localhost:${String(port)}`]),
-  services: { profiles, coach, logger: consoleLogger },
+  services: { profiles, coach, logger: consoleLogger, finalProjects: FinalProjectStore.forDataDir(runtime.dataDir) },
   originalsDir: runtime.originalsDir,
 });
 

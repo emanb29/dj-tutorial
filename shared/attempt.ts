@@ -167,10 +167,26 @@ export interface BeatGrid {
   readonly rmsResidualMs: number;
 }
 
-/** One deck during the attempt. v1 assumes one track per deck per attempt (see `cuePoints`). */
+/** One track's stay on a deck: its playhead model from its load on (stopped before `loadedCtx` and after the next load). */
+export interface TrackOnDeck {
+  readonly trackId: string;
+  readonly playhead: PlayheadModel;
+  /** When the track was loaded (it may be before the attempt started). */
+  readonly loadedCtx: CtxTime;
+}
+
+/**
+ * One deck during the attempt: the track it holds at the end. Lesson Checks have one track per deck;
+ * an attempt recorded with track changes allowed (`cue-point`'s slices, a `final-mix` set) also lists
+ * the tracks the deck held before it, in `earlier`.
+ */
 export interface DeckRecording {
   readonly trackId: string;
   readonly playhead: PlayheadModel;
+  /** When this track was loaded. Absent in attempts built by hand. */
+  readonly loadedCtx?: CtxTime;
+  /** The tracks this deck held earlier in the attempt, oldest first. Absent = none. */
+  readonly earlier?: readonly TrackOnDeck[];
 }
 
 /** The deck's cue point as set by the Learner (deck CUE while paused), in track seconds. */
@@ -376,7 +392,21 @@ export type LessonTask =
       /** Tempo matching starts here: both decks playing, 0.5–2% apart. */
       readonly matchFrom: CtxTime;
     }
-  | { readonly lessonId: "blend-by-ear" };
+  | { readonly lessonId: "blend-by-ear" }
+  | {
+      readonly lessonId: "final-mix";
+      /** The set the Learner built, in play order, with the genre and key set in track prep. */
+      readonly set: readonly SetTrack[];
+    };
+
+/** A track of a `final-mix` set, as the Learner prepared it. */
+export interface SetTrack {
+  readonly trackId: string;
+  /** The genre tag set in track prep (`one-genre`), lower case. */
+  readonly genre: string;
+  /** The Camelot key (e.g. "8A"), when the track's source knows it. */
+  readonly camelot: string | null;
+}
 
 /** What the Learner was asked to do. */
 export interface TaskSpec {

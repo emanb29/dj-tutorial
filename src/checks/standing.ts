@@ -3,7 +3,7 @@
 import type { ControlId, CtxSpan, CtxTime, DeckId, LessonId, MeterFrame } from "@shared/attempt.ts";
 import type { CriterionId, CriterionResult, Severity, StandingId } from "@shared/check-result.ts";
 import { barSeconds, framesWhere, loadedDeck, type CheckContext, type Situations } from "./context.ts";
-import { judge } from "./criterion.ts";
+import { judge, notApplicable } from "./criterion.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { cueOnSeconds, entryActionTime, entryTime, exitTime, frameAt, framesIn, isAudible, MAX_FRAME_AGE_S, overlapSpans } from "./mix.ts";
 import { phraseOffsetBeats } from "./phrasing.ts";
@@ -51,7 +51,9 @@ interface StandingDefinition {
   /** Applies once any of these Lessons is passed. */
   readonly from: readonly LessonId[];
   /** `syncAvailable`: the task offers SYNC (`spec.aids.sync`). */
-  readonly situation: keyof Situations | "any" | "syncAvailable";
+  readonly situation: "transition" | "any" | "syncAvailable";
+  /** In a set, measured on each transition's view and reported as the worst; otherwise on the whole attempt. */
+  readonly perTransition?: true;
   readonly measure: (context: CheckContext, severity: Severity, passed: ReadonlySet<LessonId>) => CriterionResult;
 }
 
@@ -275,19 +277,21 @@ function noBoost(context: CheckContext, severity: Severity): CriterionResult {
 }
 
 /**
- * Implemented standing criteria, in check-design §3 order. Deferred until their Lessons' Checks
- * exist: key-clash and technique-mix (`final-mix`), and the FX part of controls-reset (`echo-out`).
+ * Implemented standing criteria, in check-design §3 order. Deferred: key-clash (`final-mix` warns in
+ * the set builder instead, check-design §5.5), technique-mix (`final-mix` reports the counts in its
+ * metrics), and the FX part of controls-reset (`echo-out`).
  */
 const DEFINITIONS: readonly StandingDefinition[] = [
   { id: "no-clip", from: ["gain-staging"], situation: "any", measure: noClip },
   { id: "no-dead-air", from: ["cut-on-phrase"], situation: "transition", measure: noDeadAir },
-  { id: "on-phrase", from: ["cut-on-phrase"], situation: "transition", measure: onPhrase },
-  { id: "level-match", from: ["cut-on-phrase"], situation: "transition", measure: levelMatch },
-  { id: "cued-first", from: ["cut-on-phrase"], situation: "transition", measure: cuedFirst },
-  { id: "trim-still", from: ["sync-blend"], situation: "transition", measure: trimStill },
+  { id: "on-phrase", perTransition: true, from: ["cut-on-phrase"], situation: "transition", measure: onPhrase },
+  { id: "level-match", perTransition: true, from: ["cut-on-phrase"], situation: "transition", measure: levelMatch },
+  { id: "cued-first", perTransition: true, from: ["cut-on-phrase"], situation: "transition", measure: cuedFirst },
+  { id: "trim-still", perTransition: true, from: ["sync-blend"], situation: "transition", measure: trimStill },
   { id: "no-boost", from: ["eq-basics"], situation: "any", measure: noBoost },
   {
     id: "controls-reset",
+    perTransition: true,
     // Each Lesson teaches its own part: EQ from eq-basics, CFX from filter-transition.
     from: ["eq-basics", "filter-transition"],
     situation: "transition",
@@ -296,9 +300,9 @@ const DEFINITIONS: readonly StandingDefinition[] = [
   },
   // "Warn (sync Checks only)": only where the task offers sync; n/a in final-mix (severity table).
   { id: "sync-kept", from: ["sync-blend"], situation: "syncAvailable", measure: syncKept },
-  { id: "no-recue", from: ["nudge-phase"], situation: "transition", measure: noRecue },
-  { id: "one-bass", from: ["blend-by-ear"], situation: "transition", measure: oneBass },
-  { id: "drift", from: ["blend-by-ear"], situation: "transition", measure: drift },
+  { id: "no-recue", perTransition: true, from: ["nudge-phase"], situation: "transition", measure: noRecue },
+  { id: "one-bass", perTransition: true, from: ["blend-by-ear"], situation: "transition", measure: oneBass },
+  { id: "drift", perTransition: true, from: ["blend-by-ear"], situation: "transition", measure: drift },
   { id: "overcorrect", from: ["tempo-by-ear"], situation: "any", measure: overcorrect },
 ];
 
@@ -323,10 +327,45 @@ function applicable(scope: StandingScope, situations: Situations): { readonly de
 export function standingCriteria(context: CheckContext, situations: Situations): CriterionResult[] {
   const passed: ReadonlySet<LessonId> = new Set(context.spec.passedLessons);
   const scope = { lessonId: context.lessonId, passedLessons: context.spec.passedLessons, sync: context.spec.aids.sync };
-  return applicable(scope, situations).map(({ definition, severity }) => definition.measure(context, severity, passed));
+  const views = situations.transitionViews?.(context) ?? null;
+  return applicable(scope, situations).map(({ definition, severity }) =>
+    views === null || definition.perTransition !== true
+      ? definition.measure(context, severity, passed)
+      : worstOf(definition, severity, views.map((view, index) => labelled(definition.measure(view, severity, passed), index + 1))),
+  );
 }
 
 /** The standing criteria that can fail a task (severity `fail`), before it is run. */
 export function failingStandingIds(scope: StandingScope, situations: Situations): CriterionId[] {
   return applicable(scope, situations).filter(({ severity }) => severity === "fail").map(({ definition }) => `standing.${definition.id}` as const);
+}
+
+/** One transition's results, by standing id (the set's per-transition report reads them). */
+export function transitionStanding(view: CheckContext): CriterionResult[] {
+  return standingCriteria(view, { transition: true }).filter((result) =>
+    DEFINITIONS.some((definition) => definition.perTransition === true && `standing.${definition.id}` === result.id),
+  );
+}
+
+/** A transition's result, its evidence labelled with the transition's number (its decks are relabelled). */
+function labelled(result: CriterionResult, transition: number): CriterionResult {
+  return { ...result, evidence: result.evidence.map((item) => ({ ...item, label: `transition ${String(transition)}: ${item.label}` })) };
+}
+
+/**
+ * One criterion over every transition of a set: the worst one (a not-met one first, then the lowest
+ * margin; an unmeasured one is the worst of all), with every transition's evidence. Not applicable
+ * when no transition contains its situation.
+ */
+function worstOf(definition: StandingDefinition, severity: Severity, results: readonly CriterionResult[]): CriterionResult {
+  const graded = results.filter((result) => result.status !== "notApplicable");
+  const rank = (result: CriterionResult) => [result.status === "met" ? 1 : 0, result.margin ?? Number.NEGATIVE_INFINITY] as const;
+  const worst = graded.reduce<CriterionResult | null>((found, result) => {
+    if (found === null) return result;
+    const [foundMet, foundMargin] = rank(found);
+    const [met, margin] = rank(result);
+    return met < foundMet || (met === foundMet && margin < foundMargin) ? result : found;
+  }, null);
+  if (worst === null) return results[0] ?? notApplicable(`standing.${definition.id}`, severity, "count", null);
+  return { ...worst, evidence: graded.flatMap((result) => result.evidence), detail: { ...worst.detail, transitions: graded.length } };
 }

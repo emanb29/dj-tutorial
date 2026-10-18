@@ -1,0 +1,166 @@
+/* Lesson 20: the set builder, the set's own buttons and the result. Touch targets are 44 px or more. */
+
+.final-mix .btn,
+.final-mix select,
+.final-mix input[type="search"] {
+  min-height: 44px;
+}
+
+.final-mix .set-row-actions .btn {
+  min-width: 44px;
+  justify-content: center;
+}
+
+/* Exam conditions: the BPM displays and the phase meter are covered, not just dimmed. */
+.final-mix [data-control$=".bpm"] .readout-number,
+.final-mix [data-control="phase-meter"] .phase-body {
+  visibility: hidden;
+}
+
+.set-builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-3);
+  box-sizing: border-box;
+}
+
+.set-builder h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.set-builder ol,
+.set-builder ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.set-picked li,
+.set-library li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--panel-edge);
+}
+
+.set-title {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.set-title small {
+  color: var(--ink-muted, var(--ink));
+  opacity: 0.8;
+}
+
+.set-genre,
+.set-shift {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.set-shift input {
+  min-height: 44px;
+}
+
+.set-row-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.set-library-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.set-library-tools input[type="search"] {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.set-files input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.set-warnings li {
+  border-bottom: 0;
+  color: var(--warn, var(--ink));
+}
+
+.set-blocking li {
+  border-bottom: 0;
+  padding: var(--space-1) 0;
+}
+
+.set-start {
+  margin-top: var(--space-3);
+}
+
+.set-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.set-go {
+  min-height: 48px;
+}
+
+.set-result {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: var(--space-3);
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.set-transitions {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.set-transitions th,
+.set-transitions td {
+  padding: var(--space-1);
+  text-align: left;
+  border-bottom: 1px solid var(--panel-edge);
+}
+
+.set-transitions tr[data-met="false"] td {
+  color: var(--bad, var(--ink));
+}
+
+.set-recording audio {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .set-builder {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-2) 16px;
+  }
+
+  .set-transitions {
+    display: block;
+    overflow-x: auto;
+  }
+}

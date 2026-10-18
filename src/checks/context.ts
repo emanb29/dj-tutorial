@@ -11,7 +11,7 @@ import type {
   PlayheadModel,
   TaskSpec,
 } from "@shared/attempt.ts";
-import type { CriterionResult, Evidence } from "@shared/check-result.ts";
+import type { CriterionResult, Evidence, FinalMixBands } from "@shared/check-result.ts";
 import type { GradedAttempt } from "./deck-controls.ts";
 import { framesIn } from "./mix.ts";
 import { beatSeconds } from "./timeline.ts";
@@ -56,12 +56,23 @@ export interface OwnCriteria {
   readonly criteria: readonly CriterionResult[];
   /** Report-only values for the Coach. */
   readonly metrics: Readonly<Record<string, number>>;
+  /**
+   * `final-mix` only: the LCME bands of a passed attempt (check-design §5.3), from every graded
+   * criterion (own and standing), since some bands read standing warnings.
+   */
+  readonly bands?: (criteria: readonly CriterionResult[]) => FinalMixBands;
 }
 
 /** Situations a task can contain; standing criteria apply only when theirs is present. */
 export interface Situations {
   /** One deck hands over to another on the master. */
   readonly transition: boolean;
+  /**
+   * A set (`final-mix`): several transitions, each graded in its own view (one track per deck, the
+   * outgoing deck as A, the window around it). Transition criteria are measured in every view and
+   * reported once, as the worst; the rest are measured on the whole attempt.
+   */
+  readonly transitionViews?: (context: CheckContext) => readonly CheckContext[];
 }
 
 /** A Lesson task's parameters, by Lesson id. */
