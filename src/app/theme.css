@@ -95,6 +95,11 @@ kbd {
   cursor: pointer;
 }
 
+/* `display` above would otherwise override the `hidden` attribute (e.g. the phrase preview's ■ Stop). */
+.btn[hidden] {
+  display: none;
+}
+
 .btn:hover {
   border-color: var(--accent);
 }
