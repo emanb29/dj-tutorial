@@ -7,6 +7,7 @@ import {
   blendPositions,
   lessonDefinition,
   lessonTrackFromKnownGrid,
+  practiceLoopFor,
   SYNTHETIC_HOUSE,
   SYNTHETIC_PARTNER,
   synthesizeHouse,
@@ -43,7 +44,11 @@ let engine: AudioEngine | null = null;
 afterEach(async () => {
   await engine?.close();
   engine = null;
+  Reflect.deleteProperty(performance, "now");
 });
+
+/** The real wall clock, whatever a harness has done to `performance.now()`. */
+const realNow = () => Performance.prototype.now.call(performance);
 
 function lamplightMoths(): LessonTrack {
   // `knownGridFromMeta` takes the full meta; only the fields it reads matter here.
@@ -100,6 +105,11 @@ async function harness(options: {
   const { sampleRate, track } = options;
   const latencySec = options.latencySec ?? 0;
   const context = new OfflineAudioContext({ numberOfChannels: 2, length: Math.round(options.renderSec * sampleRate), sampleRate });
+  // The wall clock runs with the render, as a real context's clock runs with performance.now(): the
+  // smoothed output clock (ISS-91) fits one against the other, and an offline render that stands still
+  // while the wall clock runs would look like a clock that keeps jumping.
+  const wallAtStart = realNow();
+  Object.defineProperty(performance, "now", { configurable: true, value: () => wallAtStart + context.currentTime * 1000 });
   // The real clock, over an output that reports `latencySec` behind the render.
   const output = {
     state: "running",
@@ -163,9 +173,9 @@ async function harness(options: {
 
 /** Waits, on the wall clock, for something the session does on its own timers or promises. */
 async function until(done: () => boolean, what: string): Promise<void> {
-  const deadline = performance.now() + 10_000;
+  const deadline = realNow() + 10_000;
   while (!done()) {
-    if (performance.now() > deadline) throw new Error(`Gave up after 10 s waiting for ${what}; is the machine badly overloaded, or did the session stop?`);
+    if (realNow() > deadline) throw new Error(`Gave up after 10 s waiting for ${what}; is the machine badly overloaded, or did the session stop?`);
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
@@ -425,6 +435,37 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     ]);
     const outcome = await gradedBlend(run, playAt, handoverPos + 9 * beat);
     expect(outcome.outcome, JSON.stringify(summary(outcome))).toEqual({ kind: "passed" });
+  });
+});
+
+// ISS-99: on a high-latency output the heard playhead still shows the old position for the output's
+// latency after the practice loop seeks back. Looping again on it seeks over and over and stutters, so
+// practice loops wait, as a Check does, until the seek is heard plus CUE_SETTLE_SEC.
+describe("practice loop at 48 kHz on Bluetooth output (250 ms)", () => {
+  it("seeks back once per loop, not again while the seek is still on its way to the speakers", { timeout: 60_000 }, async () => {
+    const sampleRate = 48_000;
+    const latencySec = 0.25;
+    const track = lamplightMoths();
+    const loop = practiceLoopFor(lessonDefinition("beats-and-bars"), track);
+    if (loop === null) throw new Error("Lesson 2 (Beats and bars) practice loops");
+    const lookaheadSec = 0.0116 + 256 / sampleRate;
+    const run = await harness({ sampleRate, lessonId: "beats-and-bars", track, audio: (context) => toneBuffer(context, ORIGINAL_SEC), renderSec: 60, latencySec, lookaheadSec });
+    run.session.preparePractice();
+    // Practice plays its deck from a promise callback: wait for it before rendering towards the loop.
+    await until(() => run.engine.deckState("A").playing, "practice to play deck A");
+    // Past the lookahead, where the practice cue and Play have taken effect.
+    const probe = run.now() + 0.1;
+    const loopAtCtx = probe + loop.atPos - (run.engine.playheadAt("A", probe)?.positionSec ?? Number.NaN);
+    await run.renderTo(loopAtCtx - 0.5);
+    const seeks: number[] = [];
+    run.engine.on("command", (event) => {
+      if (event.command.control === "seek" && event.command.deck === "A" && event.rejected === null) seeks.push(event.appliedCtx);
+    });
+    // Small steps through the loop point and the output's latency after it, so the session's watch
+    // looks while the seek is still unheard.
+    for (let at = loopAtCtx - 0.5; at <= loopAtCtx + latencySec + 1; at += 0.02) await run.renderTo(at);
+    run.session.close();
+    expect(seeks).toHaveLength(1);
   });
 });
 

@@ -689,10 +689,24 @@ export class LessonSession {
     });
   }
 
+  /**
+   * Loops where `loop` says, once the decks' last cue or loop back is heard (ISS-99). Until then the
+   * heard playhead still shows the old position, past the loop point on a high-latency output, and
+   * looping on it would seek again and again and stutter. Called right after the decks are cued, so
+   * that cue is the first one waited for; the Check's own `cueHeard` is the same rule.
+   */
   private watchLoop(decks: DeckSetups, loop: LoopPlan | null, alsoEvery?: () => void, positionsValid: () => boolean = () => true): void {
+    let seekCtx = this.engine.context.currentTime;
+    const seekHeard = () => {
+      const heard = this.engine.heardTime();
+      return heard.ok && heard.ctx >= seekCtx + CUE_SETTLE_SEC;
+    };
     this.watch = setInterval(() => {
       const reading = this.engine.playhead(loop?.deck ?? "A");
-      if (loop !== null && reading.ok && reading.positionSec >= loop.atPos && positionsValid()) this.loopBack(decks, loop);
+      if (loop !== null && reading.ok && reading.positionSec >= loop.atPos && positionsValid() && seekHeard()) {
+        seekCtx = this.engine.context.currentTime;
+        this.loopBack(decks, loop);
+      }
       alsoEvery?.();
     }, WATCH_MS);
   }

@@ -178,18 +178,18 @@ describe("output clock", () => {
     expect(now).toBeGreaterThanOrEqual(move);
   });
 
-  // A tap the main thread got to 80 ms late, after the timestamp jumped forward: it is placed with the
-  // newest timestamp, not held back by the readings of "now" made with the older one.
-  it("places a late-delivered input with the newest timestamp", () => {
+  // A tap the main thread got to late, after a reading of "now": it is placed where it was heard, not
+  // held back to that later reading.
+  it("does not hold a late-delivered input back to a later reading of now", () => {
     const clock = clockReading([
       { contextTime: 10, performanceTime: 1_000 },
-      { contextTime: 10.2, performanceTime: 1_100 },
+      { contextTime: 10.1, performanceTime: 1_100 },
     ]);
     vi.spyOn(performance, "now").mockReturnValue(1_030);
     const readingAfterTap = ctxOf(clock.heardTime());
     const tap = ctxOf(clock.heardTime(1_020));
-    expect(readingAfterTap).toBeGreaterThan(0);
-    expect(tap).toBeCloseTo(10.12, 9);
+    expect(readingAfterTap).toBeCloseTo(10.03, 9);
+    expect(tap).toBeCloseTo(10.02, 9);
   });
 
   // The owner's Lesson 2 voids: a heard "now" past what was rendered put the Check's start after the
