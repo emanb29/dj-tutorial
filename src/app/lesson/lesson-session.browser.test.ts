@@ -520,7 +520,7 @@ describe.each([
     if (plan.endWhen.kind !== "position") throw new Error("this Check ends at a position");
     await run.renderToHeard(heard(plan.endWhen.pos) + 0.1);
     await until(() => run.audioEnded() === 1, "the session's watch to end the Check's audio part");
-    // The questions: ▶ on "Phrase 4" plays that phrase's first 2 bars on A, then stops by itself.
+    // The questions: ▶ on "Phrase 4" plays from 2 bars before it, across the change, and keeps going.
     const seeks: number[] = [];
     const stopSeeks = run.engine.on("command", (event) => {
       if (event.command.control === "seek" && event.command.deck === "A") seeks.push(event.command.value);
@@ -528,14 +528,26 @@ describe.each([
     expect(run.session.previewPhrase(4)).toBe(true);
     stopSeeks();
     expect(seeks).toHaveLength(1);
-    expect(seeks[0]).toBeCloseTo(phrase(5), 9);
+    expect(seeks[0]).toBeCloseTo(phrase(5) - 2 * bar, 9);
     expect(run.engine.deckState("A").playing).toBe(true);
     const previewAt = run.playedAt();
-    await run.renderToHeard(previewAt + bar);
+    const heardInPreview = (pos: number) => previewAt + (pos - (phrase(5) - 2 * bar));
+    // The marker follows heard time, not applied: just before the change is heard, the deck already
+    // plays phrase 4 (by the output's latency), but the Learner still hears phrase 3's last bar.
+    for (let at = previewAt + bar / 2; at < heardInPreview(phrase(5)) - 0.1; at += bar / 2) await run.renderToHeard(at);
+    await run.renderToHeard(heardInPreview(phrase(5)) - 0.1);
+    expect(run.session.previewHeard()).toEqual({ phrase: 3, bar: 8 });
+    const applied = run.engine.playheadAt("A", run.now())?.positionSec ?? 0;
+    expect(applied >= phrase(5)).toBe(latencySec > 0.1);
+    await run.renderToHeard(heardInPreview(phrase(5)) + 0.05);
+    expect(run.session.previewHeard()).toEqual({ phrase: 4, bar: 1 });
+    // One continuous listen: on through the next phrases until stopped.
+    for (let at = heardInPreview(phrase(5)) + bar / 2; at <= heardInPreview(phrase(6) + bar / 2); at += bar / 2) await run.renderToHeard(at);
+    expect(run.session.previewHeard()).toEqual({ phrase: 5, bar: 1 });
     expect(run.session.previewingPhrase()).toBe(4);
-    for (let at = previewAt + bar; at < previewAt + 3 * bar; at += bar / 2) await run.renderToHeard(at + bar / 2);
-    await until(() => !run.engine.deckState("A").playing, "the preview to stop after 2 bars");
-    expect(run.session.previewingPhrase()).toBeNull();
+    run.session.stopPreview();
+    expect(run.engine.deckState("A").playing).toBe(false);
+    expect(run.session.previewHeard()).toBeNull();
     // Previews are not taps, and are not graded.
     const graded = await run.session.grade({ breakdown: 4, drop: 6 }, ["deck-basics", "beats-and-bars"]);
     run.session.close();

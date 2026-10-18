@@ -33,6 +33,9 @@ import {
   type CheckPlan,
   type EqBand,
   type ListeningClip,
+  type PhrasePreviews,
+  phrasePreviewSpan,
+  previewPhraseAt,
   type DeckSetup,
   type DeckSetups,
   type Grading,
@@ -172,8 +175,11 @@ export class LessonSession {
   /** The phrases hook and practice's 8-bar count, and the phrase whose start it last judged. */
   private phraseCountState: PhraseCountState = PHRASE_COUNT_START;
   private judgedPhrase: number | null = null;
-  /** The phrase preview playing now (phrases' questions): its 1-based phrase, where it stops, when it was cued. */
-  private preview: { readonly phrase: number; readonly endPos: number; readonly cuedCtx: number } | null = null;
+  /**
+   * The phrase preview playing now (phrases' questions): the chip it was started from (1-based), where
+   * it stops, and when its seek takes effect (before then, the heard playhead is still where A was).
+   */
+  private preview: { readonly phrase: number; readonly previews: PhrasePreviews; readonly untilPos: number; readonly seekCtx: number } | null = null;
   /** The by-ear practice drill running now (Lessons 14–16), if any. */
   private drill: DrillRunner | null = null;
   /**
@@ -1052,34 +1058,55 @@ export class LessonSession {
   }
 
   /**
-   * Plays the first bars of the Check's phrase `phrase` (1-based) on deck A at the Check's own fader,
-   * once the audio part is over, then stops. One at a time: it stops any other. The recorder has
-   * stopped, so nothing here is graded or counted as a tap. False when there is nothing to play.
+   * Plays the Check's phrase `phrase` (1-based) again on deck A at the Check's own fader, once the audio
+   * part is over: from 2 bars before it (phrase 1: the count-in), across the change, on through later
+   * phrases until stopped or the window's end plus a bar. One at a time: it stops any other. The
+   * recorder has stopped, so nothing here is graded or counted as a tap. False when there is nothing to play.
    */
   previewPhrase(phrase: number): boolean {
     const check = this.check;
     const previews = check?.stopped == null ? undefined : check.plan.phrasePreviews;
-    const pos = previews?.starts[phrase - 1];
-    const track = this.onDeck.A;
-    if (check == null || previews === undefined || pos === undefined || track === null) return false;
+    const span = previews === undefined ? null : phrasePreviewSpan(previews, phrase);
+    if (check == null || previews === undefined || span === null || this.onDeck.A === null) return false;
     this.stopClip();
     this.stopPreview();
     const fader = checkDecksFor(check.plan).A.fader;
-    this.settingUpWith(() => {
-      for (const deck of DECKS) if (this.onDeck[deck] !== null) this.send({ control: "pause", deck });
-      this.send({ control: "seek", deck: "A", value: pos });
-      this.send({ control: "channel-fader", deck: "A", value: fader });
-      this.send({ control: "play", deck: "A" });
+    let seekCtx = this.engine.context.currentTime;
+    const stopListening = this.engine.on("command", (event) => {
+      if (event.command.control === "seek" && event.command.deck === "A" && event.rejected === null) seekCtx = event.appliedCtx;
     });
-    const preview = { phrase, endPos: pos + previews.bars * 4 * beatSecOf(track), cuedCtx: this.engine.context.currentTime };
+    try {
+      this.settingUpWith(() => {
+        for (const deck of DECKS) if (this.onDeck[deck] !== null) this.send({ control: "pause", deck });
+        this.send({ control: "seek", deck: "A", value: span.fromPos });
+        this.send({ control: "channel-fader", deck: "A", value: fader });
+        this.send({ control: "play", deck: "A" });
+      });
+    } finally {
+      stopListening();
+    }
+    const preview = { phrase, previews, untilPos: span.untilPos, seekCtx };
     this.preview = preview;
     this.watch = setInterval(() => {
-      // Until the cue is heard, the heard playhead still shows where the deck was before it.
       const heard = this.engine.heardTime();
       const reading = this.engine.playhead("A");
-      if (this.preview === preview && heard.ok && heard.ctx >= preview.cuedCtx + CUE_SETTLE_SEC && reading.ok && reading.positionSec >= preview.endPos) this.stopPreview();
+      if (this.preview !== preview || !heard.ok || heard.ctx < preview.seekCtx + CUE_SETTLE_SEC) return;
+      if (!this.engine.deckState("A").playing || (reading.ok && reading.positionSec >= preview.untilPos)) this.stopPreview();
     }, WATCH_MS);
     return true;
+  }
+
+  /**
+   * What a phrase preview plays now, as heard (through the output's latency): the phrase and its bar
+   * (null in the lead-in before phrase 1, or until the cue is heard). Null when no preview plays.
+   */
+  previewHeard(): { readonly phrase: number; readonly bar: number } | { readonly phrase: null } | null {
+    const preview = this.preview;
+    if (preview === null) return null;
+    const heard = this.engine.heardTime();
+    if (!heard.ok || heard.ctx < preview.seekCtx) return { phrase: null };
+    const reading = this.engine.playhead("A");
+    return (reading.ok ? previewPhraseAt(preview.previews, reading.positionSec) : null) ?? { phrase: null };
   }
 
   /** The phrase previewing now, if any (end-to-end tests read it). */

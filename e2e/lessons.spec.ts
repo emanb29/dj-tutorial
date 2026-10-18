@@ -107,6 +107,25 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   // Each phrase can be heard again before it is chosen: ▶ plays it on deck A; choosing stops it.
   const playing = () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing);
   const breakdown = questions.getByRole("group", { name: /breakdown/ });
+  await expect(questions).toContainText("▶ plays from just before that phrase — listen for the change.");
+  const stop = questions.getByRole("button", { name: "■ Stop" });
+  await expect(stop).toBeHidden();
+  // ▶ plays from 2 bars before phrase 4, across the change: phrase 3 lit first, then phrase 4.
+  await breakdown.getByRole("button", { name: "Play phrase 4" }).click();
+  await expect.poll(playing).toBe(true);
+  await expect(stop).toBeVisible();
+  await expect(page.getByTestId("phrase-preview-now")).toContainText(/Phrase 3 · bar [78] of 8/);
+  await expect(breakdown.locator('.phrase-chip[data-chip="4"]')).toHaveAttribute("data-heard", "true", { timeout: 8000 });
+  await expect(page.getByTestId("phrase-preview-now")).toContainText(/Phrase 4 · bar [1-8] of 8/);
+  // ■ Stop (or P / Esc) stops it; ▶ again, then choosing stops it too.
+  await stop.click();
+  await expect.poll(playing).toBe(false);
+  await expect(stop).toBeHidden();
+  await breakdown.getByRole("button", { name: "Play phrase 4" }).click();
+  await expect.poll(playing).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect.poll(playing).toBe(false);
+  await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "answering");
   await breakdown.getByRole("button", { name: "Play phrase 4" }).click();
   await expect.poll(playing).toBe(true);
   await breakdown.getByRole("button", { name: "Phrase 4", exact: true }).click();

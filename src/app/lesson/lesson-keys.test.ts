@@ -38,4 +38,14 @@ describe("lessonKey: the Lesson's own keys", () => {
     expect(answering("KeyP")).toEqual({ kind: "preview-focused" });
     expect(answering("Digit3")).toEqual({ kind: "answer", value: 3 });
   });
+
+  it("while a phrase preview plays, P or Escape stops it; Shift + 1–8 still plays another", () => {
+    const playing = (code: string, shiftKey = false) => lessonKey({ code, repeat: false, ctrlKey: false, metaKey: false, altKey: false, shiftKey }, { answering: true, previewing: true });
+    expect(playing("KeyP")).toEqual({ kind: "stop-preview" });
+    expect(playing("Escape")).toEqual({ kind: "stop-preview" });
+    expect(playing("Digit5", true)).toEqual({ kind: "preview", value: 5 });
+    expect(playing("Digit5")).toEqual({ kind: "answer", value: 5 });
+    // Nothing playing: Escape is back to the list, as everywhere else.
+    expect(lessonKey({ code: "Escape", repeat: false, ctrlKey: false, metaKey: false, altKey: false }, { answering: true, previewing: false })).toEqual({ kind: "exit" });
+  });
 });

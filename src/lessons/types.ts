@@ -343,11 +343,24 @@ export interface CheckPlan {
    * `bars` bars (phrases: "count from the last change"). It says nothing about where the phrase is.
    */
   /**
-   * Once the audio part is over, a question with `previews: "phrases"` lets the Learner play the first
-   * `bars` bars of phrase N (`starts[N − 1]`, track positions) on deck A before answering. Not graded.
+   * Once the audio part is over, a question with `previews: "phrases"` lets the Learner play phrase N
+   * again on deck A before answering, across the change into it (phrase-preview.ts). Not graded.
    */
-  readonly phrasePreviews?: { readonly starts: readonly number[]; readonly bars: number };
+  readonly phrasePreviews?: PhrasePreviews;
   readonly farTapCue?: { readonly fromPos: number; readonly beats: number; readonly bars: number; readonly caption: string };
+}
+
+/** phrases' "Phrase N" previews, track positions. */
+export interface PhrasePreviews {
+  /** Phrase N's start at `starts[N - 1]`, N = 1…8 (the graded window). */
+  readonly starts: readonly number[];
+  /** The graded window's end: the phrase after the last one's start. */
+  readonly end: number;
+  /** Where ▶ on phrase N plays from: 2 bars before it (phrase 1: the Check's count-in), never before 0. */
+  readonly from: readonly number[];
+  /** Where every preview stops by itself: the window's end plus a bar, never past the track. */
+  readonly until: number;
+  readonly barsPerPhrase: number;
 }
 
 export interface CheckQuestion {

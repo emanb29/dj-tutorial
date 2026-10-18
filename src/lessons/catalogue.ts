@@ -10,8 +10,8 @@ import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trim
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
-/** phrases: how much of a phrase its ▶ plays before the Learner names the breakdown or the drop. */
-const PREVIEW_BARS = 2;
+/** phrases: how far before a phrase its ▶ starts, so the change into it is heard. */
+const PREVIEW_LEAD_BARS = 2;
 /** How long a checkpoint's tick and caption stay up. */
 const CHECKPOINT_BARS = 4;
 
@@ -132,8 +132,11 @@ const phrases: LessonDefinition = {
     // Two 32-bar halves, one Check: the tick lands a beat after the second half's first phrase start.
     const halfway = phraseStart(track.grid, first + BARS_PER_PHRASE / 2);
     const tapCaption = "Tap each new phrase (Space)";
+    const startPos = firstPos - barsSec(track, 2);
+    const starts = Array.from({ length: BARS_PER_PHRASE }, (_, index) => phraseStart(track.grid, first + index));
+    const end = phraseStart(track.grid, first + BARS_PER_PHRASE);
     return {
-      startPos: firstPos - barsSec(track, 2),
+      startPos,
       autoPlay: true,
       faderAtStart: 1,
       endWhen: { kind: "position", pos: phraseStart(track.grid, first + BARS_PER_PHRASE) + beatSec(track.grid) },
@@ -147,7 +150,14 @@ const phrases: LessonDefinition = {
       ],
       // After phrase 1, no count (it is what is graded); a tap well off every phrase start gets a nudge.
       farTapCue: { fromPos: firstPos + beatSec(track.grid), beats: 2, bars: 2, caption: "Count from the last change" },
-      phrasePreviews: { starts: Array.from({ length: BARS_PER_PHRASE }, (_, index) => phraseStart(track.grid, first + index)), bars: PREVIEW_BARS },
+      phrasePreviews: {
+        starts,
+        end,
+        // Phrase 1 from the Check's own count-in; each later one from 2 bars before it.
+        from: starts.map((start, index) => Math.max(0, index === 0 ? startPos : start - barsSec(track, PREVIEW_LEAD_BARS))),
+        until: Math.min(track.durationSec, end + barsSec(track, 1)),
+        barsPerPhrase: BARS_PER_PHRASE,
+      },
     };
   },
   taskFor: (track, plan, attempt, attemptWindow): LessonTask => {

@@ -387,7 +387,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       if (isTyping(event.target)) return;
       // A held Enter still must not reach a focused button as a click.
       if (event.code === "Enter") event.preventDefault();
-      const key = lessonKey(event, { answering: answering !== null });
+      const key = lessonKey(event, { answering: answering !== null, previewing: session?.previewingPhrase() != null });
       if (key === null) return;
       switch (key.kind) {
         case "check":
@@ -417,6 +417,9 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           if (Number.isInteger(phrase)) session?.previewPhrase(phrase);
           break;
         }
+        case "stop-preview":
+          session?.stopPreview();
+          break;
       }
     };
     window.addEventListener("keydown", onKey);
@@ -502,6 +505,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
                 </div>
               </div>
             ))}
+            {session !== null && definition.questions.some((question) => question.previews === "phrases") ? <PhrasePreviewBar session={session} /> : null}
           </section>
         ) : null}
 
@@ -550,11 +554,12 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 
 /**
  * A question answered by phrase (phrases' breakdown and drop): a "Phrase N" chip per phrase, each with
- * its own ▶ that plays the phrase's first bars again. Hearing it is the skill: no waveform, no levels.
+ * its own ▶ that plays from just before the phrase, across the change into it. The chip of the phrase
+ * heard now is lit (PhrasePreviewBar draws it). Hearing it is the skill: no waveform, no levels.
  */
 function PhraseChips({ question, chosen, session, dispatch }: { readonly question: CheckQuestion; readonly chosen: number | undefined; readonly session: LessonSession; readonly dispatch: (action: { type: "answer"; questionId: string; value: number }) => void }) {
   return Array.from({ length: question.options }, (_, index) => index + 1).map((phrase) => (
-    <span key={phrase} className="phrase-chip">
+    <span key={phrase} className="phrase-chip" data-chip={phrase} data-heard="false">
       <button
         type="button"
         className="btn phrase-chip-play"
@@ -579,6 +584,67 @@ function PhraseChips({ question, chosen, session, dispatch }: { readonly questio
       </button>
     </span>
   ));
+}
+
+/**
+ * Under the phrase chips: the one-line hint, and while a preview plays, what is heard now ("Phrase 4 ·
+ * bar 3 of 8", pulsing as each phrase starts) and ■ Stop. Heard time, not applied, so the marker matches
+ * the ears through output latency. Grading of the taps is over, so a position aid is fine here. Drawn
+ * on animation frames, never React state.
+ */
+function PhrasePreviewBar({ session }: { readonly session: LessonSession }) {
+  const root = useRef<HTMLDivElement>(null);
+  const now = useRef<HTMLSpanElement>(null);
+  const stop = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    let frame = requestAnimationFrame(function draw() {
+      const node = root.current;
+      const words = now.current;
+      if (node !== null && words !== null && stop.current !== null) {
+        const heard = session.previewHeard();
+        const phrase = heard?.phrase ?? null;
+        const playing = String(heard !== null);
+        if (node.dataset["playing"] !== playing) node.dataset["playing"] = playing;
+        stop.current.hidden = heard === null;
+        const text = heard === null ? "" : heard.phrase === null ? "▶ …" : `Phrase ${String(heard.phrase)} · bar ${String(heard.bar)} of 8`;
+        if (words.textContent !== text) words.textContent = text;
+        const heardPhrase = String(phrase ?? 0);
+        if (words.dataset["phrase"] !== heardPhrase) {
+          words.dataset["phrase"] = heardPhrase;
+          // A brief pulse as each phrase starts.
+          if (phrase !== null) words.animate([{ transform: "scale(1.25)", opacity: 0.6 }, { transform: "scale(1)", opacity: 1 }], { duration: 400, easing: "ease-out" });
+        }
+        // Every chip group (the breakdown's and the drop's) lights the phrase heard now.
+        for (const chip of document.querySelectorAll<HTMLElement>(".phrase-chip[data-chip]")) {
+          const lit = String(phrase !== null && chip.dataset["chip"] === String(phrase));
+          if (chip.dataset["heard"] !== lit) chip.dataset["heard"] = lit;
+        }
+      }
+      frame = requestAnimationFrame(draw);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [session]);
+
+  return (
+    <div ref={root} className="phrase-preview-bar" data-testid="phrase-preview" data-playing="false">
+      <span className="lesson-hint">▶ plays from just before that phrase — listen for the change.</span>
+      <span ref={now} className="phrase-preview-now" data-testid="phrase-preview-now" data-phrase="0" aria-hidden="true" />
+      <button
+        ref={stop}
+        type="button"
+        className="btn btn-quiet phrase-preview-stop"
+        hidden
+        onClick={() => {
+          session.stopPreview();
+        }}
+      >
+        ■ Stop
+      </button>
+    </div>
+  );
 }
 
 /** The URL when it is a web link; track metadata comes from manifests, so `javascript:` and the like never become links. */
@@ -668,7 +734,7 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
       const numbers = `1–${String(question.options)}`;
       const keys =
         question.previews === "phrases"
-          ? `${numbers} choose · Shift + ${numbers} or P plays`
+          ? `${numbers} choose · Shift + ${numbers} or P plays · P or Esc stops`
           : question.choices === undefined
             ? numbers
             : question.choices.map((choice, index) => `${String(index + 1)} ${choice.label}`).join(", ");

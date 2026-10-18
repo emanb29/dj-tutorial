@@ -1,6 +1,7 @@
 // The Lesson's own keys, apart from the controller's: Enter = into the Check (again), P = practice,
 // R = Ready, Escape = back to the list, 1–8 = answers. While answering, Shift + 1–8 plays that answer's
-// preview and P the focused one's (phrases' chips). Pure, so the mapping is testable without a DOM.
+// preview and P the focused one's (phrases' chips); while a preview plays, P or Escape stops it (Escape
+// leaves the Lesson only when nothing plays). Pure, so the mapping is testable without a DOM.
 
 export type LessonKey =
   | { readonly kind: "check" }
@@ -12,17 +13,20 @@ export type LessonKey =
   /** Play answer `value`'s preview (Shift + 1–8). */
   | { readonly kind: "preview"; readonly value: number }
   /** Play the preview of the answer with keyboard focus (P while answering). */
-  | { readonly kind: "preview-focused" };
+  | { readonly kind: "preview-focused" }
+  /** Stop the phrase preview playing (P or Escape while one plays). */
+  | { readonly kind: "stop-preview" };
 
 export type KeyPress = Pick<KeyboardEvent, "code" | "repeat" | "ctrlKey" | "metaKey" | "altKey"> & Partial<Pick<KeyboardEvent, "shiftKey">>;
 
 const ANSWER_KEY = /^Digit([1-8])$/;
 
 /** What a key press means in a Lesson; null for keys the Lesson leaves alone (and a held key's repeats). */
-export function lessonKey(press: KeyPress, state: { readonly answering: boolean }): LessonKey | null {
+export function lessonKey(press: KeyPress, state: { readonly answering: boolean; readonly previewing?: boolean }): LessonKey | null {
   // A held key repeats every ~30 ms: each repeat would restart the Check and abandon its recording.
   if (press.repeat || press.ctrlKey || press.metaKey || press.altKey) return null;
   if (press.code === "Enter") return { kind: "check" };
+  if (state.answering && state.previewing === true && (press.code === "KeyP" || press.code === "Escape")) return { kind: "stop-preview" };
   if (press.code === "KeyP") return state.answering ? { kind: "preview-focused" } : { kind: "practice" };
   if (press.code === "KeyR") return { kind: "ready" };
   if (press.code === "Escape") return { kind: "exit" };

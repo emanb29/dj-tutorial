@@ -653,6 +653,38 @@
   border-bottom-right-radius: 0;
 }
 
+/* The phrase heard now in a preview: lit, with a brief pulse as it starts. */
+.phrase-chip[data-heard="true"] .btn {
+  border-color: var(--accent, currentColor);
+  box-shadow: 0 0 0 2px var(--accent, currentColor);
+}
+
+.phrase-chip[data-heard="true"] {
+  animation: phrase-chip-pulse 400ms ease-out;
+}
+
+@keyframes phrase-chip-pulse {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.phrase-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.phrase-preview-now {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .phrase-chip .phrase-chip-pick {
   border-left: 0;
   border-top-left-radius: 0;

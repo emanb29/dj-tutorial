@@ -4,6 +4,7 @@ import { attempt, channel, event, frames, MUSIC, SILENT, taps } from "@checks/te
 import type { Attempt, ControlEvent } from "@shared/attempt.ts";
 import { LESSONS, lessonDefinition, checkSpecFor, lessonUnlocks, unlocksAfter } from "./catalogue.ts";
 import { SYNTHETIC_HOUSE, syntheticLessonTrack } from "./synthetic-track.ts";
+import { phrasePreviewSpan, previewPhraseAt } from "./phrase-preview.ts";
 import { barStart, beatSec, phraseStart } from "./track.ts";
 import type { CheckPlan, LessonDefinition, LessonTrack } from "./types.ts";
 
@@ -258,12 +259,56 @@ describe("phrases", () => {
       { id: "breakdown", caption: "Which phrase was the breakdown? (the kick drops out)", options: 8, previews: "phrases" },
       { id: "drop", caption: "Which phrase was the drop? (the kick slams back)", options: 8, previews: "phrases" },
     ]);
-    // Phrase N's ▶ plays from the tapped window's phrase N start, for 2 bars.
-    expect(plan.phrasePreviews?.bars).toBe(2);
+    // The chips are the tapped window's phrases.
     expect(plan.phrasePreviews?.starts).toHaveLength(8);
     plan.phrasePreviews?.starts.forEach((start, index) => {
       expect(start).toBeCloseTo(phraseStart(track.grid, 2 + index), 9);
     });
+    expect(plan.phrasePreviews?.end).toBeCloseTo(phraseStart(track.grid, 10), 9);
+  });
+
+  // Owner feedback: 2 bars of a phrase alone are unfair; a breakdown or a drop is a change, heard
+  // only against what came before it.
+  it("plays each phrase's ▶ from 2 bars before it, phrase 1 from the count-in, on to a bar past the window", () => {
+    const previews = plan.phrasePreviews;
+    if (previews === undefined) throw new Error("phrases previews its phrases");
+    const bar = 4 * BEAT;
+    // Phrase 1: the Check's own count-in, 2 bars before the first tapped phrase.
+    expect(phrasePreviewSpan(previews, 1)?.fromPos).toBeCloseTo(plan.startPos, 9);
+    expect(phrasePreviewSpan(previews, 1)?.fromPos).toBeCloseTo(firstPhrase - 2 * bar, 9);
+    for (let phrase = 2; phrase <= 8; phrase += 1) {
+      expect(phrasePreviewSpan(previews, phrase)?.fromPos).toBeCloseTo(phraseStart(track.grid, phrase + 1) - 2 * bar, 9);
+    }
+    // Every preview runs on to the window's end plus a bar, unless stopped.
+    for (let phrase = 1; phrase <= 8; phrase += 1) {
+      expect(phrasePreviewSpan(previews, phrase)?.untilPos).toBeCloseTo(phraseStart(track.grid, 10) + bar, 9);
+    }
+    expect(phrasePreviewSpan(previews, 9)).toBeNull();
+    expect(phrasePreviewSpan(previews, 0)).toBeNull();
+  });
+
+  it("starts phrase 1's ▶ as far back as the track allows, and caps at the track's end", () => {
+    const bar = 4 * BEAT;
+    // A grid whose phrase 2 starts a bar in: its count-in would start before the track does.
+    const early = { ...track, grid: { ...track.grid, firstBeat: bar - phraseStart(track.grid, 2) + track.grid.firstBeat } };
+    const earlyPreviews = definition.planCheck(early).phrasePreviews;
+    expect(earlyPreviews?.from[0]).toBe(0);
+    // A track that ends half a bar past the window: the cap is its end.
+    const end = plan.phrasePreviews?.end ?? 0;
+    expect(definition.planCheck({ ...track, durationSec: end + bar / 2 }).phrasePreviews?.until).toBeCloseTo(end + bar / 2, 9);
+  });
+
+  it("names the phrase and bar a preview plays at, none before phrase 1 or past the window", () => {
+    const previews = plan.phrasePreviews;
+    if (previews === undefined) throw new Error("phrases previews its phrases");
+    const bar = 4 * BEAT;
+    expect(previewPhraseAt(previews, firstPhrase - bar)).toBeNull();
+    expect(previewPhraseAt(previews, firstPhrase)).toEqual({ phrase: 1, bar: 1 });
+    expect(previewPhraseAt(previews, firstPhrase + 2.5 * bar)).toEqual({ phrase: 1, bar: 3 });
+    expect(previewPhraseAt(previews, phraseStart(track.grid, 4) - 0.01)).toEqual({ phrase: 2, bar: 8 });
+    expect(previewPhraseAt(previews, phraseStart(track.grid, 4))).toEqual({ phrase: 3, bar: 1 });
+    expect(previewPhraseAt(previews, phraseStart(track.grid, 10) - 0.01)).toEqual({ phrase: 8, bar: 8 });
+    expect(previewPhraseAt(previews, phraseStart(track.grid, 10))).toBeNull();
   });
 
   it("cannot run on a track with no named breakdown and drop", () => {
