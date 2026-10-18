@@ -196,6 +196,8 @@ export class Mixer {
     this.masterBus.connect(this.master);
     this.strips = { A: new ChannelStrip(context, this.cue), B: new ChannelStrip(context, this.cue) };
     for (const strip of Object.values(this.strips)) strip.output.connect(this.masterBus);
+    // Start where the state says (the centre, −3 dB each), as the Checks read it: not at unity.
+    for (const deck of ["A", "B"] as const) this.strips[deck].output.gain.value = crossfaderGain(deck, this.state.crossfader);
   }
 
   snapshot(): Readonly<MixerState> {

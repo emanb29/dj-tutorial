@@ -133,6 +133,32 @@ export function trimKnobFor(decibels: number): number {
 }
 
 /**
+ * Where a set-up puts a track's sample peak, dBFS (measured on the file, before the mixer). Originals
+ * are mastered to about −8.6 LUFS and peak near −0.5 dBFS decoded, and the isolator's phase shift
+ * raises a limited master's peaks by up to about 5.5 dB: at unity a channel meter reads +4 dBFS. From
+ * −9 the channel reads about −3.5 dBFS, and two decks summed at the crossfader's centre (−3 dB each)
+ * stay out of the red even in phase.
+ */
+export const SET_UP_PEAK_DB = -9;
+/** The peak a track is taken to have when it was not measured: the synthetic groove's. */
+export const UNMEASURED_PEAK_DB = -6;
+
+/**
+ * The trim, dB, a set-up gives both decks: brings the louder of the Lesson's tracks (this one and its
+ * partner) down to `SET_UP_PEAK_DB`; never a boost, so a quiet track stays at unity. One value for
+ * both decks keeps the tracks' own loudness difference, which level-match grades.
+ */
+export function setUpTrimDb(track: LessonTrack): number {
+  const peaks = [track.peakDbfs ?? UNMEASURED_PEAK_DB, ...(track.partner === undefined ? [] : [track.partner.peakDbfs ?? UNMEASURED_PEAK_DB])];
+  return Math.min(0, SET_UP_PEAK_DB - Math.max(...peaks));
+}
+
+/** `setUpTrimDb` as the trim knob: what every Lesson set-up turns TRIM to, except where trimming is the point (gain-staging). */
+export function setUpTrim(track: LessonTrack): number {
+  return trimKnobFor(setUpTrimDb(track));
+}
+
+/**
  * A piece of a Lesson track as a track of its own (the cue-point Check loads three in turn). Its grid is
  * the parent's, shifted so position 0 is `fromSec`; it has no phrases or sections.
  */

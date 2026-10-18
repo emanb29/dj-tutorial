@@ -18,6 +18,7 @@ import {
   LESSON_GRADING,
   practiceDecksFor,
   practiceLoopFor,
+  setUpTrim,
   sliceTrack,
   tempoPercentApart,
   trackOnDeck,
@@ -439,7 +440,7 @@ export class LessonSession {
     this.send({ control: "seek", deck, value: setup.pos });
     this.send({ control: "channel-fader", deck, value: setup.fader });
     this.faderOpen[deck] = setup.fader > FADER_DOWN;
-    if (setup.trim !== undefined) this.send({ control: "trim", deck, value: setup.trim });
+    this.send({ control: "trim", deck, value: setup.trim ?? setUpTrim(this.track) });
     if (setup.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck, value: setup.headphoneCue });
     this.setDeckControls(deck, setup);
     if (setup.cuePoint === true && this.engine.deckState(deck).cuePointSec !== setup.pos) {
@@ -626,6 +627,7 @@ export class LessonSession {
     const setup = checkDecksFor(plan).A;
     this.settingUpWith(() => {
       this.send({ control: "channel-fader", deck: "A", value: setup.fader });
+      this.send({ control: "trim", deck: "A", value: setup.trim ?? setUpTrim(this.track) });
       if (setup.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck: "A", value: setup.headphoneCue });
     });
     return true;

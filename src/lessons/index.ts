@@ -60,5 +60,5 @@ export { BY_EAR_LESSONS, COVERED_DISPLAYS, describeByEar, kickRun } from "./cata
 export { drillReveals, drillStep, livePhaseMs, startDrill, tempoPercentApart, type DrillAction, type DrillInput, type DrillReading, type DrillState, type DrillStep, type RoundStart } from "./drill.ts";
 export { EQ_CENTRED_DB, EQ_CUT_DB, FILTER_CENTRED, initialLessonState, lessonReducer, TIP_AFTER_MISSES, type LessonEvent, type LessonPhase, type LessonState } from "./runtime.ts";
 export { SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, SYNTHETIC_TRACK_ID, synthesizeHouse, syntheticLessonTrack, type SyntheticLayout } from "./synthetic-track.ts";
-export { barStart, beatSec, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, peakDbfsOf, phraseStart, sliceTrack, trackOnDeck } from "./track.ts";
+export { barStart, beatSec, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, peakDbfsOf, phraseStart, SET_UP_PEAK_DB, setUpTrim, setUpTrimDb, sliceTrack, trackOnDeck } from "./track.ts";
 export type * from "./types.ts";

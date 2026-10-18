@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EngineCommand } from "./commands.ts";
-import { channelRmsDb, engineWithTone, expectOk, KEYBOARD, sineRmsDb } from "./offline-test-support.ts";
+import { createAudioEngine } from "./engine.ts";
+import { channelRmsDb, engineWithTone, expectOk, KEYBOARD, offlineContext, sineRmsDb, toneBuffer } from "./offline-test-support.ts";
 
 const PEAK = 0.5;
 const SECONDS = 0.6;
@@ -68,6 +69,15 @@ describe("channel strip", () => {
 });
 
 describe("crossfader (the shared curve)", () => {
+  it("starts at the centre: each deck at −3 dB before the crossfader is touched, as the Checks read it", async () => {
+    const context = offlineContext(SECONDS);
+    const engine = await createAudioEngine({ context });
+    expectOk(await engine.load("A", toneBuffer(context, { frequency: 1000, peak: PEAK, seconds: SECONDS + 1 }), { trackId: "tone", grid: null }));
+    expectOk(engine.command({ control: "play", deck: "A" }, KEYBOARD));
+    const rendered = await context.startRendering();
+    expect(channelRmsDb(rendered, 0, 0.2, SECONDS) - sineRmsDb(PEAK)).toBeCloseTo(-3.01, 1);
+  });
+
   it("leaves deck A at unity on its side and at −3 dB at the centre (constant power)", async () => {
     expect(await gainDb(1000, [{ control: "crossfader", value: 0 }])).toBeCloseTo(0, 1);
     expect(await gainDb(1000, [{ control: "crossfader", value: 0.5 }])).toBeCloseTo(-3.01, 1);

@@ -7,7 +7,7 @@ import { lessonById } from "@shared/catalogue.ts";
 import { LESSONS, type Grading } from "./catalogue.ts";
 import { heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
 import { ancestorsOf, type PlacementTaskId } from "./placement.ts";
-import { barStart, beatSec, heardTimeOf, cuedAt, phraseOf, phraseStart, trimKnobFor } from "./track.ts";
+import { barStart, beatSec, heardTimeOf, cuedAt, phraseOf, phraseStart, setUpTrimDb, trimKnobFor } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
@@ -24,7 +24,7 @@ const NUDGE_OFFSET_BEATS = 0.2;
 /** nudge-phase: bars of listening before phase grading starts, then converge (≤ 4) and hold (4). */
 const NUDGE_LEAD_BARS = 4;
 const NUDGE_BARS = NUDGE_LEAD_BARS + 4 + 4 + 1;
-/** cut-on-phrase: B waits this many beats before a downbeat with no cue point, and 6 dB low. */
+/** cut-on-phrase: B waits this many beats before a downbeat with no cue point, and 6 dB under A's set-up trim. */
 const CUT_B_LEAD_BEATS = 1.37;
 const CUT_B_TRIM_DB = -6;
 const CUT_LEAD_BARS = 16;
@@ -108,8 +108,8 @@ function task(content: TaskContent): PlacementTaskDefinition {
 /** A runs from 8 bars before the entry phrase; B waits cued at `bPos`, its tempo `tempoPercent` off. */
 function blendDecks(track: LessonTrack, bPos: number, tempoPercent: number): DeckSetups {
   return {
-    A: { pos: phraseStart(track.grid, entryPhrase(track)) - barsSec(track, HOOK_BARS), fader: 1, play: true, trim: 0, headphoneCue: false, tempoPercent: 0 },
-    B: { pos: bPos, fader: 0, play: false, trim: 0, headphoneCue: false, cuePoint: true, tempoPercent },
+    A: { pos: phraseStart(track.grid, entryPhrase(track)) - barsSec(track, HOOK_BARS), fader: 1, play: true, headphoneCue: false, tempoPercent: 0 },
+    B: { pos: bPos, fader: 0, play: false, headphoneCue: false, cuePoint: true, tempoPercent },
   };
 }
 
@@ -119,7 +119,7 @@ function blendPlan(track: LessonTrack, decks: DeckSetups, maxBars: number, capti
     startPos: decks.A.pos,
     autoPlay: true,
     faderAtStart: decks.A.fader,
-    deckA: { trim: 0, headphoneCue: false },
+    deckA: { headphoneCue: false },
     ...(decks.B === undefined ? {} : { deckB: decks.B }),
     endWhen: { kind: "faded-out-then", deck: "A", bars: AFTER_OUT_BARS },
     timeoutSec: barsSec(track, maxBars),
@@ -176,8 +176,8 @@ const syncBlend = task({
 function cutDecks(track: LessonTrack): DeckSetups {
   const cutPos = phraseStart(track.grid, entryPhrase(track));
   return {
-    A: { pos: Math.max(0, cutPos - barsSec(track, CUT_LEAD_BARS)), fader: 1, play: true, trim: 0, headphoneCue: false },
-    B: { pos: phraseStart(track.grid, steadyPhrase(track)) - CUT_B_LEAD_BEATS * beatSec(track.grid), fader: 0, play: false, trim: trimKnobFor(CUT_B_TRIM_DB), headphoneCue: false },
+    A: { pos: Math.max(0, cutPos - barsSec(track, CUT_LEAD_BARS)), fader: 1, play: true, headphoneCue: false },
+    B: { pos: phraseStart(track.grid, steadyPhrase(track)) - CUT_B_LEAD_BEATS * beatSec(track.grid), fader: 0, play: false, trim: trimKnobFor(setUpTrimDb(track) + CUT_B_TRIM_DB), headphoneCue: false },
   };
 }
 const CUT_CAPTION = "Cue B by ear, then cut on the phrase.";
@@ -198,7 +198,7 @@ const cutOnPhrase = task({
       startPos: decks.A.pos,
       autoPlay: true,
       faderAtStart: 1,
-      deckA: { trim: 0, headphoneCue: false },
+      deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: decks.B }),
       endWhen: { kind: "after", sec: lengthSec },
       timeoutSec: lengthSec + TIMEOUT_SLACK_SEC,

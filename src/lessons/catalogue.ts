@@ -5,7 +5,7 @@ import { EQ_FILTER_LESSONS, type EqFilterLessonId } from "./catalogue-eq-filter.
 import { BY_EAR_LESSONS, type ByEarLessonId } from "./catalogue-by-ear.ts";
 import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
 import { barsSec, fromOwnCue, heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
-import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor } from "./track.ts";
+import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor, UNMEASURED_PEAK_DB } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
@@ -159,8 +159,6 @@ export const GAIN_ZONE_DB: readonly [number, number] = [-6, -0.1];
 /** Where the gain-staging Lesson starts each deck: A clipping, B too quiet. */
 const HOT_PEAK_DB = 3;
 const QUIET_PEAK_DB = -15;
-/** The synthetic groove's peak, used when a track's own peak is not known. */
-const DEFAULT_PEAK_DB = -6;
 /** gain-staging: time to set both trims, and the bars held after the second Ready (the timeout adds them). */
 const GAIN_SETUP_SEC = 60;
 const GAIN_HOLD_BARS = 8;
@@ -174,7 +172,7 @@ const CUT_LEAD_BARS = 6;
 const CUT_TAIL_BARS = 5;
 
 const steadyBar = (track: LessonTrack) => (steadyPhrase(track) - 1) * BARS_PER_PHRASE + 1;
-const trimFor = (track: LessonTrack, targetPeakDb: number) => trimKnobFor(targetPeakDb - (track.peakDbfs ?? DEFAULT_PEAK_DB));
+const trimFor = (track: LessonTrack, targetPeakDb: number) => trimKnobFor(targetPeakDb - (track.peakDbfs ?? UNMEASURED_PEAK_DB));
 const tooShort = (track: LessonTrack) => (track.phraseStarts.length < 4 ? ["The track is too short for a steady 16 bars."] : []);
 
 /** Both decks off the zone; in the hook and practice B waits paused for the Learner's PLAY (`,`). */
@@ -331,8 +329,8 @@ const cuePoint: LessonDefinition = {
 function cutDecks(track: LessonTrack): DeckSetups {
   const cutPos = phraseStart(track.grid, steadyPhrase(track) + 1);
   return {
-    A: { pos: cutPos - barsSec(track, CUT_LEAD_BARS), fader: 1, play: true, trim: 0 },
-    B: { pos: phraseStart(track.grid, steadyPhrase(track)), fader: 0, play: false, trim: 0, cuePoint: true },
+    A: { pos: cutPos - barsSec(track, CUT_LEAD_BARS), fader: 1, play: true },
+    B: { pos: phraseStart(track.grid, steadyPhrase(track)), fader: 0, play: false, cuePoint: true },
   };
 }
 
@@ -360,7 +358,7 @@ const cutOnPhrase: LessonDefinition = {
       startPos: decks.A.pos,
       autoPlay: true,
       faderAtStart: 1,
-      deckA: { trim: 0, headphoneCue: false },
+      deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       endWhen: { kind: "after", sec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) },
       timeoutSec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) + 5,

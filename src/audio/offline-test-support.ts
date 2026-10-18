@@ -116,7 +116,10 @@ export function send(engine: AudioEngine, ...commands: EngineCommand[]): void {
   for (const command of commands) expectOk(engine.command(command, KEYBOARD));
 }
 
-/** An engine on a fresh offline context, with deck A loaded with a tone and playing from time 0. */
+/**
+ * An engine on a fresh offline context, with deck A loaded with a tone and playing from time 0, the
+ * crossfader on A's side (A at unity on the master; the mixer starts at the centre, −3 dB).
+ */
 export async function engineWithTone(
   seconds: number,
   tone: { frequency: number; peak: number; rightFrequency?: number },
@@ -126,7 +129,7 @@ export async function engineWithTone(
   const engine = await createAudioEngine({ context, ...options });
   const loaded = await engine.load("A", toneBuffer(context, { ...tone, seconds: seconds + 1 }), { trackId: "tone", grid: null });
   if (!loaded.ok) throw new Error(`Loading the test tone failed: ${loaded.error.kind}`);
-  send(engine, { control: "play", deck: "A" });
+  send(engine, { control: "crossfader", value: 0 }, { control: "play", deck: "A" });
   return { context, engine };
 }
 

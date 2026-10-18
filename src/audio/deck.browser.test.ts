@@ -129,7 +129,7 @@ describe("deck transport", () => {
     const context = offlineContext(1);
     const engine = await createAudioEngine({ context });
     await engine.load("A", toneBuffer(context, { frequency: 1000, peak: 0.5, seconds: 3 }), { trackId: "t", grid: null });
-    send(engine, { control: "deck-cue", deck: "A", value: true });
+    send(engine, { control: "crossfader", value: 0 }, { control: "deck-cue", deck: "A", value: true });
     const releasedAt = at(context, 0.4, () => {
       send(engine, { control: "deck-cue", deck: "A", value: false });
     });
@@ -245,6 +245,7 @@ describe("tempo", () => {
     await engine.load("A", toneBuffer(context, { frequency: 1000, peak: 0.5, seconds: 3 }), { trackId: "t", grid: null });
     send(
       engine,
+      { control: "crossfader", value: 0 },
       { control: "master-tempo", deck: "A", value: true },
       { control: "tempo-range", deck: "A", value: 6 },
       { control: "tempo", deck: "A", value: 1 },

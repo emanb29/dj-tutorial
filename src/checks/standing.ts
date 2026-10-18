@@ -1,6 +1,6 @@
 // Standing criteria (check-design §3): once their teaching Lesson is passed, every later Check
 // measures them, when its task contains their situation.
-import type { ControlId, CtxSpan, DeckId, LessonId } from "@shared/attempt.ts";
+import type { ControlId, CtxSpan, CtxTime, DeckId, LessonId, MeterFrame } from "@shared/attempt.ts";
 import type { CriterionId, CriterionResult, Severity, StandingId } from "@shared/check-result.ts";
 import { barSeconds, framesWhere, loadedDeck, type CheckContext, type Situations } from "./context.ts";
 import { judge } from "./criterion.ts";
@@ -11,7 +11,7 @@ import { CUED_BEFORE_S } from "./lessons/cut-on-phrase.ts";
 import { CLIP_DBFS } from "./lessons/deck-basics.ts";
 import { EQ_BANDS } from "./lessons/eq-basics.ts";
 import { controlsReset, drift, oneBass, overcorrect, syncKept } from "./standing-mixing.ts";
-import { controlEvents, controlValueAt, playingFrom } from "./timeline.ts";
+import { controlEvents, controlValueAt, firstPlayStart, isPlaying, playingFrom } from "./timeline.ts";
 
 /** Severity before `final-mix` and in it; `null` where the criterion does not apply. */
 const SEVERITY: Readonly<Record<StandingId, readonly [Severity | null, Severity | null]>> = {
@@ -55,21 +55,82 @@ interface StandingDefinition {
   readonly measure: (context: CheckContext, severity: Severity, passed: ReadonlySet<LessonId>) => CriterionResult;
 }
 
+/** no-clip's grace: judging starts at the Learner's first move on a meter, or this long after the audio starts. */
+const NO_CLIP_GRACE_BARS = 1;
+/** A bar when no deck has a grid, as at 120 BPM. */
+const FALLBACK_BAR_S = 2;
+/**
+ * Lessons whose set-up starts in the red on purpose (gain-staging: deck A hot). A meter is judged only
+ * once the Learner has moved a control and brought it out of the red: the Lesson's own criteria grade
+ * the clip they were handed.
+ */
+const STARTS_IN_THE_RED: ReadonlySet<LessonId> = new Set(["gain-staging"]);
+/** Controls that change what a channel meter (pre-fader) reads, or whether the channel reaches the master. */
+const CHANNEL_LEVEL_CONTROLS: readonly ControlId[] = ["trim", "eqHigh", "eqMid", "eqLow", "filter", "channelFader"];
+const MASTER_LEVEL_CONTROLS: readonly ControlId[] = [...CHANNEL_LEVEL_CONTROLS, "crossfader"];
+
+/** When the Check's audio starts: the first time at or after `window.from` that any deck plays; null if none does. */
+function audioStart(context: CheckContext): CtxTime | null {
+  const { attempt, window } = context;
+  const starts = DECKS.flatMap((deck) => {
+    const playhead = attempt.decks[deck]?.playhead;
+    if (playhead === undefined) return [];
+    const start = isPlaying(playhead, window.from) ? window.from : firstPlayStart(playhead, window.from);
+    return start === null || start >= window.to ? [] : [start];
+  });
+  return starts.length === 0 ? null : Math.min(...starts);
+}
+
+/**
+ * When no-clip starts judging a meter (the master, or one deck's channel): the set-up's own level is not
+ * the Learner's doing. From their first move on it (that channel's level controls; any channel's, or the
+ * crossfader, for the master), or a bar after the audio starts, whichever is earlier; strict from then
+ * on. In a Lesson that starts in the red on purpose, from the first frame out of the red after their
+ * first move instead. Null: never.
+ */
+export function noClipJudgedFrom(context: CheckContext, deck?: DeckId): CtxTime | null {
+  const { attempt, window } = context;
+  const controls = deck === undefined ? MASTER_LEVEL_CONTROLS : CHANNEL_LEVEL_CONTROLS;
+  const firstMove = attempt.events.find(
+    (event) =>
+      event.byEngine !== true &&
+      controls.includes(event.control) &&
+      (deck === undefined || event.deck === deck) &&
+      event.ctx >= window.from - TIME_EPSILON &&
+      event.ctx < window.to,
+  )?.ctx;
+  if (STARTS_IN_THE_RED.has(context.lessonId)) {
+    if (firstMove === undefined) return null;
+    const frames = deck === undefined ? attempt.meters.master : attempt.meters[deck];
+    return framesIn(frames, { from: firstMove, to: window.to }).find((frame) => frame.samplePeakDb <= CLIP_DBFS)?.ctx ?? null;
+  }
+  const start = audioStart(context);
+  if (start === null) return firstMove ?? null;
+  const loaded = loadedDeck(context, OUTGOING) ?? loadedDeck(context, INCOMING);
+  const graceEnd = start + NO_CLIP_GRACE_BARS * (loaded === null ? FALLBACK_BAR_S : barSeconds(loaded, start));
+  return Math.min(firstMove ?? Number.POSITIVE_INFINITY, graceEnd);
+}
+
 function noClip(context: CheckContext, severity: Severity): CriterionResult {
   const { attempt, window } = context;
-  const clips = (frames: Parameters<typeof framesWhere>[0], deck?: DeckId) =>
-    framesWhere(frames, window, (frame) => frame.samplePeakDb > CLIP_DBFS && (deck === undefined || isAudible(attempt, deck, frame.ctx)), deck === undefined ? "master clip" : `deck ${deck} clip`);
-  const peaks = [
-    ...framesIn(attempt.meters.master, window),
-    ...DECKS.flatMap((deck) => framesIn(attempt.meters[deck], window).filter((frame) => isAudible(attempt, deck, frame.ctx))),
-  ].map((frame) => frame.samplePeakDb);
+  const meters = [undefined, ...DECKS].map((deck) => {
+    const from = noClipJudgedFrom(context, deck);
+    const span: CtxSpan = { from: from === null ? window.to : Math.max(window.from, from), to: window.to };
+    const frames = deck === undefined ? attempt.meters.master : attempt.meters[deck];
+    const counts = (frame: MeterFrame) => deck === undefined || isAudible(attempt, deck, frame.ctx);
+    return {
+      peaks: framesIn(frames, span).filter(counts).map((frame) => frame.samplePeakDb),
+      evidence: framesWhere(frames, span, (frame) => frame.samplePeakDb > CLIP_DBFS && counts(frame), deck === undefined ? "master clip" : `deck ${deck} clip`),
+    };
+  });
+  const peaks = meters.flatMap((meter) => meter.peaks);
   return judge({
     id: "standing.no-clip",
     severity,
     unit: "dBFS",
     threshold: { op: "<=", value: CLIP_DBFS, unit: "dBFS" },
     measured: peaks.length === 0 ? null : peaks.reduce((highest, peak) => Math.max(highest, peak), -Infinity),
-    evidence: [clips(attempt.meters.master), ...DECKS.map((deck) => clips(attempt.meters[deck], deck))].flat(),
+    evidence: meters.flatMap((meter) => meter.evidence),
   });
 }
 

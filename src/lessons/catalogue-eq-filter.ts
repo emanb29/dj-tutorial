@@ -57,9 +57,9 @@ function blendDecks(track: LessonTrack): DeckSetups {
   const { leadPos, cueB } = blendPositions(track);
   const centred = { eqCentred: true, filterCentred: true } as const;
   return {
-    A: { pos: leadPos, fader: 1, play: true, trim: 0, sync: false, tempoPercent: 0, ...centred },
+    A: { pos: leadPos, fader: 1, play: true, sync: false, tempoPercent: 0, ...centred },
     // SYNC is on already: these Lessons are about the EQ and the filter, not the tempo.
-    B: { pos: cueB, fader: 0, play: false, trim: 0, cuePoint: true, sync: true, ...centred },
+    B: { pos: cueB, fader: 0, play: false, cuePoint: true, sync: true, ...centred },
     crossfader: 0.5,
   };
 }
@@ -72,7 +72,7 @@ function blendPlan(track: LessonTrack, maxBars: number, cues: CheckPlan["cues"])
     startPos: A.pos,
     autoPlay: true,
     faderAtStart: A.fader,
-    deckA: { trim: 0, headphoneCue: false, sync: false, tempoPercent: 0, eqCentred: true, filterCentred: true },
+    deckA: { headphoneCue: false, sync: false, tempoPercent: 0, eqCentred: true, filterCentred: true },
     ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
     crossfader: 0.5,
     endWhen: { kind: "faded-out-then", deck: "A", bars: TAIL_BARS },

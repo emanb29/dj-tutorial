@@ -280,9 +280,9 @@ function rideDecks(track: LessonTrack, apartPercent: number): DeckSetups {
 function blendCheckDecks(track: LessonTrack, apartPercent: number): DeckSetups {
   const { posA, posB } = byEarPositions(track, 4);
   return {
-    A: { pos: posA, fader: 1, play: true, trim: 0, headphoneCue: false, eqCentred: true, ...tempoSetup(0) },
+    A: { pos: posA, fader: 1, play: true, headphoneCue: false, eqCentred: true, ...tempoSetup(0) },
     // B starts with A, in the headphones only, and with no bass: match it there, then blend it in.
-    B: { pos: posB, fader: 0, play: true, trim: 0, headphoneCue: true, eqCentred: true, lowCut: true, ...tempoSetup(apartFader(track, apartPercent)) },
+    B: { pos: posB, fader: 0, play: true, headphoneCue: true, eqCentred: true, lowCut: true, ...tempoSetup(apartFader(track, apartPercent)) },
   };
 }
 
@@ -317,7 +317,7 @@ const blendByEar: LessonDefinition = {
       startPos: pos,
       autoPlay: true,
       faderAtStart: 1,
-      deckA: { trim: 0, headphoneCue: false, eqCentred: true, ...tempoSetup(0) },
+      deckA: { headphoneCue: false, eqCentred: true, ...tempoSetup(0) },
       ...(decks.B === undefined ? {} : { deckB: decks.B }),
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
       timeoutSec: barsSec(track, BLEND_MATCH_BARS + BLEND_BARS + BLEND_TAIL_BARS + 8) + 15,

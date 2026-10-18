@@ -17,9 +17,9 @@ const partner: LessonTrack = { ...syntheticLessonTrack(SYNTHETIC_PARTNER), peakD
 const track: LessonTrack = { ...syntheticLessonTrack(SYNTHETIC_HOUSE), peakDbfs: -6, partner };
 const BEAT = beatSec(track.grid);
 const BAR = 4 * BEAT;
-/** Every attempt below: the Check's own cue is heard at CUED; the recorder started a second before. */
+/** Every attempt below: the Check's own cue is heard at CUED; the recorder started 3 s (over a bar, past no-clip's grace) before. */
 const CUED = 100;
-const RECORDER_START = CUED - 1;
+const RECORDER_START = CUED - 3;
 /** The practice, still heard until the cue, peaked at 0 dBFS: a clip that must not fail the Check. */
 const PRACTICE_CLIP: FrameLevels = { peak: 0, momentary: -12 };
 const FIRST_SEVEN: readonly LessonId[] = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase"];

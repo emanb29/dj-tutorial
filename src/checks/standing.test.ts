@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { LESSON_IDS, type Attempt, type LessonId } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { runCheck } from "./run-check.ts";
-import { standingSeverity } from "./standing.ts";
+import { noClipJudgedFrom, standingSeverity } from "./standing.ts";
 import {
   BAR,
   BEAT,
@@ -120,6 +120,68 @@ describe("standing.no-clip (fail)", () => {
     );
 
     expect(byId(result, "standing.no-clip")?.status).toBe("met");
+  });
+});
+
+describe("standing.no-clip judges only what the Learner is responsible for", () => {
+  // cutScenario: A plays from 0 s at 120 BPM (a bar is 2 s); the Learner's first level move is B's fader at 32 s.
+  const masterClipAt = (from: number, to: number) => (t: number) => (t >= from && t < to ? { peak: 0.5, momentary: -12 } : null);
+
+  it("forgives a clip in the set-up's first bar, before the Learner has moved anything", () => {
+    expect(byId(coldCut({ masterOverride: masterClipAt(0, 1.9) }), "standing.no-clip")).toMatchObject({ status: "met" });
+  });
+
+  it("is strict a bar after the audio starts, though the Learner has not moved anything yet", () => {
+    expect(byId(coldCut({ masterOverride: masterClipAt(0, 2.1) }), "standing.no-clip")).toMatchObject({ status: "notMet", severity: "fail" });
+    expect(byId(coldCut({ masterOverride: masterClipAt(10, 10.1) }), "standing.no-clip")).toMatchObject({ status: "notMet" });
+  });
+
+  it("is strict from the Learner's first move, inside the first bar too", () => {
+    const moved = coldCut({ masterOverride: masterClipAt(0.5, 0.6), extraEvents: [event(0.4, "trim", 0.2, "A")] });
+    expect(byId(moved, "standing.no-clip")).toMatchObject({ status: "notMet" });
+    expect(byId(moved, "standing.no-clip")?.evidence).toEqual([expect.objectContaining({ label: "master clip" })]);
+  });
+
+  it("times the grace from when the audio starts, not from the window's start", () => {
+    const base = cutScenario({ masterOverride: masterClipAt(5, 6.9) });
+    const lateStart: Attempt = { ...base, decks: { ...base.decks, A: { trackId: "track-a", playhead: { segments: [{ fromCtx: 0, pos: 0, rate: 0 }, ...playing(5)] } } } };
+    const result = graded(runCheck(spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW, { mode: "cold", passedLessons: passedBefore(LESSON_IDS, "tempo-fader") }), lateStart));
+    expect(byId(result, "standing.no-clip")).toMatchObject({ status: "met" });
+  });
+
+  it("starts a channel's judging at a move on that channel, the master's at a move on any", () => {
+    const context = (events: Attempt["events"]) => ({
+      spec: spec({ lessonId: "cut-on-phrase" }, CUT_WINDOW),
+      attempt: cutScenario({ extraEvents: events }),
+      window: CUT_WINDOW,
+      lessonId: "cut-on-phrase" as const,
+    });
+    const trimB = context([event(0.5, "trim", -0.2, "B")]);
+    expect(noClipJudgedFrom(trimB, "B")).toBeCloseTo(0.5);
+    expect(noClipJudgedFrom(trimB)).toBeCloseTo(0.5);
+    expect(noClipJudgedFrom(trimB, "A")).toBeCloseTo(BAR);
+    // CUE and taps change no level.
+    expect(noClipJudgedFrom(context([event(0.5, "cueMonitor", 1, "A"), event(0.6, "tap", 1)]), "A")).toBeCloseTo(BAR);
+    expect(noClipJudgedFrom(context([event(0.7, "crossfader", 0.6)]))).toBeCloseTo(0.7);
+  });
+
+  it("in gain-staging, judges a meter only once the Learner has brought it out of the deliberate red", () => {
+    const hotUntil = 6;
+    const gainAttempt = attempt({
+      decks: { A: { trackId: "track-a", playhead: { segments: playing(0) } }, B: { trackId: "track-a", playhead: { segments: playing(0) } } },
+      events: [event(4, "trim", 0.8, "A"), event(5, "trim", 0.6, "A")],
+      meters: {
+        master: frames(0, 20, (t) => (t < hotUntil ? { peak: 1, momentary: -10 } : MUSIC)),
+        A: frames(0, 20, (t) => (t < hotUntil ? { peak: 3, momentary: -8 } : MUSIC)),
+        B: frames(0, 20, () => ({ peak: -15, momentary: -26 })),
+      },
+    });
+    const context = { spec: spec({ lessonId: "gain-staging", decks: ["A", "B"] }, { from: 0, to: 20 }), attempt: gainAttempt, window: { from: 0, to: 20 }, lessonId: "gain-staging" as const };
+    // Hot for 6 s, turned down from 4 s: judged from the first frame out of the red, not a bar in.
+    expect(noClipJudgedFrom(context, "A")).toBeCloseTo(hotUntil);
+    expect(noClipJudgedFrom(context)).toBeCloseTo(hotUntil);
+    // B's trim never moved: its set-up level is not judged.
+    expect(noClipJudgedFrom(context, "B")).toBeNull();
   });
 });
 

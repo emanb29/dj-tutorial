@@ -199,8 +199,8 @@ const tempoReset = (again: boolean) => (again ? {} : { sync: false, tempoPercent
 function syncDecks(track: LessonTrack, again = false): DeckSetups {
   const { leadPos, cueB } = blendPositions(track);
   return {
-    A: { pos: leadPos, fader: 1, play: true, trim: 0, ...tempoReset(again) },
-    B: { pos: cueB, fader: 0, play: false, trim: 0, cuePoint: true, ...tempoReset(again) },
+    A: { pos: leadPos, fader: 1, play: true, ...tempoReset(again) },
+    B: { pos: cueB, fader: 0, play: false, cuePoint: true, ...tempoReset(again) },
   };
 }
 
@@ -236,7 +236,7 @@ const syncBlend: LessonDefinition = {
       startPos: leadPos,
       autoPlay: true,
       faderAtStart: 1,
-      deckA: { trim: 0, headphoneCue: false, sync: false, tempoPercent: 0 },
+      deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
       timeoutSec: barsSec(track, BLEND_LEAD_BARS + BLEND_MAX_BARS + 4) + 5,
@@ -271,9 +271,9 @@ const XF_TAIL_BARS = 4;
 function crossfaderDecks(track: LessonTrack, again = false): DeckSetups {
   const { leadPos, cueB } = blendPositions(track);
   return {
-    A: { pos: leadPos, fader: 1, play: true, trim: 0, ...tempoReset(again) },
+    A: { pos: leadPos, fader: 1, play: true, ...tempoReset(again) },
     // SYNC is on already: this Lesson is about the crossfader, not the tempo.
-    B: { pos: cueB, fader: 1, play: false, trim: 0, cuePoint: true, ...(again ? {} : { sync: true }) },
+    B: { pos: cueB, fader: 1, play: false, cuePoint: true, ...(again ? {} : { sync: true }) },
     crossfader: 0,
   };
 }
@@ -311,7 +311,7 @@ const crossfaderLesson: LessonDefinition = {
       startPos: leadPos,
       autoPlay: true,
       faderAtStart: 1,
-      deckA: { trim: 0, headphoneCue: false, sync: false, tempoPercent: 0 },
+      deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       crossfader: 0,
       endWhen: { kind: "position", pos: cutPos + barsSec(track, XF_TAIL_BARS) + beat },
@@ -354,7 +354,7 @@ const EQ_TAIL_BARS = 2;
 const eqPhrase = (track: LessonTrack) => fullGroovePhrase(track, 2) ?? steadyPhrase(track);
 
 function eqDecks(track: LessonTrack): DeckSetups {
-  return { A: { pos: phraseStart(track.grid, eqPhrase(track)) - barsSec(track, EQ_LEAD_BARS), fader: 1, play: true, trim: 0, eqCentred: true } };
+  return { A: { pos: phraseStart(track.grid, eqPhrase(track)) - barsSec(track, EQ_LEAD_BARS), fader: 1, play: true, eqCentred: true } };
 }
 
 const eqBasics: LessonDefinition = {
@@ -391,7 +391,7 @@ const eqBasics: LessonDefinition = {
       startPos: decks.A.pos,
       autoPlay: true,
       faderAtStart: 1,
-      deckA: { trim: 0, eqCentred: true },
+      deckA: { eqCentred: true },
       endWhen: { kind: "position", pos: backPos + barsSec(track, EQ_TAIL_BARS) + beat },
       timeoutSec: barsSec(track, EQ_LEAD_BARS + 8 + EQ_TAIL_BARS) + 5,
       cues: [

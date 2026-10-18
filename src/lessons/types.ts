@@ -168,7 +168,10 @@ export interface DeckSetup {
   readonly pos: number;
   readonly fader: number;
   readonly play: boolean;
-  /** Trim knob, −1…1 (0 is unity). */
+  /**
+   * Trim knob, −1…1 (0 is unity). Absent: the set-up level for the Lesson's tracks (`setUpTrim`), so
+   * no set-up starts in the red; only a Lesson about trimming (gain-staging) sets it.
+   */
   readonly trim?: number;
   readonly headphoneCue?: boolean;
   /** Set the deck's cue point at `pos` (the deck is left paused there). */

@@ -8,7 +8,7 @@ import { checkSpecFor, unlocksAfter } from "./catalogue.ts";
 import { PLACEMENT_TASK_IDS } from "./placement.ts";
 import { placementControls, placementTask, placementTrackProblems } from "./placement-tasks.ts";
 import { SYNTHETIC_HOUSE, syntheticLessonTrack } from "./synthetic-track.ts";
-import { barStart, beatSec, phraseStart } from "./track.ts";
+import { barStart, beatSec, phraseStart, setUpTrimDb, trimKnobFor } from "./track.ts";
 import type { CheckPlan, LessonTrack } from "./types.ts";
 
 const track: LessonTrack = { ...syntheticLessonTrack(SYNTHETIC_HOUSE), peakDbfs: -6 };
@@ -76,10 +76,10 @@ describe("Placement task setups", () => {
     const bass = placementTask("bass-swap").planCheck(track).deckB;
     expect(Math.abs(bass?.tempoPercent ?? 0)).toBeGreaterThanOrEqual(1);
     expect(Math.abs(bass?.tempoPercent ?? 0)).toBeLessThanOrEqual(3);
-    // cut-on-phrase: no cue point, off the downbeat, 6 dB low, so cue-point and gain-staging are measured.
+    // cut-on-phrase: no cue point, off the downbeat, 6 dB under A's set-up trim, so cue-point and gain-staging are measured.
     const cut = placementTask("cut-on-phrase").planCheck(track).deckB;
     expect(cut?.cuePoint).toBeUndefined();
-    expect(cut?.trim).toBeCloseTo(-0.25);
+    expect(cut?.trim).toBeCloseTo(trimKnobFor(setUpTrimDb(track) - 6));
     expect(((cut?.pos ?? 0) / BEAT) % 1).not.toBeCloseTo(0);
     const nudge = placementTask("nudge-phase").planCheck(track);
     expect(((nudge.deckB?.pos ?? 0) - nudge.startPos) / BEAT).toBeLessThanOrEqual(0.25);

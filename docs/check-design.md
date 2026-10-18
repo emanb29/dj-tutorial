@@ -56,7 +56,7 @@ the pass; **warn** is reported only; **report** is a metric for the Coach (catal
 
 | Id | Mistake # | From (passed) | Formula and threshold | Severity before `final-mix` | In `final-mix` |
 |---|---|---|---|---|---|
-| `no-clip` | 1 | `gain-staging` | any frame with master, or an audible channel, sample peak `> −0.1 dBFS` | fail | fail |
+| `no-clip` | 1 | `gain-staging` | any judged frame with master, or an audible channel, sample peak `> −0.1 dBFS` (judged: see below) | fail | fail |
 | `no-dead-air` | 13 | `cut-on-phrase` | master momentary `< −45 LUFS` for `≥ 1.0 s` between first audio and task end | fail | fail |
 | `on-phrase` | 9 | `cut-on-phrase` | every `t_in`: `|phraseOff(t_in, M)| ≤ 1 beat` and `|phraseOff(t_in, in)| ≤ 1 beat` | fail | fail |
 | `level-match` | 2 | `cut-on-phrase` | at each handover, `|shortTerm_A − shortTerm_B|` (pre-fader) `≤ 2 dB` | warn | fail |
@@ -71,6 +71,17 @@ the pass; **warn** is reported only; **report** is a metric for the Coach (catal
 | `overcorrect` | 8 | `tempo-by-ear` | tempo-fader reversals (sign changes of Δtempo with step > 0.02 BPM), max bend | report | report |
 | `key-clash` | 14 | `final-mix` | Camelot distance ∉ {0, ±1, A↔B} during a blend `> 8 bars` | — | warn |
 | `technique-mix` | 15 | `final-mix` | counts of cuts, blends, echo outs, loops | — | report |
+
+**no-clip judges only what the Learner is responsible for.** Each meter (the master, each channel)
+is judged from the Learner's first move on it (that channel's trim, EQ, CFX or fader; any of those,
+or the crossfader, for the master) or 1 bar after the Check's audio starts, whichever is earlier, and
+strictly from then on: the set-up's own level is never the Learner's clip. In `gain-staging`, whose
+set-up starts deck A in the red on purpose, a meter is judged only from its first frame out of the
+red after the Learner's first move (the Lesson's own `trim-A` grades the clip it hands them). Set-ups
+themselves never start in the red: every one turns both trims down so the louder of its tracks peaks
+at −9 dBFS on file (Originals peak near −0.5 dBFS, and the isolator's phase shift adds up to ~5.5 dB),
+which keeps two decks summed at the crossfader's centre out of the red; `src/app/lesson/set-up-levels.browser.test.ts`
+renders every Lesson's and Placement task's set-up to check it.
 
 **Pass rule (all Checks):** passed ⇔ every own criterion is met ∧ every applicable **fail** standing
 criterion is met. Warnings never block.
