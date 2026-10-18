@@ -44,6 +44,12 @@ import { DrillRunner, liveReading, type DrillStatus } from "./practice-drill.ts"
 
 /** How often the session looks at the playhead to end the audio part or loop practice. */
 const WATCH_MS = 25;
+/**
+ * How long after sending the Check's cue the heard playhead may still show the old position: the
+ * engine's scheduling lookahead (base latency plus a render quantum, or the stretch lead with Master
+ * Tempo on), with room to spare. Ending or looping waits this long; no Check ends that soon.
+ */
+const CUE_SETTLE_SEC = 0.3;
 /** After a fade out, keep recording this long so the meters see the silence. */
 const FADE_OUT_SETTLE_MS = 300;
 const FADER_UP = 0.9;
@@ -103,6 +109,12 @@ interface RunningCheck {
   heldSeenMs: number | null;
   /** performance.now() when the Learner last closed each channel fader, while it stays closed. */
   readonly closedAtMs: Map<DeckId, number>;
+  /**
+   * The audio clock when the Check's own cue (seek to its start, then Play) was sent. Until heard time
+   * reaches it, the heard playhead still shows wherever practice left the deck, possibly past the
+   * Check's end, so no position may end the Check or loop it before then.
+   */
+  readonly cueCtx: number;
 }
 
 export class LessonSession {
@@ -507,10 +519,10 @@ export class LessonSession {
     });
   }
 
-  private watchLoop(decks: DeckSetups, loop: LoopPlan | null, alsoEvery?: () => void): void {
+  private watchLoop(decks: DeckSetups, loop: LoopPlan | null, alsoEvery?: () => void, positionsValid: () => boolean = () => true): void {
     this.watch = setInterval(() => {
       const reading = this.engine.playhead(loop?.deck ?? "A");
-      if (loop !== null && reading.ok && reading.positionSec >= loop.atPos) this.loopBack(decks, loop);
+      if (loop !== null && reading.ok && reading.positionSec >= loop.atPos && positionsValid()) this.loopBack(decks, loop);
       alsoEvery?.();
     }, WATCH_MS);
   }
@@ -642,13 +654,24 @@ export class LessonSession {
       this.listener.checkFailed(`The attempt could not be recorded (${started.error.kind}). Try again with Enter.`);
       return;
     }
-    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null };
+    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null, cueCtx: this.engine.context.currentTime };
     this.check = check;
     this.faderWasUp = false;
     this.playDecks(decks);
-    this.watchLoop(decks, plan.loop ?? null, () => {
-      if (this.ended(check)) this.endAudio();
-    });
+    this.watchLoop(
+      decks,
+      plan.loop ?? null,
+      () => {
+        if (this.ended(check)) this.endAudio();
+      },
+      () => this.cueHeard(check),
+    );
+  }
+
+  /** Whether the Check's own cue is being heard yet, so heard positions belong to the Check. */
+  private cueHeard(check: RunningCheck): boolean {
+    const heard = this.engine.heardTime();
+    return heard.ok && heard.ctx >= check.cueCtx + CUE_SETTLE_SEC;
   }
 
   private ended(check: RunningCheck): boolean {
@@ -668,6 +691,7 @@ export class LessonSession {
         return closedAt !== undefined && performance.now() - closedAt >= end.bars * barMs;
       }
       case "position": {
+        if (!this.cueHeard(check)) return false;
         const reading = this.engine.playhead("A");
         return reading.ok && reading.positionSec >= end.pos;
       }
@@ -688,6 +712,7 @@ export class LessonSession {
 
   /** A "held" end: B with A (phase, and tempo when asked) for `bars`, A past `notBeforePos`; or A at `orPos`. */
   private heldLongEnough(check: RunningCheck, end: Extract<CheckPlan["endWhen"], { kind: "held" }>): boolean {
+    if (!this.cueHeard(check)) return false;
     const position = this.engine.playhead("A");
     if (position.ok && position.positionSec >= end.orPos) return true;
     const live = liveReading(this.engine, this.onDeck);
