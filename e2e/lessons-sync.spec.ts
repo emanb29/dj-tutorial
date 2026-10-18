@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { caption, commandsAtBeats, keysAtBeats, learner, openLesson, playingPast, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
+import { caption, commandsAtBeats, keysAtBeats, learner, openLesson, playingPast, readyFromPhraseStart, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // Lessons 8–11 end to end, muted, on the synthetic grooves: deck A 124 BPM, and for the two-track
 // Lessons a 121 BPM groove on deck B; both have the first beat at 0 s and bar 1 on beat 0. Engine
@@ -130,12 +130,14 @@ async function syncBlendCheck(page: Page, name: string, moves: (fromBeat: number
   // Deck B holds the second groove, slower: SYNC has something to do.
   expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B")?.grid.bpm)).toBe(121);
 
-  // A leads in from bar 3 (beat 8); the blend starts on phrase 2 (bar 9, beat 32).
+  // Set up off the clock, A looping phrase 1 (bar 1, beat 0), then R: a whole phrase, and the blend
+  // starts on phrase 2 (bar 9, beat 32).
   await page.keyboard.press("Enter");
-  await playingPast(page, "check", 8.5, { before: 20 });
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: SYNC B on, CUE 🎧 B on — then R");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.getByRole("button", { name: "Deck B beat sync" }).click();
   await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").syncOn)).toBe(true);
+  await readyFromPhraseStart(page, "check", 0);
   await expect(page.locator(".lesson-cue")).toHaveText("Next 1: Press , and fader B to ¾", { timeout: 20_000 });
   await keysAtBeats(page, [32], { codes: ["Comma"] });
   await commandsAtBeats(page, moves(32));
@@ -168,9 +170,9 @@ test("crossfader: a crossfader blend to B on the phrase, then a cut back to A wi
   await openLesson(page, learnerId, "crossfader");
   await expect(caption(page)).toContainText("Press , to play B");
 
-  // A from bar 3 (beat 8); the blend on bar 9 (beat 32); the cut back to A on bar 25 (beat 96).
+  // A from bar 1 (beat 0), a whole phrase; the blend on bar 9 (beat 32); the cut back to A on bar 25 (beat 96).
   await page.keyboard.press("Enter");
-  await playingPast(page, "check", 8.5, { before: 20 });
+  await playingPast(page, "check", 0.5, { before: 12 });
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await keysAtBeats(page, [32], { codes: ["Comma"] });
   // One slow, even move over the 10 bars asked (a step every 0.4 beats, as a trackpad drag): the
@@ -201,9 +203,9 @@ test("eq-basics: LOW A cut on the phrase start and back on the next, EQs centred
   await command(page, { control: "eq-low", deck: "A", value: 0 });
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
 
-  // A from bar 15 (beat 56): LOW down on bar 17 (beat 64), back on bar 25 (beat 96).
+  // A from bar 9 (beat 32), a whole phrase: LOW down on bar 17 (beat 64), back on bar 25 (beat 96).
   await page.keyboard.press("Enter");
-  await playingPast(page, "check", 56.5, { before: 62 });
+  await playingPast(page, "check", 32.5, { before: 40 });
   await commandsAtBeats(page, [
     { beat: 63.9, command: { control: "eq-low", deck: "A", value: -1 } },
     { beat: 96, command: { control: "eq-low", deck: "A", value: 0 } },

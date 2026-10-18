@@ -196,56 +196,66 @@ function withRep(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "pr
   return { ...phase, reps, ready: reps.filter(Boolean).length >= config.needed };
 }
 
-function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "practice" }>, observation: Observation): LessonPhase {
+/**
+ * Whether an observation is a practice rep, and a good one: null when it is not a rep (deck-basics'
+ * fade reps need the fade's state, and are not judged here).
+ */
+export function practiceRep(config: PracticeConfig, observation: Observation): boolean | null {
   switch (config.rep) {
     case "fade":
-      if (observation.kind !== "fader" || observation.deck !== "A") return phase;
-      if (observation.value >= FADER_UP) return { ...phase, fadeOpen: true };
-      if (observation.value <= FADER_DOWN && phase.fadeOpen) return withRep(config, { ...phase, fadeOpen: false }, true);
-      return phase;
+      return null;
     case "beat-tap":
-      return observation.kind === "tap" ? withRep(config, phase, observation.onBeat) : phase;
+      return observation.kind === "tap" ? observation.onBeat : null;
     case "phrase-tap":
-      return observation.kind === "tap" ? withRep(config, phase, observation.onPhraseStart) : phase;
+      return observation.kind === "tap" ? observation.onPhraseStart : null;
     case "ready":
-      return observation.kind === "ready" ? withRep(config, phase, observation.inZone) : phase;
+      return observation.kind === "ready" ? observation.inZone : null;
     case "cue-set":
-      return observation.kind === "cue-set"
-        ? withRep(config, phase, observation.onDownbeat && Math.abs(observation.offsetMs) <= CUE_PLACEMENT_TOLERANCE_MS)
-        : phase;
+      return observation.kind === "cue-set" ? observation.onDownbeat && Math.abs(observation.offsetMs) <= CUE_PLACEMENT_TOLERANCE_MS : null;
     case "cut":
-      return observation.kind === "cut" ? withRep(config, phase, observation.onPhrase) : phase;
+      return observation.kind === "cut" ? observation.onPhrase : null;
     case "blend-start":
-      return observation.kind === "cut" ? withRep(config, phase, observation.withinBeat) : phase;
+      return observation.kind === "cut" ? observation.withinBeat : null;
     case "tempo-set":
-      return observation.kind === "tempo-set" ? withRep(config, phase, observation.onTarget) : phase;
+      return observation.kind === "tempo-set" ? observation.onTarget : null;
     case "eq-return":
-      return observation.kind === "eq-return" ? withRep(config, phase, observation.onPhrase) : phase;
+      return observation.kind === "eq-return" ? observation.onPhrase : null;
     case "swap":
-      return observation.kind === "swap" ? withRep(config, phase, observation.onPhrase) : phase;
+      return observation.kind === "swap" ? observation.onPhrase : null;
     case "filter-out": {
-      if (observation.kind !== "filter-out") return phase;
+      if (observation.kind !== "filter-out") return null;
       const [shortest, longest] = FILTER_OUT_BARS;
       const { bars } = observation;
-      return withRep(config, phase, observation.depth >= FILTER_OUT_DEPTH && bars !== null && bars >= shortest && bars <= longest);
+      return observation.depth >= FILTER_OUT_DEPTH && bars !== null && bars >= shortest && bars <= longest;
     }
     case "phase-hold":
-      return observation.kind === "phase-rep" ? withRep(config, phase, observation.held) : phase;
+      return observation.kind === "phase-rep" ? observation.held : null;
     case "tempo-ear":
-      if (observation.kind === "tempo-guess") return withRep(config, phase, observation.right);
-      return observation.kind === "tempo-match" ? withRep(config, phase, observation.good) : phase;
+      if (observation.kind === "tempo-guess") return observation.right;
+      return observation.kind === "tempo-match" ? observation.good : null;
     case "blend-step":
-      // A missed step says why at once, where the last concept was named.
-      if (observation.kind !== "blend-step") return phase;
-      return withRep(config, observation.mistake === null ? phase : { ...phase, named: observation.mistake }, observation.good);
+      return observation.kind === "blend-step" ? observation.good : null;
     case "hot-cue-trigger":
-      return observation.kind === "hot-cue" ? withRep(config, phase, observation.onPhrase) : phase;
+      return observation.kind === "hot-cue" ? observation.onPhrase : null;
     case "loop":
-      if (observation.kind !== "loop") return phase;
-      return withRep(config, phase, observation.onDownbeat && LOOP_REP_BARS.some((bars) => Math.abs(observation.bars - bars) <= LOOP_REP_SLACK_BARS));
+      return observation.kind === "loop" ? observation.onDownbeat && LOOP_REP_BARS.some((bars) => Math.abs(observation.bars - bars) <= LOOP_REP_SLACK_BARS) : null;
     case "echo-cut":
-      return observation.kind === "echo-cut" ? withRep(config, phase, observation.onDownbeat && observation.echoOn) : phase;
+      return observation.kind === "echo-cut" ? observation.onDownbeat && observation.echoOn : null;
   }
+}
+
+function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "practice" }>, observation: Observation): LessonPhase {
+  if (config.rep === "fade") {
+    if (observation.kind !== "fader" || observation.deck !== "A") return phase;
+    if (observation.value >= FADER_UP) return { ...phase, fadeOpen: true };
+    if (observation.value <= FADER_DOWN && phase.fadeOpen) return withRep(config, { ...phase, fadeOpen: false }, true);
+    return phase;
+  }
+  const good = practiceRep(config, observation);
+  if (good === null) return phase;
+  // A missed step of the stepped blend says why at once, where the last concept was named.
+  const mistake = observation.kind === "blend-step" ? observation.mistake : null;
+  return withRep(config, mistake === null ? phase : { ...phase, named: mistake }, good);
 }
 
 function hook(definition: LessonDefinition, phase: Extract<LessonPhase, { kind: "hook" }>, observation: Observation): LessonPhase {

@@ -160,8 +160,9 @@ describe("phrases", () => {
   // Phrase 2 (bar 9) to phrase 9 (bar 65): the breakdown is phrase 5 of the track, the 4th tapped.
   const firstPhrase = phraseStart(track.grid, 2);
 
-  it("taps 64 bars from bar 9 after a 2-bar lead-in, then asks for the breakdown and the drop", () => {
-    expect(plan.startPos).toBeCloseTo(barStart(track.grid, 7));
+  it("taps 64 bars from bar 9 after a whole phrase from its start, then asks for the breakdown and the drop", () => {
+    expect(plan.startPos).toBeCloseTo(barStart(track.grid, 1));
+    expect(plan.firstPhraseAction).toBeCloseTo(firstPhrase, 9);
     expect(plan.endWhen).toEqual({ kind: "position", pos: phraseStart(track.grid, 10) + BEAT });
     expect(definition.questions.map((question) => [question.id, question.options])).toEqual([
       ["breakdown", 8],
@@ -203,7 +204,9 @@ describe("phrases", () => {
 
   // Owner feedback: no clear start to the first phrase, so one early miscount ruined the rest.
   it("counts in to phrase 1 like Lesson 2's switch: 2 bars ahead, the last bar on its beats, then TAP", () => {
-    expect(plan.cues.slice(0, 7).map((cue) => [cue.caption, cue.countdown === true])).toEqual([
+    // A phrase to count along with first, from its start.
+    expect(plan.cues[0]).toEqual({ fromPos: plan.startPos, caption: "Count along: 8 bars, then phrase 1" });
+    expect(plan.cues.slice(1, 8).map((cue) => [cue.caption, cue.countdown === true])).toEqual([
       ["Phrase 1 starts in 2 bars", false],
       ["1 bar: 4", true],
       ["1 bar: 4 · 3", true],
@@ -213,11 +216,9 @@ describe("phrases", () => {
       ["Tap each new phrase (Space)", false],
     ]);
     const beatsBefore = [8, 4, 3, 2, 1, 0.5, -4];
-    plan.cues.slice(0, 7).forEach((cue, index) => {
+    plan.cues.slice(1, 8).forEach((cue, index) => {
       expect(cue.fromPos).toBeCloseTo(firstPhrase - (beatsBefore[index] ?? Number.NaN) * BEAT, 9);
     });
-    // The Check starts on the count-in's first caption.
-    expect(plan.cues[0]?.fromPos).toBeCloseTo(plan.startPos, 9);
   });
 
   it("after phrase 1 shows no count, only a nudge for a tap 2 beats or more off every phrase start", () => {
@@ -246,11 +247,11 @@ describe("phrases", () => {
     };
     const originalPlan = definition.planCheck(original);
     // Not phrase 8, mid-drop with nothing to hear: phrase 11, where the kick leaves.
-    expect(originalPlan.startPos).toBeCloseTo(phraseStart(track.grid, 11) - 8 * BEAT, 9);
+    expect(originalPlan.startPos).toBeCloseTo(phraseStart(track.grid, 10), 9);
     const window = { from: 0, to: 1e6 };
     const task = definition.taskFor(original, originalPlan, recorded(original, originalPlan, {}), window);
     expect(task).toMatchObject({ lessonId: "phrases", sections: { breakdown: 1, drop: 5 } });
-    expect(definition.practiceStart(original)).toBeCloseTo(phraseStart(track.grid, 11) - 8 * BEAT, 9);
+    expect(definition.practiceStart(original)).toBeCloseTo(phraseStart(track.grid, 10), 9);
   });
 
   // Owner feedback: naming the sections from memory of the count, after 64 bars, tested memory, not ears.
@@ -269,12 +270,11 @@ describe("phrases", () => {
 
   // Owner feedback: 2 bars of a phrase alone are unfair; a breakdown or a drop is a change, heard
   // only against what came before it.
-  it("plays each phrase's ▶ from 2 bars before it, phrase 1 from the count-in, on to a bar past the window", () => {
+  it("plays each phrase's ▶ from 2 bars before it, phrase 1 from its count-in, on to a bar past the window", () => {
     const previews = plan.phrasePreviews;
     if (previews === undefined) throw new Error("phrases previews its phrases");
     const bar = 4 * BEAT;
-    // Phrase 1: the Check's own count-in, 2 bars before the first tapped phrase.
-    expect(phrasePreviewSpan(previews, 1)?.fromPos).toBeCloseTo(plan.startPos, 9);
+    // Phrase 1: its count-in, 2 bars before the first tapped phrase.
     expect(phrasePreviewSpan(previews, 1)?.fromPos).toBeCloseTo(firstPhrase - 2 * bar, 9);
     for (let phrase = 2; phrase <= 8; phrase += 1) {
       expect(phrasePreviewSpan(previews, phrase)?.fromPos).toBeCloseTo(phraseStart(track.grid, phrase + 1) - 2 * bar, 9);

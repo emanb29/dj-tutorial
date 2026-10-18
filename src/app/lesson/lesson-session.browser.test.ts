@@ -185,6 +185,30 @@ async function until(done: () => boolean, what: string): Promise<void> {
  * The session plays the Check from a promise callback: rendering on before then lets the deck start
  * late by however long the main thread took to get there, which shifts every heard beat off the taps.
  */
+/**
+ * A set-up step off the clock ("Set up: … — then R"), in practice or the Check: the moves at the
+ * Learner's pace while A loops its first phrase, then R. Returns once A plays from its start again.
+ */
+async function setUpThenReady(run: Harness, moves: readonly EngineCommand[] = []): Promise<void> {
+  expect(run.session.setUpPending()).not.toBeNull();
+  for (const command of moves) {
+    expect(run.engine.command(command, { device: "keyboard" }), JSON.stringify(command)).toEqual({ ok: true });
+    await run.renderTo(run.now() + 0.3);
+  }
+  await run.renderTo(run.now() + 2);
+  let sought = false;
+  const stop = run.engine.on("command", (event) => {
+    if (event.command.control === "seek" && event.command.deck === "A" && event.rejected === null) sought = true;
+  });
+  try {
+    run.session.ready();
+    expect(sought).toBe(true);
+  } finally {
+    stop();
+  }
+  expect(run.session.setUpPending()).toBeNull();
+}
+
 async function startedCheck(run: Harness): Promise<void> {
   let played = false;
   const stop = run.engine.on("command", (event) => {
@@ -385,20 +409,25 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     const { leadPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const swap: { pos: number; command: EngineCommand }[] = [
-      { pos: leadPos + 1, command: { control: "eq-low", deck: "B", value: -1 } },
       { pos: blendPos, command: { control: "play", deck: "B" } },
       ...Array.from({ length: 10 }, (_, step): Move => ({ pos: blendPos + (step + 1) * 0.4 * beat, command: { control: "channel-fader", deck: "B", value: (step + 1) / 10 } })),
       { pos: handoverPos - 0.1, command: { control: "eq-low", deck: "A", value: -1 } },
       { pos: handoverPos + 0.1, command: { control: "eq-low", deck: "B", value: 0 } },
     ];
-    await movesAt(run, await startedPractice(run), leadPos, swap);
+    // Practice waits for R after its set-up (LOW B cut), A looping its first phrase meanwhile.
+    await startedPractice(run);
+    await setUpThenReady(run, [{ control: "eq-low", deck: "B", value: -1 }]);
+    await movesAt(run, run.now(), leadPos, swap);
     expect(observed.filter((observation) => observation.kind === "swap")).toEqual([{ kind: "swap", onPhrase: true }]);
 
     await startedCheck(run);
+    await setUpThenReady(run, [
+      { control: "headphone-cue", deck: "B", value: true },
+      { control: "eq-low", deck: "B", value: -1 },
+    ]);
     const playAt = run.now();
     const outPos = handoverPos + 8 * beat;
     await movesAt(run, playAt, leadPos, [
-      { pos: leadPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true } },
       ...swap,
       { pos: outPos, command: { control: "channel-fader", deck: "A", value: 0 } },
       { pos: outPos + 2 * beat, command: { control: "eq-low", deck: "A", value: 0 } },
@@ -420,16 +449,18 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
       ...Array.from({ length: 10 }, (_, step): Move => ({ pos: blendPos + (step + 1) * 0.4 * beat, command: { control: "channel-fader", deck: "B", value: (step + 1) / 10 } })),
       { pos: handoverPos, command: { control: "channel-fader", deck: "A", value: 0 } },
     ];
-    await movesAt(run, await startedPractice(run), leadPos, out);
+    await startedPractice(run);
+    await setUpThenReady(run);
+    await movesAt(run, run.now(), leadPos, out);
     const reps = observed.filter((observation) => observation.kind === "filter-out");
     expect(reps).toHaveLength(1);
     expect(reps[0]?.kind === "filter-out" ? reps[0].depth : null).toBeCloseTo(0.85);
     expect(reps[0]?.kind === "filter-out" ? reps[0].bars : null).toBeCloseTo(10, 0);
 
     await startedCheck(run);
+    await setUpThenReady(run, [{ control: "headphone-cue", deck: "B", value: true }]);
     const playAt = run.now();
     await movesAt(run, playAt, leadPos, [
-      { pos: leadPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true } },
       ...out,
       { pos: handoverPos + 2 * beat, command: { control: "filter", deck: "A", value: 0 } },
     ]);
@@ -487,14 +518,14 @@ describe.each([
   it("practice counts the bars and fades by ear, then the counted-in Check passes", { timeout: 120_000 }, async () => {
     const track = syntheticLessonTrack(SYNTHETIC_HOUSE);
     const lookaheadSec = 0.0116 + 256 / sampleRate;
-    const run = await harness({ sampleRate, lessonId: "phrases", track, audio: groove, renderSec: 60 + 150, latencySec, lookaheadSec });
+    const run = await harness({ sampleRate, lessonId: "phrases", track, audio: groove, renderSec: 60 + 200, latencySec, lookaheadSec });
     const definition = lessonDefinition("phrases");
     const beat = 60 / track.grid.bpm;
     const bar = 4 * beat;
     const phrase = (n: number) => (n - 1) * 8 * bar;
     const tap = () => run.engine.command({ control: "tap" }, { device: "keyboard" });
 
-    // Practice: from 2 bars before phrase 2, looping 24 bars. Walk it a bar at a time, as the count does.
+    // Practice: a whole phrase before phrase 2, from its start, looping 24 bars. Walk it a bar at a time, as the count does.
     run.session.preparePractice();
     await until(() => run.engine.deckState("A").playing, "the session to play the practice");
     const practiceAt = run.playedAt();
@@ -509,24 +540,24 @@ describe.each([
       }
     };
     const walkTo = (pos: number) => walkHeard(heardInPractice(pos));
-    await walkTo(phrase(2) + 2 * bar + 1.5 * beat);
-    expect(run.session.phraseCount()).toEqual({ phrase: 2, bar: 3, beat: 2, shown: true });
-    await walkTo(phrase(3) - 2 * bar);
+    expect(practiceStart).toBeCloseTo(phrase(1) + track.grid.firstBeat, 9);
+    await walkTo(practiceStart + 2 * bar + 1.5 * beat);
+    expect(run.session.phraseCount()).toEqual({ phrase: 1, bar: 3, beat: 2, shown: true });
     // Two phrase starts tapped right in a row: the count steps aside.
-    await walkTo(phrase(3));
+    await walkTo(practiceStart + phrase(2));
     tap();
-    await walkTo(phrase(3) + 2 * bar);
+    await walkTo(practiceStart + phrase(2) + 2 * bar);
     expect(run.session.phraseCount()?.shown).toBe(true);
-    await walkTo(phrase(4));
+    await walkTo(practiceStart + phrase(3));
     tap();
-    await walkTo(phrase(4) + 2 * bar);
+    await walkTo(practiceStart + phrase(3) + 2 * bar);
     expect(run.session.phraseCount()?.shown).toBe(false);
     // Two misses in a row (a tap off the phrase, then a phrase start untapped): it comes back.
     tap();
     await walkTo(practiceStart + 24 * bar - bar);
     expect(run.session.phraseCount()?.shown).toBe(false);
-    // The loop is 3 phrases long, so it counts on across the jump back: phrase 2's start, untapped.
-    await walkHeard(run.now() - Math.max(0, latencySec) + 5 * bar);
+    // The loop is 3 phrases long; the jump back to phrase 1 is not judged, phrase 2's start, untapped, is.
+    await walkHeard(run.now() - Math.max(0, latencySec) + 10 * bar + beat);
     expect(run.session.phraseCount()).toMatchObject({ phrase: 2, shown: true });
 
     // The Check: the captions count in, then say TAP on phrase 1's downbeat.

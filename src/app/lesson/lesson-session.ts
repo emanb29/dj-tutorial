@@ -18,6 +18,7 @@ import {
   LESSON_GRADING,
   practiceDecksFor,
   practiceLoopFor,
+  practiceRep,
   setUpTrim,
   sliceTrack,
   tempoPercentApart,
@@ -89,6 +90,8 @@ const EQ_BANDS: Readonly<Record<"eq-low" | "eq-mid" | "eq-high", EqBand>> = { "e
 const SWAP_PAIR_BARS = 2;
 const DEVICE = { device: "keyboard" } as const;
 const DECKS: readonly DeckId[] = ["A", "B"];
+/** A set-up step loops deck A's first phrase: 8 bars. */
+const BARS_PER_PHRASE = 8;
 
 export type GradeOutcome =
   | { readonly ok: true; readonly outcome: CheckResult | VoidAttempt }
@@ -183,6 +186,14 @@ export class LessonSession {
   private phraseCountState: PhraseCountState = PHRASE_COUNT_START;
   private judgedPhrase: number | null = null;
   /**
+   * A set-up step waiting for R (`CheckPlan.setUp`, `LessonDefinition.practiceSetUp`): deck A loops
+   * the phrase from its start while the Learner sets up. A Check's recorder and clock start only on R.
+   */
+  private pendingSetUp:
+    | { readonly kind: "check"; readonly plan: CheckPlan; readonly caption: string }
+    | { readonly kind: "practice"; readonly decks: DeckSetups; readonly caption: string }
+    | null = null;
+  /**
    * The phrase preview playing now (phrases' questions): the chip it was started from (1-based), where
    * it stops, and when its seek takes effect (before then, the heard playhead is still where A was).
    */
@@ -258,7 +269,21 @@ export class LessonSession {
   private observe(observation: Observation): void {
     if (this.settingUp) return;
     this.progress(observation);
+    this.countPhraseAction(observation);
     this.listener.observed(observation);
+  }
+
+  /** The practice count fades and comes back on the Lesson's phrase-timed reps (Count phrases' taps are counted in onTap). */
+  private countPhraseAction(observation: Observation): void {
+    const { definition } = this;
+    if (definition.phraseCount !== true || definition.practice.rep === "phrase-tap" || this.check !== null || this.pendingSetUp?.kind === "check") return;
+    const good = practiceRep(definition.practice, observation);
+    if (good !== null) this.phraseCountState = phraseCountStep(this.phraseCountState, { kind: "action", good });
+  }
+
+  /** What the set-up step waiting for R asks for, or null when none is waiting. */
+  setUpPending(): { readonly caption: string } | null {
+    return this.pendingSetUp === null ? null : { caption: this.pendingSetUp.caption };
   }
 
   /** What a running Check counts from the Learner's actions: its step cues, its `did-then` end, a pad set at a stop. */
@@ -449,7 +474,7 @@ export class LessonSession {
   /** The 8-bar count to show now: in the hook and practice of a Lesson with one, while deck A plays. */
   phraseCount(): PhraseCount | null {
     const track = this.onDeck.A;
-    if (this.definition.phraseCount !== true || this.check !== null || track === null || !this.engine.deckState("A").playing) return null;
+    if (this.definition.phraseCount !== true || this.check !== null || this.pendingSetUp?.kind === "check" || track === null || !this.engine.deckState("A").playing) return null;
     const reading = this.engine.playhead("A");
     return reading.ok ? { ...phrasePosition(track.grid, reading.positionSec), shown: this.phraseCountState.shown } : null;
   }
@@ -695,7 +720,7 @@ export class LessonSession {
    * looping on it would seek again and again and stutter. Called right after the decks are cued, so
    * that cue is the first one waited for; the Check's own `cueHeard` is the same rule.
    */
-  private watchLoop(decks: DeckSetups, loop: LoopPlan | null, alsoEvery?: () => void, positionsValid: () => boolean = () => true): void {
+  private watchLoop(decks: DeckSetups, loop: LoopPlan | null, alsoEvery?: () => void, positionsValid: () => boolean = () => true, afterLoop?: () => void): void {
     let seekCtx = this.engine.context.currentTime;
     const seekHeard = () => {
       const heard = this.engine.heardTime();
@@ -706,6 +731,7 @@ export class LessonSession {
       if (loop !== null && reading.ok && reading.positionSec >= loop.atPos && positionsValid() && seekHeard()) {
         seekCtx = this.engine.context.currentTime;
         this.loopBack(decks, loop);
+        afterLoop?.();
       }
       alsoEvery?.();
     }, WATCH_MS);
@@ -733,8 +759,11 @@ export class LessonSession {
     return true;
   }
 
-  /** Hook and practice: the Lesson's practice set-up, looping where the Lesson loops. */
-  preparePractice(): void {
+  /**
+   * Hook and practice: the Lesson's practice set-up, looping where the Lesson loops. In practice (not
+   * the hook) a Lesson with `practiceSetUp` first waits for R, deck A looping its first phrase.
+   */
+  preparePractice(stage: "hook" | "practice" = "practice"): void {
     this.stopPreview();
     this.abandonCheck();
     this.stopClip();
@@ -745,15 +774,78 @@ export class LessonSession {
       this.cueDecks(decks);
       this.playDecks(decks);
       const drill = this.startDrill(decks);
-      // Back in practice, the count shows again until the Learner taps by ear.
+      // Back in practice, the count shows again until the Learner counts by ear.
       this.phraseCountState = PHRASE_COUNT_START;
       this.judgedPhrase = null;
-      const counting = this.definition.phraseCount === true;
-      this.watchLoop(decks, practiceLoopFor(this.definition, this.track), drill === null && !counting ? undefined : () => {
-        drill?.tick();
-        if (counting) this.followPhraseCount();
-      });
+      const waits = stage === "practice" && this.definition.practiceSetUp === true && drill === null;
+      if (waits) this.waitForPracticeSetUp(decks);
+      else this.watchPractice(decks, false);
     });
+  }
+
+  /** Practice plays on, looping where the Lesson loops; with `setUpAgain`, each set-up loop waits for R again. */
+  private watchPractice(decks: DeckSetups, setUpAgain: boolean): void {
+    const drill = this.drill;
+    const loop = practiceLoopFor(this.definition, this.track);
+    // Count phrases judges each phrase start a bar after it; other Lessons count their reps (observe).
+    const counting = this.definition.phraseCount === true && this.definition.practice.rep === "phrase-tap";
+    const tick = drill === null && !counting ? undefined : () => {
+      drill?.tick();
+      if (counting) this.followPhraseCount();
+    };
+    const again = setUpAgain && loop?.reset === "setup" ? () => {
+      this.waitForPracticeSetUp(loop.decks ?? decks);
+    } : undefined;
+    this.watchLoop(decks, loop, tick, undefined, again);
+  }
+
+  /** The set-up step's loop: deck A's phrase from `pos` (a phrase start), round and round, until R. */
+  private setUpLoop(pos: number): LoopPlan {
+    return { atPos: pos + BARS_PER_PHRASE * 4 * beatSecOf(this.track), reset: "positions" };
+  }
+
+  private waitForPracticeSetUp(decks: DeckSetups): void {
+    this.stopWatching();
+    this.pendingSetUp = { kind: "practice", decks, caption: this.definition.planCheck(this.track).setUp?.caption ?? "Set up, then R" };
+    this.watchLoop({ A: decks.A }, this.setUpLoop(decks.A.pos));
+  }
+
+  /** The Check's set-up step: A loops its first phrase, every other deck waits; nothing is recorded yet. */
+  private waitForCheckSetUp(plan: CheckPlan, caption: string): void {
+    const planned = checkDecksFor(plan);
+    const waiting: DeckSetups = { ...planned, A: { ...planned.A, play: true }, ...(planned.B === undefined ? {} : { B: { ...planned.B, play: false } }) };
+    this.cueDecks(waiting);
+    this.playDecks(waiting);
+    this.pendingSetUp = { kind: "check", plan, caption };
+    this.watchLoop({ A: waiting.A }, this.setUpLoop(planned.A.pos));
+  }
+
+  /**
+   * R on a set-up step: the decks go back to their start positions (A from its phrase start), leaving
+   * every knob and fader as the Learner set it. A Check then records, and its clock starts.
+   */
+  private releaseSetUp(): void {
+    const pending = this.pendingSetUp;
+    if (pending === null) return;
+    this.pendingSetUp = null;
+    this.stopWatching();
+    if (pending.kind === "practice") {
+      this.settingUpWith(() => {
+        this.send({ control: "seek", deck: "A", value: pending.decks.A.pos });
+      });
+      this.watchPractice(pending.decks, true);
+      return;
+    }
+    const planned = checkDecksFor(pending.plan);
+    this.settingUpWith(() => {
+      for (const deck of DECKS) {
+        const setup = deck === "A" ? planned.A : planned.B;
+        if (setup === undefined || this.onDeck[deck] === null) continue;
+        this.send({ control: "pause", deck });
+        this.send({ control: "seek", deck, value: setup.pos });
+      }
+    });
+    this.recordCheck(pending.plan, planned);
   }
 
   /** A by-ear drill (Lessons 14–16) over the practice set-up, or null for a Lesson without one. */
@@ -840,11 +932,21 @@ export class LessonSession {
   }
 
   private beginCheck(plan: CheckPlan): void {
+    if (plan.setUp !== undefined) {
+      this.waitForCheckSetUp(plan, plan.setUp.caption);
+      return;
+    }
     const planned = checkDecksFor(plan);
     // hot-cues: A waits paused at its first stop; it plays from the start once the pads are set.
     const firstStop = plan.stops?.[0];
     const decks: DeckSetups = firstStop === undefined ? planned : { ...planned, A: { ...planned.A, pos: firstStop, play: false } };
     if (plan.slices === undefined) this.cueDecks(decks);
+    this.recordCheck(plan, decks);
+  }
+
+  /** Records the Check from here: the decks are cued; they play now, and its clock starts. */
+  private recordCheck(plan: CheckPlan, decks: DeckSetups): void {
+    const firstStop = plan.stops?.[0];
     const started = this.recorder.start({ expectedDurationSec: plan.timeoutSec + (plan.stopsTimeoutSec ?? 0) + 30, allowTrackChanges: plan.slices !== undefined });
     if (!started.ok) {
       console.warn("[lesson] the recorder did not start", started.error);
@@ -940,6 +1042,10 @@ export class LessonSession {
    * this slice's cue point and moves on; in practice it scores the levels.
    */
   ready(): void {
+    if (this.pendingSetUp !== null) {
+      this.releaseSetUp();
+      return;
+    }
     const check = this.check;
     // No Check, or its audio part is over.
     if (check?.stopped !== null) {
@@ -1181,11 +1287,12 @@ export class LessonSession {
 
   /** The plan of the Check running now (it varies by attempt), or null. */
   runningPlan(): CheckPlan | null {
-    return this.check?.plan ?? null;
+    return this.check?.plan ?? (this.pendingSetUp?.kind === "check" ? this.pendingSetUp.plan : null);
   }
 
   /** The live caption for the stretch of the Check the deck is in now. */
   checkCue(): PositionCue | null {
+    if (this.pendingSetUp?.kind === "check") return { fromPos: 0, caption: this.pendingSetUp.caption };
     const check = this.check;
     if (check === null) return null;
     const step = check.steps > 0 ? check.plan.stepCues?.[check.steps - 1] : undefined;
@@ -1274,6 +1381,7 @@ export class LessonSession {
   /** Leaves a running Check without grading it (restart, leaving the page). */
   abandonCheck(): void {
     this.stopWatching();
+    this.pendingSetUp = null;
     this.gradedPlan = null;
     const check = this.check;
     if (check === null) return;

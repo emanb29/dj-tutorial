@@ -68,14 +68,15 @@ describe("hot-cues", () => {
   const pads = hotCuePadPhrases(track).map((phrase) => phraseStart(track.grid, phrase));
   const stops = plan.stops ?? [];
 
-  it("parks A near the drop, the groove and the outro in turn, then plays from 4 bars before the groove", () => {
+  it("parks A near the drop, the groove and the outro in turn, then plays from a whole phrase before the groove", () => {
     expect(hotCuePadPhrases(track)).toEqual([7, 3, 9]);
     expect(stops).toHaveLength(3);
     stops.forEach((stop, index) => {
       expect(stop).toBeLessThan(pads[index] ?? 0);
       expect(stop).toBeGreaterThan((pads[index] ?? 0) - 3 * BEAT);
     });
-    expect(plan.startPos).toBeCloseTo(phraseStart(track.grid, 3) - 4 * BAR, 9);
+    expect(plan.startPos).toBeCloseTo(phraseStart(track.grid, 2), 9);
+    expect(plan.firstPhraseAction).toBeCloseTo(phraseStart(track.grid, 3), 9);
     expect(plan.deckA?.hotCues).toEqual(Array.from({ length: 8 }, () => null));
     expect(readyUsedIn(definition, track)).toEqual({ practice: false, check: true });
     // Practice: pad 1 holds the drop.
@@ -99,8 +100,8 @@ describe("hot-cues", () => {
     ];
     if (runAt !== null) {
       segments.push({ fromCtx: runAt, pos: plan.startPos, rate: 1 });
-      // A reaches the groove's phrase start 4 bars later; each pad jumps it to a phrase start, 8 bars before the next.
-      let phraseAt = runAt + 4 * BAR;
+      // A reaches the groove's phrase start a phrase later; each pad jumps it to a phrase start, 8 bars before the next.
+      let phraseAt = runAt + 8 * BAR;
       pads.forEach((pos, index) => {
         const press = phraseAt + pressLateSec;
         events.push({ ctx: press, control: "hotCue", deck: "A", value: index + 1, pos, appliedCtx: press + 0.05 });
@@ -150,16 +151,17 @@ describe("loop-transition", () => {
   const cueB = plan.deckB?.pos ?? 0;
   const LOOP = 4 * BAR;
   /** A's loop from its outro's phrase start; B on the loop's 1 after one pass; EXIT one pass later. */
-  const heardLoop = CUED + 4 * BAR;
+  const heardLoop = CUED + 8 * BAR;
 
   it("brings B in at full EQ for a Learner who has not swapped the bass yet (the LOWs may be locked)", () => {
-    const captions = [...plan.cues.map((cue) => cue.caption), ...(plan.stepCues ?? []).map((step) => step.caption)];
+    const captions = [plan.setUp?.caption ?? "", ...plan.cues.map((cue) => cue.caption), ...(plan.stepCues ?? []).map((step) => step.caption)];
     expect(captions.some((caption) => caption.includes("LOW"))).toBe(false);
   });
 
   it("after bass-swap, cuts LOW B before B comes in and swaps the bass over A's loop, before EXIT", () => {
     const swapping = definition.planCheck(track, 1, ["eq-basics", "sync-blend", "bass-swap"]);
-    expect(swapping.cues[0]?.caption).toBe("CUE 🎧 B on. LOW B all the way down");
+    expect(swapping.setUp).toEqual({ caption: "Set up: CUE 🎧 B on, LOW B all the way down — then R" });
+    expect(plan.setUp).toEqual({ caption: "Set up: CUE 🎧 B on — then R" });
     expect(swapping.cues.map((cue) => cue.caption)).toContain("Next phrase's 1: LOOP IN (D)");
     expect(swapping.stepCues).toEqual([
       { after: { kind: "loop-on" }, caption: "Looping. On the loop's 1: Press ," },
@@ -212,7 +214,8 @@ describe("loop-transition", () => {
   }
 
   it("loops A's outro from its phrase start; B is cued from the groove with its fader up", () => {
-    expect(plan.startPos).toBeCloseTo(loopPos - 4 * BAR, 9);
+    expect(plan.startPos).toBeCloseTo(loopPos - 8 * BAR, 9);
+    expect(plan.firstPhraseAction).toBeCloseTo(loopPos, 9);
     expect(plan.deckB).toMatchObject({ pos: phraseStart(track.grid, 3), fader: 1, play: false, cuePoint: true });
     expect(plan.stepCues?.map((step) => step.after.kind)).toEqual(["loop-on", "play", "loop-exit"]);
   });

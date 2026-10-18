@@ -24,6 +24,7 @@ export interface LessonWindow {
     phase(): string;
     deckTrack(deck: DeckId): { trackId: string; grid: Grid } | null;
     clip?(): { masterTempo: boolean } | null;
+    settingUp?(): boolean;
   };
 }
 
@@ -182,6 +183,20 @@ export async function playingPast(page: Page, phase: string, beat: number, optio
  */
 export async function checkPlayingPast(page: Page, beat: number, deck: DeckId = "A"): Promise<void> {
   await playingPast(page, "check", beat, { before: beat + 2, deck });
+}
+
+/**
+ * Ends a set-up step off the clock ("Set up: … — then R", in practice or the Check): R, then waits
+ * until deck A is heard playing again from `beat`, its first phrase's start. While the set-up waits, A
+ * loops that phrase: the pause lets the jump back be heard before the playhead is read.
+ */
+export async function readyFromPhraseStart(page: Page, phase: string, beat: number): Promise<void> {
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true, undefined, { timeout: 30_000, polling: 20 });
+  await page.keyboard.press("KeyR");
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: 10_000, polling: 20 });
+  // The jump back is heard an output latency after R: until then the heard playhead is the set-up loop's.
+  await page.waitForTimeout(250);
+  await playingPast(page, phase, beat + 0.5, { before: beat + 8 });
 }
 
 export const caption = (page: Page) => page.getByRole("status", { name: "Lesson caption" });

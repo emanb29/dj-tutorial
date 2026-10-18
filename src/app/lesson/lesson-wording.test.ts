@@ -56,7 +56,7 @@ describe("Lesson captions on a touchscreen", () => {
     const bassSwap = lessonDefinition("bass-swap");
     const filter = lessonDefinition("filter-transition");
     expect(inputWording(bassSwap.hook[1]?.caption ?? "", "touch")).toBe("On the phrase's 1: Tap PLAY on deck B and push fader B up");
-    expect(inputWording(filter.practice.caption, "touch")).toBe("CFX A right from 2 bars before B; A out a phrase after B");
+    expect(inputWording(filter.practice.caption, "touch")).toBe("Set up, then Ready. CFX A right from 2 bars before B; A out a phrase after B");
     const cues = filter.planCheck(track).cues.map((cue) => inputWording(cue.caption, "touch"));
     expect(cues).toContain("Next 1: Tap PLAY on deck B and slide B up");
     expect(cues).toContain("Next 1: A out");

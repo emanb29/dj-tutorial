@@ -160,8 +160,11 @@ export function pairProblems(track: LessonTrack, partner: LessonTrack): string[]
   ].filter((problem) => problem !== null);
 }
 
-/** Bars of A before the blend starts (the loudness reference needs 4 clear of the Check's start). */
-const BLEND_LEAD_BARS = 6;
+/**
+ * Bars of A before the blend starts: a whole phrase, from its start, so the Learner counts it (the
+ * loudness reference needs 4 clear of the Check's start).
+ */
+const BLEND_LEAD_BARS = 8;
 const BLEND_MAX_BARS = 16;
 /** sync-blend ends this long after A's fader closes (the loudness span runs 4 bars past A's exit). */
 const BLEND_TAIL_BARS = 2;
@@ -215,6 +218,8 @@ const syncBlend: LessonDefinition = {
     reset: "setup",
     decks: syncDecks(track, true),
   }),
+  practiceSetUp: true,
+  phraseCount: true,
   partner: { problems: pairProblems },
   headphones: true,
   aids: { sync: true, bpmDisplay: true },
@@ -226,7 +231,7 @@ const syncBlend: LessonDefinition = {
     { caption: "Fader B to ¾, then A to ¾", control: "B.channel-fader", trigger: { kind: "blend-step", step: 1 }, named: "Both at ¾: a blend. Then B up, A down." },
   ],
   // One rep per step: ready once all four are made in order.
-  practice: { caption: "On the 1: Press , B to ¾, A to ¾. Later: B up, A down", rep: "blend-step", window: 4, needed: 4 },
+  practice: { caption: "Set up, then R. On the 1: Press , B to ¾, A to ¾. Later: B up, A down", rep: "blend-step", window: 4, needed: 4 },
   checkCaption: "This one counts: SYNC B, Press , on the 1. B ¾, A ¾ … B up, A down",
   questions: [],
   planCheck: (track) => {
@@ -238,10 +243,12 @@ const syncBlend: LessonDefinition = {
       faderAtStart: 1,
       deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
+      setUp: { caption: "Set up: SYNC B on, CUE 🎧 B on — then R" },
+      firstPhraseAction: blendPos,
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
       timeoutSec: barsSec(track, BLEND_LEAD_BARS + BLEND_MAX_BARS + 4) + 5,
       cues: [
-        { fromPos: leadPos, caption: "SYNC B on, CUE 🎧 B on" },
+        { fromPos: leadPos, caption: "Count this phrase: B in on the next 1" },
         { fromPos: blendPos - barsSec(track, 2), caption: "Next 1: Press , and fader B to ¾" },
         { fromPos: blendPos, caption: "Now fader A to ¾" },
         { fromPos: blendPos + barsSec(track, 1), caption: "Both at ¾. Hold, count the bars" },
@@ -289,6 +296,7 @@ const crossfaderLesson: LessonDefinition = {
     reset: "setup",
     decks: crossfaderDecks(track, true),
   }),
+  phraseCount: true,
   partner: { problems: pairProblems },
   headphones: true,
   aids: { sync: true, bpmDisplay: true },
@@ -314,6 +322,7 @@ const crossfaderLesson: LessonDefinition = {
       deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       crossfader: 0,
+      firstPhraseAction: blendPos,
       endWhen: { kind: "position", pos: cutPos + barsSec(track, XF_TAIL_BARS) + beat },
       timeoutSec: barsSec(track, BLEND_LEAD_BARS + XF_CUT_BARS + XF_TAIL_BARS) + 5,
       cues: [
@@ -347,7 +356,8 @@ const crossfaderLesson: LessonDefinition = {
 // Lesson 11: eq-basics
 // ---------------------------------------------------------------------------------------------
 
-const EQ_LEAD_BARS = 2;
+/** Bars of A before the LOW is cut: a whole phrase, from its start. */
+const EQ_LEAD_BARS = 8;
 const EQ_TAIL_BARS = 2;
 
 /** The phrase the LOW is cut on; it and the next have the kick and the bass. */
@@ -364,6 +374,7 @@ const eqBasics: LessonDefinition = {
   practiceStart: (track) => eqDecks(track).A.pos,
   practiceDecks: eqDecks,
   practiceLoop: (track) => ({ atPos: phraseStart(track.grid, eqPhrase(track) + 2), reset: "positions" }),
+  phraseCount: true,
   gradeFromOwnCue: true,
   trackProblems: (track) => [
     ...tooShort(track),
@@ -392,10 +403,12 @@ const eqBasics: LessonDefinition = {
       autoPlay: true,
       faderAtStart: 1,
       deckA: { eqCentred: true },
+      firstPhraseAction: cutPos,
       endWhen: { kind: "position", pos: backPos + barsSec(track, EQ_TAIL_BARS) + beat },
       timeoutSec: barsSec(track, EQ_LEAD_BARS + 8 + EQ_TAIL_BARS) + 5,
       cues: [
-        { fromPos: decks.A.pos, caption: "Get ready: LOW A down on the 1" },
+        { fromPos: decks.A.pos, caption: "Count this phrase: LOW A down on the next 1" },
+        { fromPos: cutPos - barsSec(track, 2), caption: "Next phrase: LOW A down on the 1" },
         { fromPos: cutPos - beat, caption: "LOW A down now" },
         { fromPos: cutPos + barsSec(track, 2), caption: "Hold it. LOW back on the next phrase's 1" },
         { fromPos: backPos - barsSec(track, 1), caption: "Next 1: LOW back to the middle" },

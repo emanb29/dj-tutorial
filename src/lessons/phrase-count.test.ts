@@ -26,6 +26,17 @@ describe("the phrase count", () => {
     expect(run([off, right, passed, off], byEar).shown).toBe(false);
   });
 
+  it("other phrase-timed reps fade it the same way: 2 right in a row, back after 2 misses", () => {
+    const good: PhraseCountEvent = { kind: "action", good: true };
+    const bad: PhraseCountEvent = { kind: "action", good: false };
+    expect(run([good]).shown).toBe(true);
+    const byEar = run([good, good]);
+    expect(byEar.shown).toBe(false);
+    expect(run([bad], byEar).shown).toBe(false);
+    expect(run([bad, bad], byEar).shown).toBe(true);
+    expect(run([good, bad, good]).shown).toBe(true);
+  });
+
   it("an off tap breaks a run of right taps", () => {
     expect(run([right, passed, off, right, passed]).shown).toBe(true);
   });

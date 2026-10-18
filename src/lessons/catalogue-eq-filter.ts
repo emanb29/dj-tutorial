@@ -7,8 +7,8 @@ import { barsSec, fullGroovePhrase, steadyPhrase } from "./plan.ts";
 import { beatSec, phraseStart, trackOnDeck } from "./track.ts";
 import type { CheckPlan, DeckSetups, LessonDefinition, LessonTrack } from "./types.ts";
 
-/** Bars of A before B comes in: time to CUE B (and cut its LOW) before the phrase. */
-const LEAD_BARS = 6;
+/** Bars of A before B comes in: a whole phrase, from its start, to count (B is set up before, off the clock). */
+const LEAD_BARS = 8;
 /** The handover is a phrase after B comes in: the bass swap, or A out at the end of the filter sweep. */
 const HANDOVER_BARS = 8;
 /** The Check ends this long after A's fader closes: CFX and EQ are read back within 1 bar of A going silent. */
@@ -64,12 +64,17 @@ function blendDecks(track: LessonTrack): DeckSetups {
   };
 }
 
-/** The Check's plan: the decks as practice starts them, CUE off, ending 2 bars after A's fader closes. */
-function blendPlan(track: LessonTrack, maxBars: number, cues: CheckPlan["cues"]): CheckPlan {
+/**
+ * The Check's plan: the decks as practice starts them, CUE off, set up off the clock (`setUp`), then
+ * B in on A's phrase a whole phrase later, ending 2 bars after A's fader closes.
+ */
+function blendPlan(track: LessonTrack, maxBars: number, setUp: string, cues: CheckPlan["cues"]): CheckPlan {
   const decks = blendDecks(track);
   const { A } = decks;
   return {
     startPos: A.pos,
+    setUp: { caption: setUp },
+    firstPhraseAction: blendPositions(track).blendPos,
     autoPlay: true,
     faderAtStart: A.fader,
     deckA: { headphoneCue: false, sync: false, tempoPercent: 0, eqCentred: true, filterCentred: true },
@@ -100,6 +105,8 @@ const bassSwap: LessonDefinition = {
   practiceStart: (track) => blendDecks(track).A.pos,
   practiceDecks: blendDecks,
   practiceLoop: (track) => ({ atPos: blendPositions(track).blendPos + barsSec(track, SWAP_LOOP_BARS), reset: "setup" }),
+  practiceSetUp: true,
+  phraseCount: true,
   partner: { problems: eqPairProblems },
   headphones: true,
   aids: { sync: true, bpmDisplay: true },
@@ -110,14 +117,14 @@ const bassSwap: LessonDefinition = {
     { caption: "On the phrase's 1: Press , and push fader B up", control: "B.play", trigger: { kind: "play", deck: "B" }, named: "B's in: its drums, A's bass." },
     { caption: "Swap: LOW A down, LOW B up", control: "A.eq-low", trigger: { kind: "swap" }, named: "That's a bass swap: one bassline hands over to the other." },
   ],
-  practice: { caption: "B in with LOW cut; swap the LOWs on the next phrase's 1", rep: "swap", window: 2, needed: 1 },
+  practice: { caption: "Set up, then R. B in with LOW cut; swap the LOWs on the next phrase's 1", rep: "swap", window: 2, needed: 1 },
   checkCaption: "This one counts: B in with LOW cut, swap the LOWs on the 1",
   questions: [],
   planCheck: (track) => {
     const { leadPos, blendPos, handoverPos } = blendPositions(track);
     const beat = beatSec(track.grid);
-    return blendPlan(track, SWAP_MAX_BARS, [
-      { fromPos: leadPos, caption: "CUE 🎧 B on. LOW B all the way down" },
+    return blendPlan(track, SWAP_MAX_BARS, "Set up: CUE 🎧 B on, LOW B all the way down — then R", [
+      { fromPos: leadPos, caption: "Count this phrase: B in on the next 1" },
       { fromPos: blendPos - barsSec(track, 2), caption: "Next phrase: Press , and slide B up" },
       { fromPos: blendPos + beat, caption: "Fader B up. Swap on the next phrase's 1" },
       { fromPos: handoverPos - barsSec(track, 1), caption: "Next 1: LOW A down, LOW B up" },
@@ -156,6 +163,8 @@ const filterTransition: LessonDefinition = {
   practiceStart: (track) => blendDecks(track).A.pos,
   practiceDecks: blendDecks,
   practiceLoop: (track) => ({ atPos: blendPositions(track).blendPos + barsSec(track, FILTER_LOOP_BARS), reset: "setup" }),
+  practiceSetUp: true,
+  phraseCount: true,
   partner: { problems: eqPairProblems },
   headphones: true,
   aids: { sync: true, bpmDisplay: true },
@@ -172,14 +181,14 @@ const filterTransition: LessonDefinition = {
       reveals: ["B.filter"],
     },
   ],
-  practice: { caption: "CFX A right from 2 bars before B; A out a phrase after B (S)", rep: "filter-out", window: 2, needed: 1 },
+  practice: { caption: "Set up, then R. CFX A right from 2 bars before B; A out a phrase after B (S)", rep: "filter-out", window: 2, needed: 1 },
   checkCaption: `This one counts: filter A out over ${String(SWEEP_ASKED_BARS)} bars as B comes in`,
   questions: [],
   planCheck: (track) => {
     const { leadPos, blendPos, handoverPos } = blendPositions(track);
     const beat = beatSec(track.grid);
-    return blendPlan(track, FILTER_MAX_BARS, [
-      { fromPos: leadPos, caption: "CUE 🎧 B on. B comes in on the next phrase" },
+    return blendPlan(track, FILTER_MAX_BARS, "Set up: CUE 🎧 B on — then R", [
+      { fromPos: leadPos, caption: "Count this phrase: B comes in on the next" },
       { fromPos: handoverPos - barsSec(track, SWEEP_ASKED_BARS), caption: "Start CFX A right, slowly. B in on the 1" },
       { fromPos: blendPos - barsSec(track, 1), caption: "Next 1: Press , and slide B up" },
       { fromPos: blendPos + beat, caption: "Keep turning CFX A right, slowly" },

@@ -73,11 +73,13 @@ describe("the Lesson catalogue for Lessons 1–7", () => {
 });
 
 describe("Ready (R)", () => {
-  it("is used in gain-staging's practice and Check and in cue-point's Check, nowhere else", () => {
+  it("is used in gain-staging's practice and Check, cue-point's Check, and where a set-up step waits for it", () => {
     const used = Object.fromEntries(LESSONS.map((lesson) => [lesson.id, readyUsedIn(lesson, track)]));
     expect(used["gain-staging"]).toEqual({ practice: true, check: true });
     expect(used["cue-point"]).toEqual({ practice: false, check: true });
-    for (const id of ["deck-basics", "beats-and-bars", "phrases", "headphone-cue", "cut-on-phrase"]) expect(used[id]).toEqual({ practice: false, check: false });
+    // cut-on-phrase sets up off the clock, then R, in practice and in the Check.
+    expect(used["cut-on-phrase"]).toEqual({ practice: true, check: true });
+    for (const id of ["deck-basics", "beats-and-bars", "phrases", "headphone-cue"]) expect(used[id]).toEqual({ practice: false, check: false });
   });
 });
 
@@ -252,10 +254,13 @@ describe("cut-on-phrase", () => {
     return grade(definition, plan, recorded(plan, { events, meters }, bPlayhead), end, ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point"]);
   }
 
-  it("leads in 6 bars on A, with B paused on its cue point at a phrase start, fader down", () => {
-    expect(plan.startPos).toBeCloseTo(cutPos - 6 * BAR);
+  it("leads in a whole phrase on A from its start, after an unclocked set-up, with B paused on its cue point at a phrase start, fader down", () => {
+    expect(plan.startPos).toBeCloseTo(cutPos - 8 * BAR);
+    expect(plan.startPos).toBeCloseTo(phraseStart(track.grid, 2));
+    expect(plan.firstPhraseAction).toBeCloseTo(cutPos);
+    expect(plan.setUp).toEqual({ caption: "Set up: CUE 🎧 B on, fader B up, trims matched — then R" });
     expect(plan.deckB).toMatchObject({ pos: phraseStart(track.grid, 2), fader: 0, play: false, cuePoint: true, headphoneCue: false });
-    expect(plan.endWhen).toEqual({ kind: "after", sec: 11 * BAR });
+    expect(plan.endWhen).toEqual({ kind: "after", sec: 13 * BAR });
   });
 
   it("passes B started on A's phrase start with A cut out, CUE B on first and level steady", () => {

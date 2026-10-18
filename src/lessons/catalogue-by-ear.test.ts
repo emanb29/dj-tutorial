@@ -260,10 +260,11 @@ describe("blend-by-ear", () => {
     expect(definition.headphones).toBe(true);
   });
 
-  it("leaves LOW B for the Learner to cut, first thing, so an FLX4 knob and the app agree", () => {
+  it("leaves LOW B for the Learner to cut in the set-up, off the clock, so an FLX4 knob and the app agree", () => {
     expect(plan.deckB).not.toHaveProperty("lowCut");
-    expect(plan.cues[0]).toEqual({ fromPos: plan.startPos, caption: "B's in your headphones. LOW B all the way down" });
-    expect(plan.cues[1]?.caption).toContain("match B: TEMPO B, then jog B");
+    expect(plan.setUp).toEqual({ caption: "Set up: LOW B all the way down — then R" });
+    expect(plan.cues[0]?.fromPos).toBe(plan.startPos);
+    expect(plan.cues[0]?.caption).toContain("match B: TEMPO B, then jog B");
   });
 
   it("is graded with every aid off, on A and the partner on B", () => {

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { caption, keysAtBeats, learner, openLesson, playingPast, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
+import { caption, keysAtBeats, learner, openLesson, playingPast, readyFromPhraseStart, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // Lessons 17–19 end to end, muted, on the synthetic groove (124 BPM, first beat at 0 s, bar 1 on beat
 // 0, so bar n starts on beat 4(n − 1)). Keys are pressed on beats of the engine's own heard playhead;
@@ -86,9 +86,9 @@ test("hot-cues: three pads set at the stops, then pressed on A's phrase starts, 
     await page.keyboard.press("KeyR");
   }
 
-  // A plays from bar 13 (beat 48). Pad 1 on bar 17 (beat 64) jumps to the drop (bar 49, beat 192); pad 2 on
+  // A plays from bar 9 (beat 32), a whole phrase. Pad 1 on bar 17 (beat 64) jumps to the drop (bar 49, beat 192); pad 2 on
   // bar 57 (beat 224) back to the groove (beat 64); pad 3 on bar 25 (beat 96) to the outro.
-  await playingPast(page, "check", 48.5, { before: 60 });
+  await playingPast(page, "check", 32.5, { before: 44 });
   await keysAtBeats(page, [64], { codes: ["Digit1"] });
   await playingPast(page, "check", 192.5, { before: 210 });
   await keysAtBeats(page, [224], { codes: ["Digit2"] });
@@ -138,10 +138,12 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   await expect(page.locator('[data-control="A.loop-in"] .not-yet')).toBeVisible();
   expect(await loopSec()).toBeCloseTo(startSec, 3);
 
-  // A from bar 61 (beat 240); LOOP IN on the outro's phrase start (bar 65, beat 256), LOOP OUT 4 bars on (beat 272).
+  // Set up off the clock (A looping bars 57–64, beats 224–256), then R: A from bar 57 (beat 224), a whole
+  // phrase; LOOP IN on the outro's phrase start (bar 65, beat 256), LOOP OUT 4 bars on (beat 272).
   await page.keyboard.press("Enter");
-  await playingPast(page, "check", 240.5, { before: 250 });
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on — then R");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
+  await readyFromPhraseStart(page, "check", 224);
   await keysAtBeats(page, [256], { codes: ["KeyD"] });
   await keysAtBeats(page, [272], { codes: ["KeyF"] });
   await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").loop)).not.toBeNull();
@@ -177,10 +179,10 @@ test("loop-transition after the bass swap: LOW B cut, B on the loop's 1, the bas
 
   const cue = page.locator(".lesson-cue");
   await page.keyboard.press("Enter");
-  await playingPast(page, "check", 240.5, { before: 250 });
-  await expect(cue).toHaveText("CUE 🎧 B on. LOW B all the way down");
+  await expect(cue).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down — then R");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await command(page, { control: "eq-low", deck: "B", value: -1 });
+  await readyFromPhraseStart(page, "check", 224);
   await keysAtBeats(page, [256], { codes: ["KeyD"] });
   await keysAtBeats(page, [272], { codes: ["KeyF"] });
   await keyAtLoopWrap(page, 272, "Comma");
@@ -221,11 +223,13 @@ test("echo-out: ECHO on, A cut on the last bar's 1, B on the phrase's 1, FX off 
   await page.keyboard.press("KeyS");
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
 
-  // A from bar 19 (beat 72); ECHO on; cut on bar 24 (beat 92); B on bar 25 (beat 96); FX off 2 bars later.
+  // Set up off the clock (CUE B, ECHO on), then R: A from bar 9 (beat 32), two phrases; cut on bar 24
+  // (beat 92); B on bar 25 (beat 96); FX off 2 bars later.
   await page.keyboard.press("Enter");
-  await playingPast(page, "check", 72.5, { before: 80 });
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, ECHO on (V) — then R");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.keyboard.press("KeyV");
+  await readyFromPhraseStart(page, "check", 32);
   await keysAtBeats(page, [92], { codes: ["KeyS"] });
   await keysAtBeats(page, [96], { codes: ["Comma"] });
   await keysAtBeats(page, [103], { codes: ["KeyV"] });

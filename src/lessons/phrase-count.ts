@@ -1,6 +1,7 @@
-// The live 8-bar count the phrases hook and practice show ("bar 3 of 8"), and when it steps aside so
-// the Learner counts by ear: after 2 phrase taps right in a row it fades out, after 2 misses in a row
-// it comes back. Never in a Check: counting is the skill the Check grades. Pure.
+// The live 8-bar count a Lesson's hook and practice show ("bar 3 of 8"), and when it steps aside so
+// the Learner counts by ear: after 2 phrase-timed actions right in a row (phrase taps in Count phrases;
+// cuts, swaps, pad jumps … elsewhere) it fades out, after 2 misses in a row it comes back. Never in a
+// Check: counting is the skill the Check grades. Pure.
 import type { BeatGrid } from "@shared/attempt.ts";
 import { BARS_PER_PHRASE, BEATS_PER_BAR, beatSec } from "./track.ts";
 
@@ -23,9 +24,12 @@ export const PHRASE_COUNT_START: PhraseCountState = { shown: true, right: 0, mis
 export type PhraseCountEvent =
   | { readonly kind: "tap"; readonly onPhraseStart: boolean }
   /** A bar after a phrase start: was it tapped? */
-  | { readonly kind: "phrase-passed" };
+  | { readonly kind: "phrase-passed" }
+  /** Another phrase-timed practice rep (a cut, a swap, a pad jump …): right or not. */
+  | { readonly kind: "action"; readonly good: boolean };
 
 export function phraseCountStep(state: PhraseCountState, event: PhraseCountEvent): PhraseCountState {
+  if (event.kind === "action") return event.good ? hit(state) : miss(state);
   if (event.kind === "tap") {
     // A second tap on a phrase start already counted is neither right nor a miss.
     if (event.onPhraseStart && state.tapped) return state;

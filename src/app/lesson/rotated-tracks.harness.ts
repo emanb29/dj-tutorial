@@ -421,6 +421,21 @@ async function rideTo(run: Run, pos: number): Promise<void> {
   }
 }
 
+/**
+ * The Check's set-up step ("Set up: … — then R"), off the clock: the set-up moves at the Learner's
+ * pace while A loops its first phrase, then R. A plays from the Check's start a lookahead later.
+ */
+async function setUpThenReady(run: Run, moves: readonly EngineCommand[]): Promise<void> {
+  expect(run.session.checkCue()?.caption ?? "").toMatch(/^Set up: .+ — then R$/);
+  for (const command of moves) {
+    run.send(command);
+    await run.renderTo(run.now() + 0.3);
+  }
+  await run.renderTo(run.now() + 3);
+  run.session.ready();
+  await run.renderTo(run.now() + 0.1);
+}
+
 type Answers = Readonly<Record<string, number>>;
 
 /** Each Lesson's Check, done as its captions say. Returns the answers to its questions. */
@@ -526,8 +541,11 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
 
   "cut-on-phrase": async (run) => {
     const { plan, track } = run;
-    run.send({ control: "headphone-cue", deck: "B", value: true });
-    run.send({ control: "channel-fader", deck: "B", value: 1 });
+    // "Set up: CUE 🎧 B on, fader B up, trims matched — then R" (the set-up trims match already).
+    await setUpThenReady(run, [
+      { control: "headphone-cue", deck: "B", value: true },
+      { control: "channel-fader", deck: "B", value: 1 },
+    ]);
     // "Next phrase: Press , and S on the 1."
     await run.toPos(cuePos(plan, "Next phrase: Press , and S on the 1") + 2 * barLength(track));
     run.send({ control: "play", deck: "B" });
@@ -553,8 +571,10 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
 
   "sync-blend": async (run) => {
     const { plan, track } = run;
-    run.send({ control: "sync", deck: "B", value: true });
-    run.send({ control: "headphone-cue", deck: "B", value: true });
+    await setUpThenReady(run, [
+      { control: "sync", deck: "B", value: true },
+      { control: "headphone-cue", deck: "B", value: true },
+    ]);
     const blendPos = cuePos(plan, "Next 1: Press , and fader B to ¾") + 2 * barLength(track);
     const upPos = cuePos(plan, "Now A all the way down");
     const beat = beatSec(track.grid);
@@ -605,8 +625,10 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
     const blendPos = cuePos(plan, "Next phrase: Press , and slide B up") + 2 * barLength(track);
     const handoverPos = cuePos(plan, "Next 1: LOW A down, LOW B up") + barLength(track);
     const outPos = handoverPos + 8 * beat;
-    run.send({ control: "headphone-cue", deck: "B", value: true });
-    run.send({ control: "eq-low", deck: "B", value: -1 });
+    await setUpThenReady(run, [
+      { control: "headphone-cue", deck: "B", value: true },
+      { control: "eq-low", deck: "B", value: -1 },
+    ]);
     await run.toPos(blendPos);
     run.send({ control: "play", deck: "B" });
     await movesAt(run, [
@@ -626,7 +648,7 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
     const sweepFrom = cuePos(plan, "Start CFX A right, slowly. B in on the 1");
     const blendPos = cuePos(plan, "Next 1: Press , and slide B up") + barLength(track);
     const handoverPos = cuePos(plan, "Next 1: A out (S)") + barLength(track);
-    run.send({ control: "headphone-cue", deck: "B", value: true });
+    await setUpThenReady(run, [{ control: "headphone-cue", deck: "B", value: true }]);
     const sweepBeats = (handoverPos - sweepFrom) / beat;
     await movesAt(run, [
       ...drag(track, sweepFrom, sweepBeats - 1, (value) => ({ control: "filter", deck: "A", value }), 0.06, 0.85),
@@ -672,12 +694,9 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
     if (!Number.isFinite(fadeBars)) throw new Error(`The fade caption names no length: "${fade.caption}"`);
     const outPos = fade.pos + barLength(track);
     const lowBack = cueStarting(plan, "All the way down, then LOW A").pos;
-    // "B's in your headphones. LOW B all the way down" (when the Check asks for it), then "Now match B".
-    if (plan.cues.some((cue) => cue.caption.includes("LOW B all the way down"))) {
-      await run.renderTo(run.now() + 0.5);
-      run.send({ control: "eq-low", deck: "B", value: -1 });
-    }
-    const match = plan.cues.find((cue) => cue.caption.startsWith("Now match B"));
+    // "Set up: LOW B all the way down — then R", off the clock, then "Now match B".
+    await setUpThenReady(run, plan.setUp?.caption.includes("LOW B all the way down") === true ? [{ control: "eq-low", deck: "B", value: -1 }] : []);
+    const match = plan.cues.find((cue) => cue.caption.includes("Now match B"));
     if (match !== undefined) await run.toPos(match.fromPos);
     // Matched in the headphones first, then kept in line through the blend.
     await run.renderTo(run.now() + 1);
@@ -736,13 +755,13 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
 
   "loop-transition": async (run) => {
     const { plan, track } = run;
-    // "CUE 🎧 B on", with "LOW B all the way down" when the Check swaps the bass (Lesson 12 passed).
-    const first = plan.cues[0];
-    if (first === undefined) throw new Error("loop-transition has no captions");
+    // "Set up: CUE 🎧 B on", with "LOW B all the way down" when the Check swaps the bass (Lesson 12 passed).
     const swaps = (plan.stepCues ?? []).some((step) => step.caption.includes("swap the bass"));
-    run.send({ control: "headphone-cue", deck: "B", value: true });
-    if (first.caption.includes("LOW B all the way down")) run.send({ control: "eq-low", deck: "B", value: -1 });
-    const loopPos = nextPhraseStart(track, cueStarting(plan, swaps ? "Next phrase's 1: LOOP IN" : "CUE 🎧 B on. Next phrase's 1: LOOP IN").pos + 1e-3);
+    await setUpThenReady(run, [
+      { control: "headphone-cue", deck: "B", value: true },
+      ...(plan.setUp?.caption.includes("LOW B all the way down") === true ? [{ control: "eq-low", deck: "B", value: -1 } as const] : []),
+    ]);
+    const loopPos = nextPhraseStart(track, cueStarting(plan, "Next phrase's 1: LOOP IN").pos + 1e-3);
     const loopOut = cuePos(plan, "Count 4 bars: LOOP OUT on the 1 (F)") - beatSec(track.grid) + 4 * barLength(track);
     await run.toPos(loopPos);
     run.send({ control: "loop-in", deck: "A" });
@@ -777,8 +796,10 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
 
   "echo-out": async (run) => {
     const { plan, track } = run;
-    run.send({ control: "headphone-cue", deck: "B", value: true });
-    run.send({ control: "beat-fx", value: true });
+    await setUpThenReady(run, [
+      { control: "headphone-cue", deck: "B", value: true },
+      { control: "beat-fx", value: true },
+    ]);
     const cutPos = cuePos(plan, "Next bar is the last: cut A on its 1 (S)") + barLength(track);
     const next = cuePos(plan, "Phrase's 1: Press ,") - beatSec(track.grid) + barLength(track);
     await run.toPos(cutPos);

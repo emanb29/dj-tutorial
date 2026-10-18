@@ -152,11 +152,14 @@ describe("the Lesson catalogue for Lessons 12–13", () => {
     // The groove (bars 17–32) has the kick and the bass; B's groove starts on its phrase 3.
     expect(blendPos).toBeCloseTo(barStart(track.grid, 17));
     expect(handoverPos).toBeCloseTo(barStart(track.grid, 25));
-    expect(leadPos).toBeCloseTo(blendPos - 6 * BAR);
+    // A whole phrase to count, from its start, after the set-up off the clock.
+    expect(leadPos).toBeCloseTo(blendPos - 8 * BAR);
     expect(cueB).toBeCloseTo(phraseStart(partner.grid, 2));
     for (const id of ["bass-swap", "filter-transition"] as const) {
       const plan = lessonDefinition(id).planCheck(track);
       expect(plan.startPos, id).toBeCloseTo(leadPos);
+      expect(plan.firstPhraseAction, id).toBeCloseTo(blendPos);
+      expect(plan.setUp?.caption, id).toMatch(/^Set up: CUE 🎧 B on/);
       expect(plan.deckA, id).toMatchObject({ sync: false, eqCentred: true, filterCentred: true, headphoneCue: false });
       expect(plan.deckB, id).toMatchObject({ pos: cueB, play: false, fader: 0, cuePoint: true, sync: true, eqCentred: true, filterCentred: true });
       expect(plan.crossfader, id).toBe(0.5);

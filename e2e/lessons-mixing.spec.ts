@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { caption, checkPlayingPast, keysAtBeats, learner, openLesson, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
+import { caption, checkPlayingPast, keysAtBeats, learner, openLesson, readyFromPhraseStart, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // Lessons 4–7 end to end, muted, on the synthetic groove (124 BPM, first beat at 0 s, bar 1 on beat 0).
 // The synthetic groove peaks at −6 dBFS. Engine commands sent from the test stand in for knob drags.
@@ -131,11 +131,14 @@ test("cut-on-phrase: CUE B, fader B up, then PLAY B and cut A on the phrase star
   await openLesson(page, learnerId, "cut-on-phrase");
   await expect(caption(page)).toContainText("Turn on CUE 🎧 on channel B");
 
-  // A leads in from bar 11 (beat 40); the cut is on phrase 3 (bar 17, beat 64); B waits on its cue point.
+  // Set up off the clock, A looping phrase 2 (bar 9, beat 32), then R: a whole phrase, and the cut on
+  // phrase 3 (bar 17, beat 64); B waits on its cue point.
   await page.keyboard.press("Enter");
-  await checkPlayingPast(page, 40.5);
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, fader B up, trims matched — then R");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.keyboard.press("KeyO");
+  await readyFromPhraseStart(page, "check", 32);
+  await expect(page.locator(".lesson-cue")).toHaveText("Count this phrase: cut on the next 1");
   // On the 1, as heard: B's Play is graded from the press, however late a headless browser's audio starts.
   await keysAtBeats(page, [64], { codes: ["Comma", "KeyS"] });
 

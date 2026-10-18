@@ -12,6 +12,7 @@ import {
   matchTempoB,
   nudgeInLine,
   pairTrack,
+  setUpThenReady,
   passedBefore,
   slide,
   startedCheck,
@@ -65,10 +66,12 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
     const { leadPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const bar = 4 * beat;
-    const playAt = await startedCheck(run);
+    // "Set up: CUE 🎧 B on, LOW B all the way down — then R", off the clock.
+    const playAt = await startedCheck(run, [], [
+      { control: "headphone-cue", deck: "B", value: true },
+      { control: "eq-low", deck: "B", value: -1 },
+    ]);
     const moves: Move[] = [
-      { pos: leadPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true }, caption: "CUE 🎧 B on" },
-      { pos: leadPos + 1, command: { control: "eq-low", deck: "B", value: -1 }, caption: "LOW B all the way down" },
       { pos: blendPos, command: { control: "play", deck: "B" }, caption: "Press ," },
       ...slide("channel-fader", "B", blendPos, 2, beat, 0, 1),
       { pos: handoverPos - 0.03, command: { control: "eq-low", deck: "A", value: -1 }, caption: "LOW A down, LOW B up" },
@@ -88,7 +91,8 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
     const { leadPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const bar = 4 * beat;
-    const playAt = await startedCheck(run);
+    // "Set up: CUE 🎧 B on — then R", off the clock.
+    const playAt = await startedCheck(run, [], [{ control: "headphone-cue", deck: "B", value: true }]);
     // "Start CFX A right, slowly": from 10 bars before A's out, to most of the way right (0.85).
     const sweepFrom = handoverPos - 10 * bar + 0.3;
     const sweep: Move[] = Array.from({ length: 41 }, (_, step) => ({
@@ -97,7 +101,6 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
       ...(step === 0 ? { caption: "Start CFX A right" } : {}),
     }));
     const moves: Move[] = [
-      { pos: leadPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true }, caption: "CUE 🎧 B on" },
       ...sweep,
       { pos: blendPos, command: { control: "play", deck: "B" }, caption: "Press ," },
       ...slide("channel-fader", "B", blendPos, 2, beat, 0, 1),
@@ -160,14 +163,18 @@ describe.each(OUTPUTS)("following the captions by ear on $what", ({ latencySec }
     const run = await pairHarness("blend-by-ear", latencySec, { renderSec: 170 });
     const beat = 60 / run.track.grid.bpm;
     const bar = 4 * beat;
-    const playAt = await startedCheck(run);
+    run.session.startCheck(passedBefore(LESSON_IDS, "blend-by-ear"));
+    await until(() => run.session.runningPlan() !== null, "the session to start the Check's set-up");
+    // The set-up leaves LOW B where it was (centred): the Learner cuts it, as on an FLX4, off the clock.
+    await run.renderTo(run.now() + 0.2);
+    expect(run.engine.mixerState().channels.B["eq-low"]).toBe(0);
+    run.endsBeforeCheck = run.audioEnded();
+    const playAt = await setUpThenReady(run, [{ control: "eq-low", deck: "B", value: -1 }]);
+    run.plan = run.session.runningPlan();
     const plan = planOf(run);
     const inPos = plan.startPos + 8 * bar;
     const swapPos = inPos + 8 * bar;
     const outPos = inPos + 16 * bar;
-    // The set-up leaves LOW B where it was (centred): the Learner cuts it, as on an FLX4.
-    expect(run.engine.mixerState().channels.B["eq-low"]).toBe(0);
-    await follow(run, playAt, plan.startPos, [{ pos: plan.startPos + 0.6, command: { control: "eq-low", deck: "B", value: -1 }, caption: "LOW B all the way down" }]);
     await hearPos(run, playAt, plan.startPos, plan.startPos + bar + 2 * beat);
     expect(caption(run)).toContain("match B: TEMPO B, then jog B");
     matchTempoB(run, 0.03);
@@ -238,7 +245,7 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
       stop();
     }
     // "Count the bars. Next phrase's 1: Press 1", then each next phrase's 1 after a jump.
-    let heardAt = playAt + 4 * bar;
+    let heardAt = playAt + 8 * bar;
     for (const slot of [0, 1, 2]) {
       await run.renderToHeard(heardAt);
       expect(caption(run)).toContain(`Press ${String(slot + 1)}`);
@@ -256,13 +263,15 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     const bar = 4 * beat;
     // bass-swap and blend-by-ear passed: the captions swap the bass, and one-bass (warn) is graded.
     const passed = passedBefore(LESSON_IDS, "loop-transition");
-    const playAt = await startedCheck(run, passed);
+    // "Set up: CUE 🎧 B on, LOW B all the way down — then R", off the clock.
+    const playAt = await startedCheck(run, passed, [
+      { control: "headphone-cue", deck: "B", value: true },
+      { control: "eq-low", deck: "B", value: -1 },
+    ]);
     const plan = planOf(run);
-    // The loop is A's last phrase: it starts 4 bars after the Check's.
-    const loopPos = plan.startPos + 4 * bar;
+    // The loop is A's last phrase: it starts a phrase after the Check's.
+    const loopPos = plan.startPos + 8 * bar;
     await follow(run, playAt, plan.startPos, [
-      { pos: plan.startPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true }, caption: "CUE 🎧 B on" },
-      { pos: plan.startPos + 1, command: { control: "eq-low", deck: "B", value: -1 }, caption: "LOW B all the way down" },
       { pos: loopPos, command: { control: "loop-in", deck: "A" }, caption: "LOOP IN (D)" },
       { pos: loopPos + 4 * bar, command: { control: "loop-out", deck: "A" }, caption: "LOOP OUT on the 1" },
     ]);
@@ -293,11 +302,11 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     const bar = 4 * beat;
     // An elective: sync-blend and phrases are all it needs. The LOW knobs may be locked, one-bass is not graded.
     const passed = passedBefore(LESSON_IDS, "crossfader");
-    const playAt = await startedCheck(run, passed);
+    // "Set up: CUE 🎧 B on — then R", off the clock.
+    const playAt = await startedCheck(run, passed, [{ control: "headphone-cue", deck: "B", value: true }]);
     const plan = planOf(run);
-    const loopPos = plan.startPos + 4 * bar;
+    const loopPos = plan.startPos + 8 * bar;
     await follow(run, playAt, plan.startPos, [
-      { pos: plan.startPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true }, caption: "CUE 🎧 B on" },
       { pos: loopPos, command: { control: "loop-in", deck: "A" }, caption: "LOOP IN (D)" },
       { pos: loopPos + 4 * bar, command: { control: "loop-out", deck: "A" }, caption: "LOOP OUT on the 1" },
     ]);
@@ -319,13 +328,15 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     const run = await pairHarness("echo-out", latencySec, { renderSec: 170, sameOnB: true });
     const beat = 60 / run.track.grid.bpm;
     const bar = 4 * beat;
-    const playAt = await startedCheck(run);
+    // "Set up: CUE 🎧 B on, ECHO on (V) — then R", off the clock.
+    const playAt = await startedCheck(run, [], [
+      { control: "headphone-cue", deck: "B", value: true },
+      { control: "beat-fx", value: true },
+    ]);
     const plan = planOf(run);
-    // A plays from bar 3 of its phrase; the next phrase starts 6 bars later.
-    const next = plan.startPos + 6 * bar;
+    // A plays a whole phrase from its start, then the groove phrase; B comes in on the one after.
+    const next = plan.startPos + 16 * bar;
     await follow(run, playAt, plan.startPos, [
-      { pos: plan.startPos + 0.5, command: { control: "headphone-cue", deck: "B", value: true }, caption: "CUE 🎧 B on" },
-      { pos: plan.startPos + 1, command: { control: "beat-fx", value: true }, caption: "ECHO on (V)" },
       { pos: next - bar, command: { control: "channel-fader", deck: "A", value: 0 }, caption: "cut A on its 1" },
       { pos: next, command: { control: "play", deck: "B" }, caption: "Phrase's 1: Press ," },
       { pos: next + beat + 0.5, command: { control: "beat-fx", value: false }, caption: "FX off (V)" },

@@ -3,7 +3,7 @@
 // loop-transition and echo-out bring the same track in on deck B from another phrase.
 import type { LessonId, LessonTask } from "@shared/attempt.ts";
 import { barsSec, steadyPhrase } from "./plan.ts";
-import { barStart, beatSec, cuedAt, phraseOf, phraseStart } from "./track.ts";
+import { beatSec, cuedAt, phraseOf, phraseStart } from "./track.ts";
 import type { CheckPlan, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
 const EMPTY_PADS: readonly null[] = Array.from({ length: 8 }, () => null);
@@ -22,15 +22,16 @@ function hotCuePhrases(track: LessonTrack): { readonly pads: readonly [number, n
   const last = track.phraseStarts.length;
   const drop = phraseOf(track.sections, "drop", groove + 1) ?? Math.min(groove + 4, last - 2);
   const outro = phraseOf(track.sections, "outro", drop + 1) ?? Math.max(drop + 1, last - 1);
-  return { pads: [drop, groove, outro], lead: groove };
+  // The first trigger needs a whole phrase before it to count.
+  return { pads: [drop, groove, outro], lead: Math.max(2, groove) };
 }
 
-/** Bars of A before the first trigger: count in to the groove's phrase start. */
-const HOT_CUE_LEAD_BARS = 4;
+/** Bars of A before the first trigger: a whole phrase, from its start, to count to the groove's phrase start. */
+const HOT_CUE_LEAD_BARS = 8;
 /** Each stop sits this many beats before its phrase start: jog to the 1 (cue-point's leads). */
 const STOP_LEADS_BEATS = [1.37, 2.62, 0.71] as const;
 const HOT_CUE_TAIL_BARS = 2;
-/** Practice: pad 1 holds the drop; A plays from 4 bars before the groove and goes round 4 bars into the drop. */
+/** Practice: pad 1 holds the drop; A plays from a phrase before the groove and goes round 4 bars into the drop. */
 const PRACTICE_DROP_BARS = 4;
 
 function hotCueDecks(track: LessonTrack): DeckSetups {
@@ -51,6 +52,7 @@ const hotCues: LessonDefinition = {
   practiceStart: (track) => hotCueDecks(track).A.pos,
   practiceDecks: hotCueDecks,
   practiceLoop: hotCueLoop,
+  phraseCount: true,
   // From the Check's own cue to the first stop: before it, the practice is still heard (and metered).
   gradeFromOwnCue: true,
   trackProblems: (track) => phrasesNeeded(track, Math.max(...hotCuePhrases(track).pads)),
@@ -70,6 +72,7 @@ const hotCues: LessonDefinition = {
       autoPlay: true,
       faderAtStart: 1,
       deckA: { hotCues: EMPTY_PADS },
+      firstPhraseAction: phraseStart(track.grid, lead),
       stops: pads.map((phrase, index) => phraseStart(track.grid, phrase) - (STOP_LEADS_BEATS[index] ?? 1) * beat),
       endWhen: { kind: "did-then", what: { kind: "hot-cue-trigger" }, count: pads.length, bars: HOT_CUE_TAIL_BARS },
       // Two minutes to set the pads by ear (as cue-point's three cue points); then, from the last Ready,
@@ -82,7 +85,7 @@ const hotCues: LessonDefinition = {
         "Pad 3: jog to the 1, Press 3, then R",
       ],
       cues: [
-        { fromPos: startPos, caption: "Count the bars. Next phrase's 1: Press 1" },
+        { fromPos: startPos, caption: "Count this phrase. Next phrase's 1: Press 1" },
       ],
       stepCues: [
         { after: { kind: "hot-cue-trigger" }, caption: "Count 8 bars. Next phrase's 1: Press 2" },
@@ -114,7 +117,8 @@ const hotCues: LessonDefinition = {
 // Lesson 18: loop-transition
 // ---------------------------------------------------------------------------------------------
 
-const LOOP_LEAD_BARS = 4;
+/** Bars of A before LOOP IN: a whole phrase, from its start, to count. */
+const LOOP_LEAD_BARS = 8;
 const LOOP_BARS = 4;
 const LOOP_TAIL_BARS = 2;
 
@@ -146,6 +150,8 @@ const loopTransition: LessonDefinition = {
   practiceStart: (track) => loopDecks(track).A.pos,
   practiceDecks: loopDecks,
   practiceLoop: (track) => ({ atPos: phraseStart(track.grid, loopPhrases(track).loop) + barsSec(track, 2 * LOOP_BARS + 2), reset: "setup" }),
+  practiceSetUp: true,
+  phraseCount: true,
   headphones: true,
   trackProblems: (track) => phrasesNeeded(track, loopPhrases(track).loop),
   hook: [
@@ -154,7 +160,7 @@ const loopTransition: LessonDefinition = {
     { caption: "LOOP IN on a 1 (D)", control: "A.loop-in", trigger: { kind: "loop-in" }, named: "IN marks where the loop starts." },
     { caption: "LOOP OUT on a 1, 4 bars on (F)", control: "A.loop-out", trigger: { kind: "loop-on" }, named: "OUT closes it: a 4-bar loop. 2X (6) doubles it, ½X (5) halves it." },
   ],
-  practice: { caption: "LOOP IN on the phrase's 1 (D), LOOP OUT 4 bars on (F), then EXIT (G)", rep: "loop", window: 2, needed: 1 },
+  practice: { caption: "Set up, then R. LOOP IN on the phrase's 1 (D), LOOP OUT 4 bars on (F), then EXIT (G)", rep: "loop", window: 2, needed: 1 },
   checkCaption: "This one counts: loop A's last phrase, Press , on the loop's 1, EXIT on a 1",
   questions: [],
   planCheck: (track, _attempt, passedLessons = []): CheckPlan => {
@@ -170,18 +176,15 @@ const loopTransition: LessonDefinition = {
       faderAtStart: 1,
       deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
+      setUp: { caption: swap ? "Set up: CUE 🎧 B on, LOW B all the way down — then R" : "Set up: CUE 🎧 B on — then R" },
+      firstPhraseAction: loopPos,
       endWhen: { kind: "faded-out-then", deck: "A", bars: LOOP_TAIL_BARS },
       timeoutSec: barsSec(track, LOOP_LEAD_BARS + loopsPlayed * LOOP_BARS + LOOP_TAIL_BARS) + 10,
-      cues: swap
-        ? [
-            { fromPos: decks.A.pos, caption: "CUE 🎧 B on. LOW B all the way down" },
-            { fromPos: loopPos - barsSec(track, 2), caption: "Next phrase's 1: LOOP IN (D)" },
-            { fromPos: loopPos + beat, caption: "Count 4 bars: LOOP OUT on the 1 (F)" },
-          ]
-        : [
-            { fromPos: decks.A.pos, caption: "CUE 🎧 B on. Next phrase's 1: LOOP IN (D)" },
-            { fromPos: loopPos + beat, caption: "Count 4 bars: LOOP OUT on the 1 (F)" },
-          ],
+      cues: [
+        { fromPos: decks.A.pos, caption: "Count this phrase: LOOP IN on the next 1" },
+        { fromPos: loopPos - barsSec(track, 2), caption: "Next phrase's 1: LOOP IN (D)" },
+        { fromPos: loopPos + beat, caption: "Count 4 bars: LOOP OUT on the 1 (F)" },
+      ],
       stepCues: [
         { after: { kind: "loop-on" }, caption: "Looping. On the loop's 1: Press ," },
         ...(swap
@@ -213,21 +216,24 @@ const loopTransition: LessonDefinition = {
 // Lesson 19: echo-out
 // ---------------------------------------------------------------------------------------------
 
-/** A plays 6 bars of its groove phrase; the cut is on the phrase's last bar; B comes in on the drop. */
-const ECHO_FROM_BAR = 3;
+/**
+ * A plays the phrase before its groove phrase, from its start, then the groove phrase; the cut is on
+ * the groove phrase's last bar; B comes in on the drop.
+ */
+const ECHO_LEAD_BARS = 8;
 const ECHO_TAIL_BARS = 6;
 const ECHO_SETUP = { channel: "A", beats: 1, depth: 0.7, on: false } as const;
 
 function echoPhrases(track: LessonTrack): { readonly phrase: number; readonly cueB: number } {
-  const phrase = groovePhrase(track);
+  // A whole phrase before it to count.
+  const phrase = Math.max(2, groovePhrase(track));
   return { phrase, cueB: phraseOf(track.sections, "drop", phrase + 1) ?? phrase + 1 };
 }
 
 function echoDecks(track: LessonTrack): DeckSetups {
   const { phrase, cueB } = echoPhrases(track);
-  const first = (phrase - 1) * 8 + 1;
   return {
-    A: { pos: barStart(track.grid, first + ECHO_FROM_BAR - 1), fader: 1, play: true },
+    A: { pos: phraseStart(track.grid, phrase) - barsSec(track, ECHO_LEAD_BARS), fader: 1, play: true },
     B: { pos: phraseStart(track.grid, cueB), fader: 1, play: false, cuePoint: true },
     beatFx: ECHO_SETUP,
   };
@@ -243,6 +249,7 @@ const echoOut: LessonDefinition = {
     return { A, ...(beatFx === undefined ? {} : { beatFx }) };
   },
   practiceLoop: (track) => ({ atPos: phraseStart(track.grid, echoPhrases(track).phrase + 1), reset: "setup" }),
+  phraseCount: true,
   headphones: true,
   trackProblems: (track) => phrasesNeeded(track, echoPhrases(track).cueB),
   hook: [
@@ -271,10 +278,12 @@ const echoOut: LessonDefinition = {
       deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       beatFx: ECHO_SETUP,
+      setUp: { caption: "Set up: CUE 🎧 B on, ECHO on (V) — then R" },
+      firstPhraseAction: next - barsSec(track, 1),
       endWhen: { kind: "did-then", what: { kind: "play", deck: "B" }, count: 1, bars: ECHO_TAIL_BARS },
-      timeoutSec: barsSec(track, 8 - ECHO_FROM_BAR + 1 + ECHO_TAIL_BARS) + 8,
+      timeoutSec: barsSec(track, ECHO_LEAD_BARS + 8 + ECHO_TAIL_BARS) + 8,
       cues: [
-        { fromPos: decks.A.pos, caption: "CUE 🎧 B on. ECHO on (V)" },
+        { fromPos: decks.A.pos, caption: "Count 2 phrases: cut A on the last bar's 1" },
         { fromPos: next - barsSec(track, 2), caption: "Next bar is the last: cut A on its 1 (S)" },
         { fromPos: next - barsSec(track, 1) + beat, caption: "Phrase's 1: Press ," },
         { fromPos: next + beat, caption: "Echo gone? FX off (V)" },

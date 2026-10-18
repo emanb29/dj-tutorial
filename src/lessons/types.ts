@@ -325,6 +325,19 @@ export interface CheckPlan {
   readonly stops?: readonly number[];
   /** Listening clips played while a question is asked, by question id (tempo-fader). */
   readonly clips?: Readonly<Record<string, ListeningClip>>;
+  /**
+   * A set-up step off the clock before the Check proper (cut-on-phrase: CUE B on, fader B up, trims
+   * matched): deck A loops the phrase from `startPos` (a phrase start) while the other decks wait,
+   * nothing is recorded and no timeout runs. R starts the Check from `startPos`, leaving what the
+   * Learner set up as it is. `caption` says what to set up, then R.
+   */
+  readonly setUp?: { readonly caption: string };
+  /**
+   * Deck A's track position of the first action the Check times to a phrase (B in on the 1, the LOW
+   * cut on the 1, the first phrase tap): at least one whole phrase after `startPos`, so the Learner
+   * hears a phrase begin and counts it before acting (phrase-context.test.ts).
+   */
+  readonly firstPhraseAction?: number;
   /** When the audio part ends by itself. */
   readonly endWhen: CheckEnd;
   /** Hard stop for the audio part, seconds after the Check starts (with `stops`, after the last one). */
@@ -414,9 +427,15 @@ export interface LessonDefinition {
   readonly headphones?: true;
   /**
    * The hook and practice show a live 8-bar count on deck A ("bar 3 of 8"), fading out once the
-   * Learner taps phrases right by ear (phrase-count.ts). Never in the Check.
+   * Learner makes 2 phrase-timed reps right in a row (phrase taps, cuts, swaps …) and back after 2
+   * misses (phrase-count.ts). Never in the Check.
    */
   readonly phraseCount?: true;
+  /**
+   * Practice waits for R after each set-up, as the Check's `setUp` step does: deck A loops the phrase
+   * from its practice start until the Learner has set up, then plays on to the phrase-timed action.
+   */
+  readonly practiceSetUp?: true;
   /** Which deck's grid taps are placed on (headphone-cue taps deck B). Default A. */
   readonly tapDeck?: DeckId;
   /**

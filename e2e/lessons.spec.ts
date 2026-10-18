@@ -66,7 +66,7 @@ test("beats-and-bars: taps on every beat, then on every 1, pass the Check", asyn
 });
 
 test("phrases: a tap on each phrase start across two halves, a halfway tick, then the sections named, pass the Check", async ({ page }) => {
-  // 66 bars at 124 BPM: about 2 minutes of real time.
+  // 72 bars at 124 BPM: about 2 minutes 20 s of real time.
   test.setTimeout(240_000);
   const learnerId = learner("phrases");
   await seedPassed(page, learnerId, ["deck-basics", "beats-and-bars"]);
@@ -75,15 +75,18 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   // The hook and practice count the bars of each phrase.
   await expect(page.getByTestId("phrase-count")).toContainText(/bar [1-8] of 8/);
 
-  // The synthetic groove: phrase k starts on beat 32·(k − 1). The Check leads in from bar 7 (beat 24)
-  // and taps phrases 2–9 (beats 32 … 256): the breakdown is the 4th tapped phrase, the drop the 6th.
+  // The synthetic groove: phrase k starts on beat 32·(k − 1). The Check leads in with a whole phrase
+  // from bar 1 (beat 0), counts in from bar 7 (beat 24) and taps phrases 2–9 (beats 32 … 256): the
+  // breakdown is the 4th tapped phrase, the drop the 6th.
   // The hook's loop plays into the tap section (phrase 2, beat 32) first, as it does for a Learner.
   await playingPast(page, "hook", 34);
   await page.keyboard.press("Enter");
-  await checkPlayingPast(page, 24.5);
+  await checkPlayingPast(page, 0.5);
   const caption = page.getByRole("status", { name: "Lesson caption" });
   // No count in the Check: phrase 1 is counted in instead, the last bar large on its beats.
-  await expect(caption).toContainText("Phrase 1 starts in 2 bars");
+  // A whole phrase to count along with first, from bar 1.
+  await expect(caption).toContainText("Count along: 8 bars, then phrase 1");
+  await expect(caption).toContainText("Phrase 1 starts in 2 bars", { timeout: 20_000 });
   await expect(page.getByTestId("phrase-count")).toHaveCount(0);
   const cue = page.locator(".lesson-cue");
   await expect(cue).toHaveAttribute("data-countdown", "true", { timeout: 5000 });
@@ -157,7 +160,7 @@ test("phrases: a wrong drop and missed phrase starts say exactly what went wrong
   await openLesson(page, learnerId, "phrases");
   await playingPast(page, "hook", 34);
   await page.keyboard.press("Enter");
-  await checkPlayingPast(page, 24.5);
+  await checkPlayingPast(page, 0.5);
 
   // Tapped phrases 1, 2, 5 and 6 on time, phrase 3 two beats late (beat 98); phrases 4, 7 and 8 not at all.
   await tapAtBeats(page, [32, 64, 98, 160, 192]);

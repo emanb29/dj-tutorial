@@ -77,7 +77,9 @@ describe("the Lesson catalogue for Lessons 8–11", () => {
       expect(lesson.hook.length).toBeLessThanOrEqual(3);
     }
     expect(readyUsedIn(lessonDefinition("tempo-fader"), track)).toEqual({ practice: true, check: true });
-    expect(readyUsedIn(lessonDefinition("sync-blend"), track)).toEqual({ practice: false, check: false });
+    // sync-blend sets up (SYNC B, CUE B) off the clock, then R, in practice and in the Check.
+    expect(readyUsedIn(lessonDefinition("sync-blend"), track)).toEqual({ practice: true, check: true });
+    expect(readyUsedIn(lessonDefinition("crossfader"), track)).toEqual({ practice: false, check: false });
   });
 
   it("grades from the Check's own cue, not the recorder's start", () => {
@@ -198,12 +200,15 @@ describe("tempo-fader", () => {
 describe("sync-blend", () => {
   const definition = lessonDefinition("sync-blend");
   const plan = definition.planCheck(track);
-  const blendPos = plan.startPos + 6 * BAR;
+  const blendPos = plan.startPos + 8 * BAR;
   const cueB = plan.deckB?.pos ?? 0;
   const synced = track.grid.bpm / partner.grid.bpm;
 
-  it("plays A 6 bars before a steady phrase; B, a 121 BPM partner, waits on its cue point, SYNC off, fader down", () => {
+  it("plays A a whole phrase before a steady phrase, from its start, after an unclocked set-up; B, a 121 BPM partner, waits on its cue point, SYNC off, fader down", () => {
     expect(blendPos).toBeCloseTo(phraseStart(track.grid, 2));
+    expect(plan.startPos).toBeCloseTo(phraseStart(track.grid, 1));
+    expect(plan.firstPhraseAction).toBeCloseTo(blendPos);
+    expect(plan.setUp).toEqual({ caption: "Set up: SYNC B on, CUE 🎧 B on — then R" });
     expect(cueB).toBeCloseTo(phraseStart(partner.grid, 2));
     expect(plan.deckB).toMatchObject({ play: false, fader: 0, cuePoint: true, sync: false, tempoPercent: 0 });
     expect(plan.endWhen).toEqual({ kind: "faded-out-then", deck: "A", bars: 2 });
@@ -252,7 +257,7 @@ describe("sync-blend", () => {
 describe("crossfader", { timeout: 20_000 }, () => {
   const definition = lessonDefinition("crossfader");
   const plan = definition.planCheck(track);
-  const blendPos = plan.startPos + 6 * BAR;
+  const blendPos = plan.startPos + 8 * BAR;
   const cutPos = blendPos + 16 * BAR;
   const cueB = plan.deckB?.pos ?? 0;
   const synced = track.grid.bpm / partner.grid.bpm;
@@ -309,8 +314,9 @@ describe("eq-basics", () => {
   const cutPos = barStart(track.grid, 17);
   const backPos = barStart(track.grid, 25);
 
-  it("cuts on the groove (bar 17, with the bass), with 2 bars to get ready, every EQ centred", () => {
-    expect(plan.startPos).toBeCloseTo(cutPos - 2 * BAR);
+  it("cuts on the groove (bar 17, with the bass), after a whole phrase from its start, every EQ centred", () => {
+    expect(plan.startPos).toBeCloseTo(cutPos - 8 * BAR);
+    expect(plan.firstPhraseAction).toBeCloseTo(cutPos);
     expect(plan.deckA).toMatchObject({ eqCentred: true });
     expect(plan.endWhen).toEqual({ kind: "position", pos: backPos + 2 * BAR + BEAT });
     expect(definition.trackProblems(track)).toEqual([]);

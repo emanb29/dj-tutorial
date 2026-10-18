@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { caption, commandsAtBeats, learner, openLesson, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
+import { caption, commandsAtBeats, learner, openLesson, readyFromPhraseStart, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // Lessons 14–16 end to end, muted, on the synthetic grooves: deck A 124 BPM, and for the two-track
 // Lessons a 121 BPM groove on deck B; both have the first beat at 0 s and bar 1 on beat 0. The jog
@@ -192,13 +192,17 @@ test("blend-by-ear: B matched in the headphones, a 16-bar blend with the bass sw
   await page.keyboard.up("ArrowLeft");
   await expect(phase(page)).toHaveAttribute("data-phase", "practice");
 
-  // The Check from bar 1: B plays in the headphones. Cut LOW B (the set-up leaves it to the Learner),
-  // match it, keep it in line, blend from bar 9 (beat 32) to bar 26 with the bass swapped on bar 17 (beat 64).
+  // Set up off the clock: cut LOW B (the set-up leaves it to the Learner), then R. The Check from bar 1:
+  // B plays in the headphones; match it, keep it in line, blend from bar 9 (beat 32) to bar 26 with the
+  // bass swapped on bar 17 (beat 64).
   await page.keyboard.press("Enter");
   await expect(phase(page)).toHaveAttribute("data-phase", "check");
-  await expect(page.locator(".lesson-cue")).toHaveText("B's in your headphones. LOW B all the way down");
-  await commandsAtBeats(page, [{ beat: 0, command: { control: "eq-low", deck: "B", value: -1 } }]);
-  await page.waitForTimeout(1000);
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: LOW B all the way down — then R");
+  const lowB = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.command({ control: "eq-low", deck: "B", value: -1 }, { device: "trackpad" }).ok);
+  expect(lowB).toBe(true);
+  await readyFromPhraseStart(page, "check", 0);
+  await expect(page.locator(".lesson-cue")).toHaveText("B's in your headphones. Now match B: TEMPO B, then jog B");
+  await page.waitForTimeout(500);
   await tempoBTo(page, await bpmOf(page, "A"));
   await startNudging(page);
   // As the cues ask: B up on bar 9, the bass swapped on bar 17, A down from bar 23 to just after bar

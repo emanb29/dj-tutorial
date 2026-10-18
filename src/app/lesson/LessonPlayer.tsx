@@ -59,6 +59,8 @@ export interface LessonHandle {
   readonly deckTrack: (deck: DeckId) => LessonTrack | null;
   /** The listening clip playing for a question now (tempo-fader), if any. */
   readonly clip?: () => ListeningClip | null;
+  /** Whether a set-up step (practice's or the Check's) waits for R now. */
+  readonly settingUp?: () => boolean;
 }
 
 declare global {
@@ -250,7 +252,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           withDeckB,
         );
         session = created;
-        window.learnToDjLesson = { engine, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip() };
+        window.learnToDjLesson = { engine, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip(), settingUp: () => created.setUpPending() !== null };
         setMasterTempoMissing(missing);
         setSetup({ kind: "ready", session: created });
         if (checkAfterRoll.current) {
@@ -334,7 +336,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   const setUp = practiceSetUp(phase.kind, session?.deckTrack("B") != null && definition.drill === undefined);
   const attempt = phase.kind === "check" ? phase.attempt : null;
   useEffect(() => {
-    if (session !== null && setUp !== null) session.preparePractice();
+    if (session !== null && setUp !== null) session.preparePractice(setUp);
   }, [session, setUp]);
   useEffect(() => {
     if (session === null || attempt === null) return;

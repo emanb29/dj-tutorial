@@ -8,7 +8,7 @@ import { LESSON_IDS } from "@shared/catalogue.ts";
 import { ALL_CONTROL_IDS } from "../controller/control-ids.ts";
 import { HardwareBridge, type HardwarePort } from "../controller/hardware.ts";
 import { ControllerSession } from "../controller/session.ts";
-import { lessonHarness, pairTrack, passedBefore, startedCheck, synthetic, type LessonHarness } from "./lesson-test-support.ts";
+import { lessonHarness, pairTrack, passedBefore, setUpThenReady, synthetic, until, type LessonHarness } from "./lesson-test-support.ts";
 import { SYNTHETIC_HOUSE, SYNTHETIC_PARTNER } from "@lessons";
 
 const SAMPLE_RATE = 48_000;
@@ -70,14 +70,15 @@ describe("blend-by-ear with the FLX4", () => {
     port.lowB(0.5);
     expect(waiting()).toBeUndefined();
 
-    const playAt = await startedCheck(run, passedBefore(LESSON_IDS, "blend-by-ear"));
+    run.session.startCheck(passedBefore(LESSON_IDS, "blend-by-ear"));
+    await until(() => run.session.setUpPending() !== null, "the Check's set-up step");
+    await run.renderTo(run.now() + 0.5);
     // The set-up centred the EQ, as the knob is: nothing to pick up.
     expect(lowB()).toBe(0);
     expect(waiting()).toBeUndefined();
-    await run.renderToHeard(playAt + 0.5);
-    expect(run.session.checkCue()?.caption).toBe("B's in your headphones. LOW B all the way down");
+    expect(run.session.checkCue()?.caption).toBe("Set up: LOW B all the way down — then R");
 
-    // "LOW B all the way down": every turn moves the app's LOW B with the knob.
+    // "LOW B all the way down", off the clock: every turn moves the app's LOW B with the knob.
     const down: number[] = [];
     for (const value of [0.4, 0.25, 0.1, 0]) {
       port.lowB(value);
@@ -87,6 +88,11 @@ describe("blend-by-ear with the FLX4", () => {
     }
     expect(down.every((value, index) => index === 0 || value < (down[index - 1] ?? Number.POSITIVE_INFINITY))).toBe(true);
     expect(down.at(-1)).toBe(-1);
+    // R: the Check starts, LOW B left as the knob put it.
+    const playAt = await setUpThenReady(run, []);
+    await run.renderToHeard(playAt + 0.5);
+    expect(lowB()).toBe(-1);
+    expect(run.session.checkCue()?.caption).toContain("Now match B");
 
     // At the swap, "LOW B up": the knob brings it straight back, no hunting for a pickup point.
     for (const value of [0.2, 0.35, 0.5]) {

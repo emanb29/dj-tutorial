@@ -111,7 +111,8 @@ const phrases: LessonDefinition = {
   id: "phrases",
   title: "Count phrases",
   unlocks: [],
-  practiceStart: (track) => barStart(track.grid, ((phraseWindow(track)?.first ?? 2) - 1) * BARS_PER_PHRASE - 1),
+  // A whole phrase before phrase 1, from its start: the Learner hears a phrase begin and counts it.
+  practiceStart: (track) => phraseStart(track.grid, (phraseWindow(track)?.first ?? 2) - 1),
   trackProblems: (track) =>
     phraseWindow(track) === null ? ["The track needs a named breakdown and a later drop within 8 phrases."] : [],
   phraseCount: true,
@@ -132,7 +133,8 @@ const phrases: LessonDefinition = {
     // Two 32-bar halves, one Check: the tick lands a beat after the second half's first phrase start.
     const halfway = phraseStart(track.grid, first + BARS_PER_PHRASE / 2);
     const tapCaption = "Tap each new phrase (Space)";
-    const startPos = firstPos - barsSec(track, 2);
+    // A whole phrase to count first, from its start, then phrase 1 is counted in.
+    const startPos = phraseStart(track.grid, first - 1);
     const starts = Array.from({ length: BARS_PER_PHRASE }, (_, index) => phraseStart(track.grid, first + index));
     const end = phraseStart(track.grid, first + BARS_PER_PHRASE);
     return {
@@ -140,8 +142,11 @@ const phrases: LessonDefinition = {
       autoPlay: true,
       faderAtStart: 1,
       endWhen: { kind: "position", pos: phraseStart(track.grid, first + BARS_PER_PHRASE) + beatSec(track.grid) },
-      timeoutSec: 150,
+      // The lead phrase and the 8 tapped phrases, with room to spare.
+      timeoutSec: barsSec(track, (BARS_PER_PHRASE + 1) * BARS_PER_PHRASE) + 20,
+      firstPhraseAction: firstPos,
       cues: [
+        { fromPos: startPos, caption: "Count along: 8 bars, then phrase 1" },
         // Phrase 1 is the anchor every later phrase is counted from: counted in, unmistakably.
         ...barCountdown(track, firstPos, { twoBars: "Phrase 1 starts in 2 bars", lastBar: "1 bar", now: "TAP — phrase 1!" }),
         { fromPos: firstPos + barsSec(track, 1), caption: tapCaption },
@@ -153,8 +158,8 @@ const phrases: LessonDefinition = {
       phrasePreviews: {
         starts,
         end,
-        // Phrase 1 from the Check's own count-in; each later one from 2 bars before it.
-        from: starts.map((start, index) => Math.max(0, index === 0 ? startPos : start - barsSec(track, PREVIEW_LEAD_BARS))),
+        // Each from 2 bars before it, so the change into it is heard.
+        from: starts.map((start) => Math.max(0, start - barsSec(track, PREVIEW_LEAD_BARS))),
         until: Math.min(track.durationSec, end + barsSec(track, 1)),
         barsPerPhrase: BARS_PER_PHRASE,
       },
@@ -191,8 +196,8 @@ const CUED_OFFSET_BEATS = 1 / 3;
 /** cue-point: each slice starts this many beats before a downbeat, and lasts 6 bars. */
 const SLICE_LEADS_BEATS = [1.37, 2.62, 0.71] as const;
 const SLICE_BARS = 6;
-/** cut-on-phrase: bars of A before the cut, and after it until the attempt ends. */
-const CUT_LEAD_BARS = 6;
+/** cut-on-phrase: bars of A before the cut (a whole phrase, from its start), and after it until the attempt ends. */
+const CUT_LEAD_BARS = 8;
 const CUT_TAIL_BARS = 5;
 
 const steadyBar = (track: LessonTrack) => (steadyPhrase(track) - 1) * BARS_PER_PHRASE + 1;
@@ -365,6 +370,8 @@ const cutOnPhrase: LessonDefinition = {
   practiceStart: (track) => cutDecks(track).A.pos,
   practiceDecks: cutDecks,
   practiceLoop: (track) => ({ atPos: cutDecks(track).A.pos + barsSec(track, CUT_LEAD_BARS + 4), reset: "setup" }),
+  practiceSetUp: true,
+  phraseCount: true,
   headphones: true,
   trackProblems: tooShort,
   hook: [
@@ -372,7 +379,7 @@ const cutOnPhrase: LessonDefinition = {
     { caption: "Fader B up (O): silent till it plays", control: "B.channel-fader", trigger: { kind: "fader-up", deck: "B" }, named: "Fader up, deck paused: nothing yet." },
     { caption: "On the next phrase's 1: Press , and S together", control: "B.play", trigger: { kind: "cut" }, named: "That's a cut: B in, A out, on the phrase." },
   ],
-  practice: { caption: "Cut on the phrase: Press , and S on the 1", rep: "cut", window: 2, needed: 1 },
+  practice: { caption: "Set up, then R. Cut on the next phrase: Press , and S on the 1", rep: "cut", window: 2, needed: 1 },
   checkCaption: "This one counts: CUE B, fader B up, cut on the phrase",
   questions: [],
   planCheck: (track) => {
@@ -384,10 +391,13 @@ const cutOnPhrase: LessonDefinition = {
       faderAtStart: 1,
       deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
+      // Set up off the clock, then R: the clock and the recording start from A's phrase start.
+      setUp: { caption: "Set up: CUE 🎧 B on, fader B up, trims matched — then R" },
+      firstPhraseAction: cutPos,
       endWhen: { kind: "after", sec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) },
       timeoutSec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) + 5,
       cues: [
-        { fromPos: decks.A.pos, caption: "CUE 🎧 B on, fader B up (O)" },
+        { fromPos: decks.A.pos, caption: "Count this phrase: cut on the next 1" },
         { fromPos: cutPos - barsSec(track, 2), caption: "Next phrase: Press , and S on the 1" },
         { fromPos: cutPos + beatSec(track.grid), caption: "Let it ride" },
       ],
@@ -465,7 +475,10 @@ export function readyUsedIn(definition: LessonDefinition, track: LessonTrack): {
   const end = definition.planCheck(track).endWhen.kind;
   const rep = definition.practice.rep;
   const plan = definition.planCheck(track);
-  return { practice: rep === "ready" || rep === "tempo-set" || rep === "tempo-ear", check: end === "ready-windows" || end === "slices-done" || end === "readies" || plan.stops !== undefined };
+  return {
+    practice: rep === "ready" || rep === "tempo-set" || rep === "tempo-ear" || definition.practiceSetUp === true,
+    check: end === "ready-windows" || end === "slices-done" || end === "readies" || plan.stops !== undefined || plan.setUp !== undefined,
+  };
 }
 
 export function isBuiltLesson(id: string): id is BuiltLessonId {

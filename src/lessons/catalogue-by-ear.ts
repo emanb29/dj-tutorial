@@ -262,8 +262,6 @@ const BLEND_TAIL_BARS = 4;
  * the crossfader's centre), so a slow fade from the swap to bar 16 measured under 14 bars.
  */
 const BLEND_FADE_BARS = 2;
-/** Bars the first caption gives the Learner to cut LOW B, before it asks for the match. */
-const BLEND_CUT_BARS = 1;
 /** B against A in the Check (catalogue: ≤ 2% apart), by attempt. */
 const BLEND_CHECK_APART = [-1.1, 0.8, -1.6, 1.4] as const;
 const RIDE_DRILL: PracticeDrill = {
@@ -328,11 +326,13 @@ const blendByEar: LessonDefinition = {
       faderAtStart: 1,
       deckA: { headphoneCue: false, eqCentred: true, ...tempoSetup(0) },
       ...(decks.B === undefined ? {} : { deckB: decks.B }),
+      // LOW B is cut off the clock, B waiting: the phrase of matching starts with both decks on R.
+      setUp: { caption: "Set up: LOW B all the way down — then R" },
+      firstPhraseAction: inPos,
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
       timeoutSec: barsSec(track, BLEND_MATCH_BARS + BLEND_BARS + BLEND_TAIL_BARS + 8) + 15,
       cues: [
-        { fromPos: pos, caption: "B's in your headphones. LOW B all the way down" },
-        { fromPos: pos + barsSec(track, BLEND_CUT_BARS), caption: "Now match B: TEMPO B, then jog B" },
+        { fromPos: pos, caption: "B's in your headphones. Now match B: TEMPO B, then jog B" },
         { fromPos: inPos - barsSec(track, 1), caption: "Next 1: fader B up" },
         { fromPos: inPos + beat, caption: "Both play now. Keep B in line" },
         { fromPos: swapPos - barsSec(track, 1), caption: "Next 1: swap the bass. LOW A down, LOW B up" },
