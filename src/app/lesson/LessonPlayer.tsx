@@ -42,6 +42,7 @@ import { HeadphonesGate } from "./HeadphonesGate.tsx";
 import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
 import { PhraseCounter } from "./PhraseCounter.tsx";
+import { PhrasePlayButton, PhrasePreviewBar } from "./PhrasePreview.tsx";
 import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
 import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
 import { practiceSetUp } from "./practice-set-up.ts";
@@ -572,6 +573,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         {phase.kind === "result" || phase.kind === "void" ? (
           <ResultCard
             phase={phase}
+            previews={session}
             saveStatus={saveStatus}
             onRetrySave={onRetrySave}
             definition={definition}
@@ -616,17 +618,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 function PhraseChips({ question, chosen, session, dispatch }: { readonly question: CheckQuestion; readonly chosen: number | undefined; readonly session: LessonSession; readonly dispatch: (action: { type: "answer"; questionId: string; value: number }) => void }) {
   return Array.from({ length: question.options }, (_, index) => index + 1).map((phrase) => (
     <span key={phrase} className="phrase-chip" data-chip={phrase} data-heard="false">
-      <button
-        type="button"
-        className="btn phrase-chip-play"
-        data-phrase={phrase}
-        aria-label={`Play phrase ${String(phrase)}`}
-        onClick={() => {
-          session.previewPhrase(phrase);
-        }}
-      >
-        ▶
-      </button>
+      <PhrasePlayButton session={session} phrase={phrase} />
       <button
         type="button"
         className="btn phrase-chip-pick"
@@ -640,67 +632,6 @@ function PhraseChips({ question, chosen, session, dispatch }: { readonly questio
       </button>
     </span>
   ));
-}
-
-/**
- * Under the phrase chips: the one-line hint, and while a preview plays, what is heard now ("Phrase 4 ·
- * bar 3 of 8", pulsing as each phrase starts) and ■ Stop. Heard time, not applied, so the marker matches
- * the ears through output latency. Grading of the taps is over, so a position aid is fine here. Drawn
- * on animation frames, never React state.
- */
-function PhrasePreviewBar({ session }: { readonly session: LessonSession }) {
-  const root = useRef<HTMLDivElement>(null);
-  const now = useRef<HTMLSpanElement>(null);
-  const stop = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    let frame = requestAnimationFrame(function draw() {
-      const node = root.current;
-      const words = now.current;
-      if (node !== null && words !== null && stop.current !== null) {
-        const heard = session.previewHeard();
-        const phrase = heard?.phrase ?? null;
-        const playing = String(heard !== null);
-        if (node.dataset["playing"] !== playing) node.dataset["playing"] = playing;
-        stop.current.hidden = heard === null;
-        const text = heard === null ? "" : heard.phrase === null ? "▶ …" : `Phrase ${String(heard.phrase)} · bar ${String(heard.bar)} of 8`;
-        if (words.textContent !== text) words.textContent = text;
-        const heardPhrase = String(phrase ?? 0);
-        if (words.dataset["phrase"] !== heardPhrase) {
-          words.dataset["phrase"] = heardPhrase;
-          // A brief pulse as each phrase starts.
-          if (phrase !== null) words.animate([{ transform: "scale(1.25)", opacity: 0.6 }, { transform: "scale(1)", opacity: 1 }], { duration: 400, easing: "ease-out" });
-        }
-        // Every chip group (the breakdown's and the drop's) lights the phrase heard now.
-        for (const chip of document.querySelectorAll<HTMLElement>(".phrase-chip[data-chip]")) {
-          const lit = String(phrase !== null && chip.dataset["chip"] === String(phrase));
-          if (chip.dataset["heard"] !== lit) chip.dataset["heard"] = lit;
-        }
-      }
-      frame = requestAnimationFrame(draw);
-    });
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, [session]);
-
-  return (
-    <div ref={root} className="phrase-preview-bar" data-testid="phrase-preview" data-playing="false">
-      <span className="lesson-hint">▶ plays from just before that phrase — listen for the change.</span>
-      <span ref={now} className="phrase-preview-now" data-testid="phrase-preview-now" data-phrase="0" aria-hidden="true" />
-      <button
-        ref={stop}
-        type="button"
-        className="btn btn-quiet phrase-preview-stop"
-        hidden
-        onClick={() => {
-          session.stopPreview();
-        }}
-      >
-        ■ Stop
-      </button>
-    </div>
-  );
 }
 
 /** The URL when it is a web link; track metadata comes from manifests, so `javascript:` and the like never become links. */

@@ -550,6 +550,10 @@ describe.each([
     expect(run.session.previewHeard()).toBeNull();
     // Previews are not taps, and are not graded.
     const graded = await run.session.grade({ breakdown: 4, drop: 6 }, ["deck-basics", "beats-and-bars"]);
+    // The result card's ▶ replays a phrase of the graded Check, until the next Check or practice.
+    expect(run.session.previewPhrase(4)).toBe(true);
+    expect(run.engine.deckState("A").playing).toBe(true);
+    run.session.stopPreview();
     run.session.close();
     if (!graded.ok) throw new Error(graded.message);
     expect(graded.outcome.outcome, JSON.stringify(summary(graded.outcome))).toEqual({ kind: "passed" });

@@ -2,7 +2,9 @@
 // (in a slot of fixed height, filled within 1.2 s and never rewritten), at most one tip or a Review
 // suggestion, and the unlock when the Lesson is passed for the first time.
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { checkLineRequest, describeCriterion, LESSONS, type BuiltLessonId, type LessonDefinition, type LessonPhase } from "@lessons";
+import { phraseTapMissesOf, sectionAnswersOf } from "@checks";
+import { checkLineRequest, describeCriterion, LESSONS, phraseTapLine, sectionAnswerLine, type BuiltLessonId, type LessonDefinition, type LessonPhase } from "@lessons";
+import type { CriterionResult } from "@shared/check-result.ts";
 import { lessonById } from "@shared/catalogue.ts";
 import { RECENT_LINES_MAX } from "@shared/coach-contract.ts";
 import type { MissionTag } from "@shared/mission.ts";
@@ -12,11 +14,14 @@ import { RekordboxCard } from "../rekordbox/RekordboxCard.tsx";
 import type { RekordboxCard as RekordboxCardContent } from "../rekordbox/rekordbox-steps.ts";
 import type { SaveStatus } from "../save-queue.ts";
 import { coachLine } from "./api-client.ts";
+import { PhrasePlayButton, PhrasePreviewBar, type PhrasePreviewSession } from "./PhrasePreview.tsx";
 import { voidLine } from "./void-line.ts";
 
 interface ResultCardProps {
   readonly phase: Extract<LessonPhase, { kind: "result" } | { kind: "void" }>;
   readonly definition: LessonDefinition;
+  /** Replays the graded Check's phrases (Lesson 3's answers); null without a session. */
+  readonly previews: PhrasePreviewSession | null;
   readonly learnerId: string;
   /** From the Learner's record (set by the Curriculum job); sent with the line request. */
   readonly missionTags: readonly MissionTag[];
@@ -64,7 +69,7 @@ function Actions({ onRetry, onPractice }: { readonly onRetry: () => void; readon
   );
 }
 
-function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, recentLines, saveStatus, onRetrySave, onRetry, onPractice, onDeclineReview, onOpenLesson, rekordboxCard, onRekordboxChoice }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
+function GradedCard({ phase, definition, previews, learnerId, missionTags, attemptToday, recentLines, saveStatus, onRetrySave, onRetry, onPractice, onDeclineReview, onOpenLesson, rekordboxCard, onRekordboxChoice }: ResultCardProps & { readonly phase: Extract<LessonPhase, { kind: "result" }> }) {
   const { result, review, tip, firstPass } = phase;
   const passed = result.outcome.kind === "passed";
   const unsaved = saveStatus.kind === "failed";
@@ -93,9 +98,11 @@ function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, r
         {shown.map((criterion) => (
           <li key={criterion.id} data-status={criterion.status}>
             <span aria-hidden="true">{criterion.status === "met" ? "✓" : "✗"}</span> {describeCriterion(criterion)}
+            <CriterionFeedback criterion={criterion} previews={previews} />
           </li>
         ))}
       </ul>
+      {previews !== null && shown.some((criterion) => sectionAnswersOf(criterion).some((answer) => answer.answered !== answer.correct)) ? <PhrasePreviewBar session={previews} /> : null}
       <p className="coach-line" aria-label="Coach" aria-live="polite">
         {line ?? " "}
       </p>
@@ -139,6 +146,50 @@ function GradedCard({ phase, definition, learnerId, missionTags, attemptToday, r
       ) : null}
       <Actions onRetry={onRetry} onPractice={onPractice} />
     </section>
+  );
+}
+
+/**
+ * Under a criterion, what exactly went wrong, one short line each. Lesson 3 (Count phrases): each
+ * section's pick against the right phrase, with ▶ on the right phrase (and on the pick) when wrong; and
+ * which phrase starts the taps missed, when they failed.
+ */
+export function CriterionFeedback({ criterion, previews }: { readonly criterion: CriterionResult; readonly previews: PhrasePreviewSession | null }) {
+  const wording = useWording();
+  if (criterion.id === "phrases.phrase-taps") {
+    const line = criterion.status === "notMet" ? phraseTapLine(phraseTapMissesOf(criterion)) : null;
+    return line === null ? null : (
+      <ul className="result-detail">
+        <li data-testid="phrase-tap-misses">{inputWording(line, wording)}</li>
+      </ul>
+    );
+  }
+  const answers = criterion.id === "phrases.name-sections" ? sectionAnswersOf(criterion) : [];
+  if (answers.length === 0) return null;
+  return (
+    <ul className="result-detail">
+      {answers.map((answer) => {
+        const right = answer.answered === answer.correct;
+        return (
+          <li key={answer.question} data-question={answer.question} data-right={right}>
+            {inputWording(sectionAnswerLine(answer), wording)} <span aria-label={right ? "right" : "wrong"}>{right ? "✓" : "✗"}</span>
+            {right || previews === null ? null : (
+              <>
+                <span className="phrase-chip" data-chip={answer.correct} data-heard="false">
+                  <PhrasePlayButton session={previews} phrase={answer.correct} label={`Play the ${answer.question}: phrase ${String(answer.correct)}`} />
+                </span>
+                {answer.answered === null ? null : (
+                  <span className="phrase-chip phrase-chip-yours" data-chip={answer.answered} data-heard="false">
+                    <PhrasePlayButton session={previews} phrase={answer.answered} label={`Play your pick: phrase ${String(answer.answered)}`} />
+                    <span className="phrase-chip-label">yours</span>
+                  </span>
+                )}
+              </>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

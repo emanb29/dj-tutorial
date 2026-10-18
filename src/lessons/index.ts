@@ -58,6 +58,7 @@ export { pairProblems, PAIR_MAX_APART, PAIR_MIN_APART, tempoTargets, withoutMast
 export { blendPositions, eqPairProblems } from "./catalogue-eq-filter.ts";
 export { partnerOrder } from "./plan.ts";
 export { phrasePreviewSpan, previewPhraseAt } from "./phrase-preview.ts";
+export { phraseTapLine, sectionAnswerLine } from "./phrase-feedback.ts";
 export { PHRASE_COUNT_START, phraseCountStep, phrasePosition, type PhraseCountState, type PhrasePosition } from "./phrase-count.ts";
 export { BY_EAR_LESSONS, COVERED_DISPLAYS, describeByEar, kickRun } from "./catalogue-by-ear.ts";
 export { drillReveals, drillStep, livePhaseMs, startDrill, tempoPercentApart, type DrillAction, type DrillInput, type DrillReading, type DrillState, type DrillStep, type RoundStart } from "./drill.ts";

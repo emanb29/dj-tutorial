@@ -697,3 +697,47 @@
   border-bottom-left-radius: 0;
   white-space: nowrap;
 }
+
+/* Under a result criterion: what exactly went wrong (Lesson 3's picks and missed phrases), one line each. */
+.result-criteria .result-detail {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0 1.3em;
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  list-style: none;
+}
+
+.result-criteria .result-detail li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.result-criteria .result-detail li > span {
+  width: auto;
+}
+
+.result-detail li[data-right="true"] > span[aria-label] {
+  color: var(--pass);
+}
+
+.result-detail li[data-right="false"] > span[aria-label] {
+  color: var(--fail);
+}
+
+.result-detail .phrase-chip .phrase-chip-play {
+  border-radius: var(--radius-sm);
+}
+
+.result-detail .phrase-chip-yours .phrase-chip-play {
+  opacity: 0.8;
+}
+
+.result-detail .phrase-chip-label {
+  margin-left: var(--space-1);
+  font-size: 0.85em;
+  opacity: 0.75;
+}

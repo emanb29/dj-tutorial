@@ -156,6 +156,8 @@ export class LessonSession {
   private watch: ReturnType<typeof setInterval> | null = null;
   private readonly levelTimer: ReturnType<typeof setInterval>;
   private check: RunningCheck | null = null;
+  /** The plan of the Check graded last, while its result shows: the result card's ▶ replays its phrases. */
+  private gradedPlan: CheckPlan | null = null;
   /** The track on each deck now: the Lesson track, or a cue-point slice on A. */
   private readonly onDeck: Record<DeckId, LessonTrack | null>;
   /** The track id of the last load asked for on deck A (it wins in the engine). */
@@ -1078,16 +1080,18 @@ export class LessonSession {
    * Plays the Check's phrase `phrase` (1-based) again on deck A at the Check's own fader, once the audio
    * part is over: from 2 bars before it (phrase 1: the count-in), across the change, on through later
    * phrases until stopped or the window's end plus a bar. One at a time: it stops any other. The
-   * recorder has stopped, so nothing here is graded or counted as a tap. False when there is nothing to play.
+   * recorder has stopped, so nothing here is graded or counted as a tap. Also while the result shows (its
+   * ▶ replays the right phrase), until the next Check or practice. False when there is nothing to play.
    */
   previewPhrase(phrase: number): boolean {
     const check = this.check;
-    const previews = check?.stopped == null ? undefined : check.plan.phrasePreviews;
+    const plan = check === null ? this.gradedPlan : check.stopped === null ? null : check.plan;
+    const previews = plan?.phrasePreviews;
     const span = previews === undefined ? null : phrasePreviewSpan(previews, phrase);
-    if (check == null || previews === undefined || span === null || this.onDeck.A === null) return false;
+    if (plan == null || previews === undefined || span === null || this.onDeck.A === null) return false;
     this.stopClip();
     this.stopPreview();
-    const fader = checkDecksFor(check.plan).A.fader;
+    const fader = checkDecksFor(plan).A.fader;
     let seekCtx = this.engine.context.currentTime;
     const stopListening = this.engine.on("command", (event) => {
       if (event.command.control === "seek" && event.command.deck === "A" && event.rejected === null) seekCtx = event.appliedCtx;
@@ -1213,6 +1217,7 @@ export class LessonSession {
     this.stopClip();
     this.stopPreview();
     this.check = null;
+    this.gradedPlan = check.plan;
     this.stopWatching();
     // endAudio has always set it by now.
     const stopped = await (check.stopped ?? Promise.resolve(null));
@@ -1256,6 +1261,7 @@ export class LessonSession {
   /** Leaves a running Check without grading it (restart, leaving the page). */
   abandonCheck(): void {
     this.stopWatching();
+    this.gradedPlan = null;
     const check = this.check;
     if (check === null) return;
     this.check = null;

@@ -150,6 +150,47 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   expect(curriculum).toMatchObject({ reason: "skipGroupPassed", demonstrated: ["deck-basics", "beats-and-bars", "phrases"] });
 });
 
+test("phrases: a wrong drop and missed phrase starts say exactly what went wrong, and ▶ replays the right phrase", async ({ page }) => {
+  test.setTimeout(240_000);
+  const learnerId = learner("phrases-wrong");
+  await seedPassed(page, learnerId, ["deck-basics", "beats-and-bars"]);
+  await openLesson(page, learnerId, "phrases");
+  await playingPast(page, "hook", 34);
+  await page.keyboard.press("Enter");
+  await checkPlayingPast(page, 24.5);
+
+  // Tapped phrases 1, 2, 5 and 6 on time, phrase 3 two beats late (beat 98); phrases 4, 7 and 8 not at all.
+  await tapAtBeats(page, [32, 64, 98, 160, 192]);
+  const questions = page.getByRole("region", { name: "Questions" });
+  await expect(questions).toBeVisible({ timeout: 60_000 });
+  // The breakdown right (phrase 4), the drop wrong: phrase 5, not 6.
+  await questions.getByRole("group", { name: /breakdown/ }).getByRole("button", { name: "Phrase 4", exact: true }).click();
+  await questions.getByRole("group", { name: /was the drop/ }).getByRole("button", { name: "Phrase 5", exact: true }).click();
+
+  const card = page.getByRole("region", { name: "Result" });
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).toHaveAttribute("data-outcome", "failed");
+  await expect(card).toContainText("Sections named: 1 of 2 right");
+  await expect(card.locator('li[data-question="breakdown"]')).toContainText("Breakdown: Phrase 4 ✓");
+  await expect(card.locator('li[data-question="drop"]')).toContainText("Drop: you picked Phrase 5 — it was Phrase 6 ✗");
+  // A headless timer can miss a tap now and then: the deliberate misses are what must be named.
+  await expect(card.getByTestId("phrase-tap-misses")).toContainText(/^Missed phrases [\d, ]*4\b[\d, ]* 7 and 8 · late on phrase 3/);
+
+  // ▶ beside the wrong line replays the drop from 2 bars before it, with the live phrase marker.
+  const playing = () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing);
+  await card.getByRole("button", { name: "Play the drop: phrase 6" }).click();
+  await expect.poll(playing).toBe(true);
+  await expect(card.getByTestId("phrase-preview-now")).toContainText(/Phrase 5 · bar [78] of 8/);
+  await expect(card.locator('.phrase-chip[data-chip="6"]')).toHaveAttribute("data-heard", "true", { timeout: 8000 });
+  await card.getByRole("button", { name: "■ Stop" }).click();
+  await expect.poll(playing).toBe(false);
+  // And the Learner's own pick, to compare.
+  await card.getByRole("button", { name: "Play your pick: phrase 5" }).click();
+  await expect.poll(playing).toBe(true);
+  await card.getByRole("button", { name: "■ Stop" }).click();
+  await expect.poll(playing).toBe(false);
+});
+
 test("the Lesson screen fits a 13-inch laptop (1280×800) with the controller, without page scroll", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openLesson(page, learner("fit"), "deck-basics");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CheckVariant } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { runCheck } from "../run-check.ts";
+import { phraseTapMissesOf, sectionAnswersOf } from "./phrases.ts";
 import { BEAT, MUSIC, PHRASE, attempt, frames, playing, spec, taps } from "../testing/synthetic.ts";
 
 /** Phrase starts heard at 8, 24 … 120 s (eight, full) inside the tap section. */
@@ -60,6 +61,35 @@ describe("phrases", () => {
   it("needs both the breakdown and the drop named", () => {
     expect(statusOf(check(MARKERS, { breakdown: 3, drop: 5 }), "phrases.name-sections")).toBe("notMet");
     expect(statusOf(check(MARKERS, { drop: 4 }), "phrases.name-sections")).toBe("notMet");
+  });
+
+  it("keeps each pick and the right phrase in the detail, graded as before", () => {
+    const named = check(MARKERS, { breakdown: 1, drop: 4 }).criteria[1];
+
+    expect(named).toMatchObject({ id: "phrases.name-sections", status: "notMet", measured: 1 });
+    expect(named?.detail).toEqual({ questions: 2, "breakdown.answered": 1, "breakdown.correct": 3, "drop.answered": 4, "drop.correct": 4 });
+    expect(named === undefined ? [] : sectionAnswersOf(named)).toEqual([
+      { question: "breakdown", answered: 1, correct: 3 },
+      { question: "drop", answered: 4, correct: 4 },
+    ]);
+    const unanswered = check(MARKERS, { drop: 4 }).criteria[1];
+    expect(unanswered === undefined ? [] : sectionAnswersOf(unanswered)[0]).toEqual({ question: "breakdown", answered: null, correct: 3 });
+  });
+
+  it("names the phrase starts the taps missed, and those tapped early or late", () => {
+    // Phrase 2 skipped, phrase 4 two beats late, phrase 7 a beat and a half early, the rest on time.
+    const tapTimes = MARKERS.flatMap((start, index) => (index === 1 ? [] : index === 3 ? [start + 2 * BEAT] : index === 6 ? [start - 1.5 * BEAT] : [start]));
+    const tapped = check(tapTimes).criteria[0];
+
+    expect(tapped).toMatchObject({ status: "notMet", measured: 5 });
+    expect(tapped?.detail).toMatchObject({ matched: 5, extras: 2, "missed.2": 1, "late.4": 2, "early.7": 1.5 });
+    expect(tapped === undefined ? [] : phraseTapMissesOf(tapped)).toEqual([
+      { phrase: 2, kind: "missed" },
+      { phrase: 4, kind: "late", beats: 2 },
+      { phrase: 7, kind: "early", beats: 1.5 },
+    ]);
+    // Every start tapped: nothing missed in the detail.
+    expect(check(MARKERS).criteria[0]?.detail).toEqual({ matched: 8, extras: 0, targets: 8 });
   });
 
   describe("short form (32 bars, 3 starts, drop only)", () => {

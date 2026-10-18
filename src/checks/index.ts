@@ -2,6 +2,7 @@
 // Grading is `runCheck`; Skill profile writes are `applyCheckResult`; warm-ups are `scheduleWarmups`.
 export { gradableCriteria, gradedCriteria, runCheck, LOCKED_OFF_AIDS, MAX_GRID_RESIDUAL_MS } from "./run-check.ts";
 export { finalMixTransitions, type TransitionReport } from "./lessons/final-mix.ts";
+export { phraseTapMissesOf, sectionAnswersOf, type PhraseQuestion, type PhraseTapMiss, type SectionAnswer } from "./lessons/phrases.ts";
 export type { GradedAttempt } from "./deck-controls.ts";
 export {
   applyCheckResult,
