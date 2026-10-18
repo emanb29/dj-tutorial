@@ -41,6 +41,7 @@ export function phraseOf(sections: readonly TrackSection[], name: string, from =
 interface TrackMeta {
   readonly id: string;
   readonly title: string;
+  readonly artist?: string;
   readonly attribution: LessonTrack["attribution"];
 }
 
@@ -53,6 +54,7 @@ export function lessonTrackFromKnownGrid(
   return {
     trackId: meta.id,
     title: meta.title,
+    ...(meta.artist === undefined ? {} : { artist: meta.artist }),
     attribution: meta.attribution,
     source: "original",
     durationSec: known.durationSec,

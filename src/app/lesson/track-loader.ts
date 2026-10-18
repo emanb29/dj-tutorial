@@ -2,14 +2,12 @@
 // starter-pack house track (analysed in the background, cached), then the synthetic practice groove,
 // which is always there. A Lesson never waits long: a slow analysis keeps running for next time.
 // A Lesson that mixes two tracks (`partner`) gets a pair of Originals whose tempos fit its Check, or
-// the two synthetic grooves; the starter pack is not analysed for a pair.
+// the two synthetic grooves; the starter pack is not analysed for a pair. Which Originals, and in what
+// order, is track-rotation.ts: a different one each time, away from what this browser heard lately.
 import { analyseTrack, IndexedDbAnalysisCache } from "@analysis";
 import {
   lessonTrackFromAnalysis,
   lessonTrackFromKnownGrid,
-  PAIR_MAX_APART,
-  PAIR_MIN_APART,
-  partnerOrder,
   SYNTHETIC_HOUSE,
   SYNTHETIC_PARTNER,
   synthesizeHouse,
@@ -19,6 +17,7 @@ import {
   type SyntheticLayout,
 } from "@lessons";
 import { createOriginalsSource, createStarterPackSource, decoderAt, type Track } from "@tracks";
+import { deckAOrder, localTrackHistory, partnerCandidates, type Random, type TrackHistoryStore } from "./track-rotation.ts";
 
 export interface ReadyTrack {
   /** With `partner` set when the Lesson mixes two tracks. */
@@ -36,6 +35,10 @@ export interface TrackLoadOptions {
   readonly onStatus: (status: string) => void;
   /** The engine's sample rate: every buffer is decoded or synthesised at it, or the deck refuses it. */
   readonly sampleRate: number;
+  /** Recently heard tracks (default: this browser's localStorage). */
+  readonly history?: TrackHistoryStore;
+  /** Default `Math.random`; tests pass a seeded one. */
+  readonly random?: Random;
 }
 
 /** How long a starter-pack download and analysis may take before the Lesson starts on the synthetic groove. */
@@ -45,7 +48,7 @@ const ORIGINALS_TRIED = 3;
 const PARTNERS_TRIED = 2;
 
 const isHouse = (track: Track) => (track.genre ?? "").toLowerCase().includes("house");
-const meta = (track: Track) => ({ id: `${track.source}:${track.id}`, title: track.title, attribution: track.attribution });
+const meta = (track: Track) => ({ id: `${track.source}:${track.id}`, title: track.title, artist: track.artist, attribution: track.attribution });
 
 function synthetic(layout: SyntheticLayout, sampleRate: number): { track: LessonTrack; audio: AudioBuffer } {
   const samples = synthesizeHouse(layout, sampleRate);
@@ -62,27 +65,34 @@ function syntheticTrack(definition: LessonDefinition, sampleRate: number): Ready
   return { track: { ...main.track, partner: partner.track }, audio: main.audio, partnerAudio: partner.audio };
 }
 
-async function fromOriginals(definition: LessonDefinition, signal: AbortSignal, sampleRate: number): Promise<ReadyTrack | null> {
+async function fromOriginals(
+  definition: LessonDefinition,
+  signal: AbortSignal,
+  sampleRate: number,
+  history: TrackHistoryStore,
+  random: Random,
+): Promise<ReadyTrack | null> {
   const source = createOriginalsSource({ decode: decoderAt(sampleRate) });
   const listed = await source.list({ signal });
   if (!listed.ok) return null;
-  const house = listed.value.filter(isHouse);
+  const heard = history.read();
   const load = async (candidate: Track) => {
     const loaded = await source.load(candidate, { signal });
     if (!loaded.ok || loaded.value.knownGrid === undefined) return null;
     return { track: lessonTrackFromKnownGrid(meta(candidate), loaded.value.knownGrid), audio: loaded.value.audio };
   };
-  for (const candidate of house.slice(0, ORIGINALS_TRIED)) {
+  for (const candidate of deckAOrder(listed.value, definition.id, heard, random).slice(0, ORIGINALS_TRIED)) {
     const main = await load(candidate);
     if (main === null || definition.trackProblems(main.track).length > 0) continue;
     const pairing = definition.partner;
-    if (pairing === undefined) return main;
-    // Partners by the tempo the index declares, nearest 2% apart first; the loaded grid decides.
-    const others = house.filter((other) => other.id !== candidate.id).map((other) => ({ other, bpm: other.bpmHint }));
-    const order = partnerOrder(main.track.grid.bpm, others, { minApart: PAIR_MIN_APART, maxApart: PAIR_MAX_APART });
-    for (const { other } of order.slice(0, PARTNERS_TRIED)) {
+    if (pairing === undefined) {
+      history.heard(definition.id, [main.track.trackId]);
+      return main;
+    }
+    for (const other of partnerCandidates(candidate, main.track.grid.bpm, listed.value, definition.id, heard, random).slice(0, PARTNERS_TRIED)) {
       const partner = await load(other);
       if (partner !== null && pairing.problems(main.track, partner.track).length === 0) {
+        history.heard(definition.id, [main.track.trackId, partner.track.trackId]);
         return { track: { ...main.track, partner: partner.track }, audio: main.audio, partnerAudio: partner.audio };
       }
     }
@@ -136,8 +146,9 @@ function within<Value>(promise: Promise<Value>, ms: number): Promise<Value | nul
 
 export async function loadLessonTrack(definition: LessonDefinition, options: TrackLoadOptions): Promise<ReadyTrack> {
   if (options.preference === "synthetic") return syntheticTrack(definition, options.sampleRate);
-  options.onStatus("Looking for a house track…");
-  const original = await within(fromOriginals(definition, options.signal, options.sampleRate), STARTER_PACK_BUDGET_MS);
+  options.onStatus("Looking for a track…");
+  const history = options.history ?? localTrackHistory();
+  const original = await within(fromOriginals(definition, options.signal, options.sampleRate, history, options.random ?? Math.random), STARTER_PACK_BUDGET_MS);
   if (original !== null) return original;
   // The analysis is not aborted when the budget runs out: it finishes in the background and is cached.
   const starter = await within(fromStarterPack(definition, options.signal, options.onStatus, options.sampleRate), STARTER_PACK_BUDGET_MS);

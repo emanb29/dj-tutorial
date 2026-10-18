@@ -20,6 +20,8 @@ export interface Track {
   readonly bpmHint?: number;
   readonly keyHint?: string;
   readonly genre?: string;
+  /** e.g. "deep house", where the source tags one (Originals). */
+  readonly subgenre?: string;
   /** Licence URL or name as the source gives it, e.g. a Creative Commons URL. */
   readonly licence?: string;
   readonly attribution: Attribution;

@@ -28,6 +28,7 @@ function toTrack(summary: OriginalSummary): Track {
     bpmHint: summary.bpm,
     ...(keyHint === undefined ? {} : { keyHint }),
     genre: summary.genre,
+    ...(summary.subgenre === undefined ? {} : { subgenre: summary.subgenre }),
     licence: "Original, made for this app",
     attribution: { text: `"${summary.title}", an original made for learn-to-dj`, url: null },
     shareable: true,

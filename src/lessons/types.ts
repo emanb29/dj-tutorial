@@ -12,6 +12,8 @@ export type { DeckId } from "@shared/attempt.ts";
 export interface LessonTrack {
   readonly trackId: string;
   readonly title: string;
+  /** Shown beside the title, where the source names one. */
+  readonly artist?: string;
   readonly attribution: { readonly text: string; readonly url: string | null };
   readonly source: "original" | "starter-pack" | "synthetic";
   readonly durationSec: number;

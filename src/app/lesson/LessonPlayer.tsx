@@ -81,7 +81,7 @@ export interface LessonPlayerProps {
   readonly onOpenLesson: (lessonId: BuiltLessonId) => void;
 }
 
-type Setup = { kind: "loading"; status: string } | { kind: "ready"; engine: AudioEngine; session: LessonSession } | { kind: "failed"; message: string };
+type Setup = { kind: "loading"; status: string } | { kind: "ready"; session: LessonSession } | { kind: "failed"; message: string };
 
 const NO_CAPTIONS: readonly ControllerCaption[] = [];
 const TAP_MARKS_KEPT = 12;
@@ -147,28 +147,19 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     marginsRef.current = margins;
   }, [learner, phase, margins]);
 
-  // The engine, the track and the session, once per Lesson visit.
+  // The engine, once per Lesson visit.
+  const [engine, setEngine] = useState<AudioEngine | null>(null);
   useEffect(() => {
     const abort = new AbortController();
-    // A function, not the flag itself: the flag changes across the awaits below.
     const cancelled = () => abort.signal.aborted;
-    let engine: AudioEngine | null = null;
-    let session: LessonSession | null = null;
-    let engineClosed = false;
-    // Once, from whichever comes last: the cleanup, or a set-up that finishes after the cleanup ran
-    // (StrictMode's first run, or Esc while the track loads). Otherwise its AudioContext would leak.
+    let created: AudioEngine | null = null;
+    // Closed by whichever comes last: the cleanup, or a start that finishes after the cleanup ran
+    // (StrictMode's first run, or Esc while it starts). Otherwise its AudioContext would leak.
     const closeEngine = () => {
-      if (engine === null || engineClosed) return;
-      engineClosed = true;
-      engine.close().catch((error: unknown) => {
+      created?.close().catch((error: unknown) => {
         console.warn("[lesson] the audio engine did not close cleanly", error);
       });
-    };
-    const observed = (observation: Observation) => {
-      dispatch({ type: "observed", observation });
-      const mark = tapMark(observation);
-      if (mark !== null) setTaps((marks) => [...marks, mark].slice(-TAP_MARKS_KEPT));
-      if (observation.kind === "tap") announceTapJudged(observation.onBeat);
+      created = null;
     };
     void (async () => {
       try {
@@ -179,7 +170,42 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         const plan = await currentOutputPlan();
         if (cancelled()) return;
         // The Learner's input latency through this output (the Controller page's Timing check), taken off their inputs.
-        engine = await createAudioEngine({ masterTempo, output: { plan, headphones: listed.headphones === true }, inputCorrectionMs: timingCorrectionMs(plan.kind) });
+        created = await createAudioEngine({ masterTempo, output: { plan, headphones: listed.headphones === true }, inputCorrectionMs: timingCorrectionMs(plan.kind) });
+        if (cancelled()) closeEngine();
+        else setEngine(created);
+      } catch (error) {
+        if (cancelled()) return;
+        const message = `The deck could not start: ${error instanceof Error ? error.message : String(error)}. Reload to try again.`;
+        setSetup({ kind: "failed", message });
+        dispatch({ type: "track-failed", message });
+      }
+    })();
+    return () => {
+      abort.abort();
+      setEngine(null);
+      closeEngine();
+    };
+  }, [listed]);
+
+  // The track and the session: picked when the Lesson opens, and again on each `roll` ("Different
+  // track", or the Check again after a result). One run (hook → practice → Check) keeps its track.
+  const [roll, setRoll] = useState(0);
+  // A roll from the result card: the Check starts once the new track is on the deck.
+  const checkAfterRoll = useRef(false);
+  useEffect(() => {
+    if (engine === null) return;
+    const abort = new AbortController();
+    const cancelled = () => abort.signal.aborted;
+    let session: LessonSession | null = null;
+    const observed = (observation: Observation) => {
+      dispatch({ type: "observed", observation });
+      const mark = tapMark(observation);
+      if (mark !== null) setTaps((marks) => [...marks, mark].slice(-TAP_MARKS_KEPT));
+      if (observation.kind === "tap") announceTapJudged(observation.onBeat);
+    };
+    setSetup({ kind: "loading", status: roll === 0 ? "Getting the deck ready…" : "Finding a different track…" });
+    void (async () => {
+      try {
         const ready = await loadLessonTrack(listed, {
           preference: trackPreference,
           signal: abort.signal,
@@ -222,28 +248,43 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           withDeckB,
         );
         session = created;
-        const running = engine;
-        window.learnToDjLesson = { engine: running, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip() };
+        window.learnToDjLesson = { engine, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip() };
         setMasterTempoMissing(missing);
-        setSetup({ kind: "ready", engine: running, session: created });
+        setSetup({ kind: "ready", session: created });
+        if (checkAfterRoll.current) {
+          checkAfterRoll.current = false;
+          dispatch({ type: "start-check" });
+        }
       } catch (error) {
         if (abort.signal.aborted) return;
         const message = `The deck could not start: ${error instanceof Error ? error.message : String(error)}. Reload to try again.`;
         setSetup({ kind: "failed", message });
         dispatch({ type: "track-failed", message });
-      } finally {
-        if (cancelled()) closeEngine();
       }
     })();
     return () => {
       abort.abort();
       session?.close();
       delete window.learnToDjLesson;
-      closeEngine();
     };
-  }, [listed, trackPreference]);
+  }, [engine, listed, trackPreference, roll]);
 
-  const engine = setup.kind === "ready" ? setup.engine : null;
+  // Only Originals rotate: the starter pack and the synthetic groove are single fallbacks.
+  const rerollable = trackPreference === "auto" && setup.kind === "ready" && setup.session.track.source === "original";
+  const differentTrack = useCallback(() => {
+    setRoll((count) => count + 1);
+  }, []);
+  /** The Check again after a result: on a different track when there is one to choose from. */
+  const checkAgain = useCallback(() => {
+    if (setup.kind === "loading") return;
+    if (!rerollable) {
+      dispatch({ type: "start-check" });
+      return;
+    }
+    checkAfterRoll.current = true;
+    setRoll((count) => count + 1);
+  }, [setup.kind, rerollable]);
+
   const session = setup.kind === "ready" ? setup.session : null;
 
   // The ear check is for split cue; with the FLX4 or two devices, the cue has its own output.
@@ -382,6 +423,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     },
     [clipDeck, definition, drill.reveal],
   );
+  // After a result, the Check again is a new run: on a different track.
+  const afterRun = phase.kind === "result" || phase.kind === "void";
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isTyping(event.target)) return;
@@ -391,7 +434,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       if (key === null) return;
       switch (key.kind) {
         case "check":
-          dispatch({ type: "start-check" });
+          if (afterRun) checkAgain();
+          else dispatch({ type: "start-check" });
           break;
         case "practice":
           dispatch({ type: "practice-again" });
@@ -426,7 +470,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [answering, definition, onExit, session]);
+  }, [answering, afterRun, checkAgain, definition, onExit, session]);
 
   // The controller: earlier Lessons' controls, plus this Lesson's as the hook reaches them.
   const before = useMemo(() => passedLessons(learner).filter((id) => id !== lessonId), [learner, lessonId]);
@@ -461,6 +505,17 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           </span>
         ) : null}
         {setup.kind === "ready" ? <TrackCredit track={setup.session.track} /> : null}
+        {trackPreference === "auto" && (inPractice || phase.kind === "check") && (rerollable || setup.kind === "loading") ? (
+          <button
+            type="button"
+            className="btn btn-quiet lesson-reroll"
+            disabled={phase.kind === "check" || setup.kind === "loading"}
+            title={phase.kind === "check" ? "After the Check" : "Same Lesson, another track"}
+            onClick={differentTrack}
+          >
+            Different track
+          </button>
+        ) : null}
       </header>
 
       <div className="lesson-stage">
@@ -521,9 +576,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             missionTags={learner.missionTags}
             attemptToday={state.attempts}
             recentLines={recentLines}
-            onRetry={() => {
-              dispatch({ type: "start-check" });
-            }}
+            onRetry={checkAgain}
             onPractice={() => {
               dispatch({ type: "practice-again" });
             }}
@@ -654,15 +707,23 @@ function webLink(url: string | null): string | null {
   return protocol === "https:" || protocol === "http:" ? url : null;
 }
 
+/** One line: an Original's title and artist (a pair names B's title too); other sources' own credit. */
+export function trackLine(track: LessonTrack): string {
+  if (track.source !== "original") return track.attribution.text;
+  const artist = track.artist === undefined ? "" : ` · ${track.artist}`;
+  return track.partner === undefined ? `${track.title}${artist}` : `A: ${track.title} · B: ${track.partner.title}${artist}`;
+}
+
 function TrackCredit({ track }: { readonly track: LessonTrack }) {
   const link = webLink(track.attribution.url);
+  const line = trackLine(track);
   return (
-    <span className="lesson-credit">
+    <span className="lesson-credit" data-testid="track-credit" title={line}>
       {link === null ? (
-        track.attribution.text
+        line
       ) : (
         <a href={link} target="_blank" rel="noopener noreferrer">
-          {track.attribution.text}
+          {line}
         </a>
       )}
     </span>

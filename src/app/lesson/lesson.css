@@ -67,6 +67,12 @@
   color: inherit;
 }
 
+.lesson-reroll {
+  flex: none;
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+}
+
 /* ---- the caption line: one line, always ------------------------------------------------- */
 
 .lesson-stage {
