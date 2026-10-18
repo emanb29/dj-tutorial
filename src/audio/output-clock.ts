@@ -36,6 +36,13 @@ const ANSWERS_KEPT = 64;
  * - "now" is never heard before anything earlier already mapped.
  * An input is not held back by earlier readings of "now": it is placed with the newest timestamp,
  * which is what the Learner's beat was measured against.
+ *
+ * Nothing is heard before it is rendered: heard time never passes `currentTime`. The output timestamp
+ * can run ahead of it (a stale timestamp extrapolated across a late render callback, or the high side
+ * of a jump that the ordering above holds on to), and a heard time past `currentTime` puts the present
+ * after changes the engine has only just scheduled (`currentTime` + lookahead): a Check's own cue then
+ * falls before its attempt starts, the Check cannot find it and voids (`sectionNotHeard`, the owner's
+ * Lesson 2 report). `currentTime` only grows, so the cap keeps the ordering.
  */
 export function audioContextClock(context: AudioContext): OutputClock {
   // Recent answers, oldest first.
@@ -50,7 +57,7 @@ export function audioContextClock(context: AudioContext): OutputClock {
       const mapped = heardContextTime({ contextTime, performanceTime }, performanceTimeMs);
       if (!mapped.ok) return mapped;
       const earlier = answers.filter((answer) => answer.performanceTimeMs <= performanceTimeMs && (answer.input || !input));
-      const ctx = Math.max(mapped.ctx, ...earlier.map((answer) => answer.ctx));
+      const ctx = Math.min(context.currentTime, Math.max(mapped.ctx, ...earlier.map((answer) => answer.ctx)));
       answers.push({ performanceTimeMs, ctx, input });
       if (answers.length > ANSWERS_KEPT) answers.shift();
       return { ok: true, ctx };

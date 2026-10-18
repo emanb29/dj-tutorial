@@ -15,6 +15,8 @@ export const LOUD_JUMP_DB = 2;
 
 export const cutOnPhrase: LessonCheck<TaskOf<"cut-on-phrase">> = {
   situations: { transition: true },
+  criteria: ["cut-on-phrase.cut-start", "cut-on-phrase.cut-tight", "cut-on-phrase.cued-before", "cut-on-phrase.loud-jump"],
+  placementCriteria: ["cue-point.cue-on-downbeat"],
   run(context) {
     const { attempt, window, spec } = context;
     const deckA = loadedDeck(context, "A");

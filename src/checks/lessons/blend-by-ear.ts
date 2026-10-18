@@ -8,6 +8,7 @@ const MIN_BLEND_BARS = { full: 16 - 0.25, short: 8 - 0.25 } as const;
 
 export const blendByEar: LessonCheck<TaskOf<"blend-by-ear">> = {
   situations: { transition: true },
+  criteria: ["blend-by-ear.blend-length", "blend-by-ear.phase-hold", "blend-by-ear.swap-time", "blend-by-ear.clash-short", "blend-by-ear.loud-steady"],
   run(context) {
     const move = handover(context, "A", "B");
     return {

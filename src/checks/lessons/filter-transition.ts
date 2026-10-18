@@ -33,6 +33,7 @@ function sustainedSweepStart(moves: readonly DeckControlChange[], outAt: CtxTime
 
 export const filterTransition: LessonCheck<TaskOf<"filter-transition">> = {
   situations: { transition: true },
+  criteria: ["filter-transition.hpf-depth", "filter-transition.filter-length", "filter-transition.cfx-back"],
   run(context) {
     const { attempt, window, spec } = context;
     const move = handover(context, "A", "B");

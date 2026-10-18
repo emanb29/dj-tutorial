@@ -7,6 +7,7 @@ import { applyCheckResult, CUE_PLACEMENT_TOLERANCE_MS } from "@checks";
 import {
   COVERED_DISPLAYS,
   initialLessonState,
+  gradedLine,
   lessonDefinition,
   lineFacts,
   peakDbfsOf,
@@ -333,6 +334,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         if (node.textContent !== text) node.textContent = text;
         const checkpoint = String(cue?.checkpoint === true);
         if (node.dataset["checkpoint"] !== checkpoint) node.dataset["checkpoint"] = checkpoint;
+        const countdown = String(cue?.countdown === true);
+        if (node.dataset["countdown"] !== countdown) node.dataset["countdown"] = countdown;
       }
       frame = requestAnimationFrame(draw);
     });
@@ -398,6 +401,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 
   // The controller: earlier Lessons' controls, plus this Lesson's as the hook reaches them.
   const before = useMemo(() => passedLessons(learner).filter((id) => id !== lessonId), [learner, lessonId]);
+  // What the Check grades, standing criteria too, announced before and during it (passed Lessons as grading reads them).
+  const graded = useMemo(() => gradedLine(definition, passedLessons(learner)), [definition, learner]);
   const hookStep = phase.kind === "hook" ? phase.step : null;
   const unlocks = useMemo<ReadonlySet<ControlId>>(() => {
     const earlier = unlocksAfter(before);
@@ -423,6 +428,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           <Caption
             phase={phase}
             definition={definition}
+            graded={graded}
             practiceCaption={session === null ? definition.practice.caption : (definition.practiceCaptionFor?.(session.track) ?? definition.practice.caption)}
             setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null}
             cueLine={cueLine}
@@ -527,10 +533,12 @@ interface CaptionProps {
   readonly practiceCaption: string;
   readonly setupStatus: string | null;
   readonly cueLine: RefObject<HTMLSpanElement | null>;
+  /** "Graded: …": every criterion the Check can fail on. */
+  readonly graded: string;
 }
 
 /** One line: what to do now. The concept just named sits before it, smaller. */
-function Caption({ phase, definition, practiceCaption, setupStatus, cueLine }: CaptionProps) {
+function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, graded }: CaptionProps) {
   const wording = useWording();
   const say = (text: string | undefined) => (text === undefined ? undefined : inputWording(text, wording));
   switch (phase.kind) {
@@ -554,17 +562,25 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine }: C
             <span className="lesson-hint">
               <kbd>Enter</kbd> {phase.ready ? "to go" : "for the Check"}
             </span>
+            {phase.ready ? (
+              <span className="lesson-graded" data-testid="graded-line">
+                {graded}
+              </span>
+            ) : null}
           </span>
         </>
       );
     case "check":
       return (
         <span className="lesson-do" data-testid="check-cue">
-          <span ref={cueLine} className="lesson-cue" data-checkpoint="false">
+          <span ref={cueLine} className="lesson-cue" data-checkpoint="false" data-countdown="false">
             {say(definition.checkCaption)}
           </span>
           <span className="lesson-hint">
             <kbd>Enter</kbd> restarts
+          </span>
+          <span className="lesson-graded" data-testid="graded-line">
+            {graded}
           </span>
         </span>
       );

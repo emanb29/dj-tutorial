@@ -15,6 +15,7 @@ const MAX_CUE_PRESSES = 1;
 
 export const nudgePhase: LessonCheck<TaskOf<"nudge-phase">> = {
   situations: { transition: false },
+  criteria: ["nudge-phase.converge", "nudge-phase.hold", "nudge-phase.cue-presses"],
   run(context, task) {
     const { attempt, window, spec } = context;
     const pair = phasePair(context);

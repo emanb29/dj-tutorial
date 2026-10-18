@@ -133,4 +133,9 @@ export interface CheckResult extends AttemptIdentity {
 /** Not pass, not fail, not counted. Never written to the Skill profile. */
 export interface VoidAttempt extends AttemptIdentity {
   readonly outcome: { readonly kind: "void"; readonly reason: VoidReason };
+  /**
+   * For debugging, never shown to the Learner: what made it void, e.g. for `sectionNotHeard` the section
+   * and its heard span (`from`/`to` context seconds; null where the deck never got there) and the window.
+   */
+  readonly diagnostics?: Readonly<Record<string, number | string | null>>;
 }

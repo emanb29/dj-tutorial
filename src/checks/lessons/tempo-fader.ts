@@ -22,6 +22,7 @@ function settledAt(attempt: Attempt, deck: DeckId, at: CtxTime): CtxTime {
 
 export const tempoFader: LessonCheck<TaskOf<"tempo-fader">> = {
   situations: { transition: false },
+  criteria: ["tempo-fader.set-bpm", "tempo-fader.master-tempo-ear"],
   run(context, task) {
     const { attempt, window } = context;
     const deckB = loadedDeck(context, "B");

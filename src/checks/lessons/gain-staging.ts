@@ -34,6 +34,7 @@ function integratedLufs(context: CheckContext, deck: DeckId, span: CtxSpan): num
 
 export const gainStaging: LessonCheck<TaskOf<"gain-staging">> = {
   situations: { transition: false },
+  criteria: ["gain-staging.trim-A", "gain-staging.trim-B", "gain-staging.loud-match"],
   run(context, { decks }) {
     const windows = new Map(decks.map((deck) => [deck, readyWindow(context, deck)] as const));
     const trims: CriterionResult[] = decks.map((deck) => {

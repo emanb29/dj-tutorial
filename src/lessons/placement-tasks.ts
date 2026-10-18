@@ -5,7 +5,7 @@
 import type { Aids, LessonId, LessonTask } from "@shared/attempt.ts";
 import { lessonById } from "@shared/catalogue.ts";
 import { LESSONS, type Grading } from "./catalogue.ts";
-import { heardSpan, steadyPhrase } from "./plan.ts";
+import { heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
 import { ancestorsOf, type PlacementTaskId } from "./placement.ts";
 import { barStart, beatSec, heardTimeOf, cuedAt, phraseOf, phraseStart, trimKnobFor } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack } from "./types.ts";
@@ -321,7 +321,6 @@ const beatsAndBars = task({
   trackProblems: tooShort,
   planCheck: (track) => {
     const bar = beatsBar(track);
-    const half = beatSec(track.grid) / 2;
     return {
       startPos: barStart(track.grid, bar - COUNT_IN_BARS),
       autoPlay: true,
@@ -330,7 +329,7 @@ const beatsAndBars = task({
       timeoutSec: barsSec(track, COUNT_IN_BARS + 8) + TIMEOUT_SLACK_SEC,
       cues: [
         { fromPos: barStart(track.grid, bar - COUNT_IN_BARS), caption: "Tap every beat (Space)" },
-        { fromPos: barStart(track.grid, bar + 4) - half, caption: "Now only the 1" },
+        ...switchCountdown(track, barStart(track.grid, bar + 4), { doing: "Every beat", now: "Only the 1 now" }),
       ],
     };
   },

@@ -103,6 +103,24 @@
 }
 
 /* A checkpoint in a long Check ("halfway"): a tick pops in, the music keeps playing. */
+/* "Graded: …" under the caption: every criterion the Check can fail on, standing ones too. */
+.lesson-graded {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* A count-down to a change of task: big and bright, read at a glance while tapping. */
+.lesson-cue[data-countdown="true"] {
+  color: var(--accent);
+  font-size: 1.6em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .lesson-cue[data-checkpoint="true"] {
   color: var(--pass);
 }

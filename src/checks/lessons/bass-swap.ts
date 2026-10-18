@@ -67,6 +67,8 @@ export function enterLowCut(context: CheckContext, move: Handover): CriterionRes
 
 export const bassSwap: LessonCheck<TaskOf<"bass-swap">> = {
   situations: { transition: true },
+  criteria: ["bass-swap.enter-low-cut", "bass-swap.swap-time", "bass-swap.clash-short"],
+  placementCriteria: ["sync-blend.blend-start", "sync-blend.blend-length", "sync-blend.loud-steady", "tempo-fader.tempo-matched"],
   run(context) {
     const move = handover(context, "A", "B");
     const criteria = [

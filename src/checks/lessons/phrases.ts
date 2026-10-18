@@ -12,6 +12,7 @@ const LIMITS: Readonly<Record<CheckVariant, { matched: number; extras: number; q
 
 export const phrases: LessonCheck<TaskOf<"phrases">> = {
   situations: { transition: false },
+  criteria: ["phrases.phrase-taps", "phrases.name-sections"],
   run(context, { tapSection, sections }) {
     const limits = LIMITS[context.spec.variant];
     const deckA = loadedDeck(context, "A");

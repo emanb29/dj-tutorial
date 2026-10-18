@@ -1,7 +1,7 @@
 // `runCheck(spec, attempt)`: the one grading path for Lessons, Placement, cold re-passes,
 // warm-ups and bonus exercises. Pure and deterministic: no I/O, no clock.
 import type { Aids, CtxSpan, LessonId, LessonTask, TaskSpec } from "@shared/attempt.ts";
-import type { CheckOutcome, CheckResult, VoidAttempt, VoidReason } from "@shared/check-result.ts";
+import { STANDING_IDS, type CheckOutcome, type CheckResult, type CriterionId, type VoidAttempt, type VoidReason } from "@shared/check-result.ts";
 import type { CheckContext, LessonCheck, OwnCriteria, TaskOf } from "./context.ts";
 import { gradeDegraded } from "./degraded.ts";
 import type { GradedAttempt } from "./deck-controls.ts";
@@ -21,7 +21,7 @@ import { phrases } from "./lessons/phrases.ts";
 import { syncBlend } from "./lessons/sync-blend.ts";
 import { tempoByEar } from "./lessons/tempo-by-ear.ts";
 import { tempoFader } from "./lessons/tempo-fader.ts";
-import { standingCriteria } from "./standing.ts";
+import { failingStandingIds, standingCriteria } from "./standing.ts";
 
 /** `grid-trust`: a grid fit with an RMS residual over this cannot be graded. */
 export const MAX_GRID_RESIDUAL_MS = 15;
@@ -61,32 +61,74 @@ function lessonCheckFor<Id extends LessonTask["lessonId"]>(task: TaskOf<Id>): Le
 }
 
 function runOwn(context: CheckContext, task: LessonTask): OwnCriteria {
-  return lessonCheckFor(task).run(context, task);
+  const check = lessonCheckFor(task);
+  const own = check.run(context, task);
+  const declared = new Set([...check.criteria, ...(context.spec.mode === "placement" ? (check.placementCriteria ?? []) : [])]);
+  const undeclared = own.criteria.map((criterion) => criterion.id).filter((id) => !declared.has(id));
+  if (undeclared.length > 0) {
+    throw new RangeError(`${task.lessonId} graded ${undeclared.join(", ")}, which its LessonCheck does not declare; add them to its criteria (and a label in criterion-labels.ts)`);
+  }
+  return own;
 }
 
-/** The heard spans a task grades in. The Lesson content finds them in the attempt's playhead. */
-function taskSections(task: LessonTask, window: CtxSpan): CtxSpan[] {
+/**
+ * Every criterion that can fail a Lesson's Check, before it runs, in order: the Lesson's own, then the
+ * standing ones it grades for these passed Lessons. Announced to the Learner as "Graded: …".
+ */
+export function gradedCriteria(lessonId: LessonTask["lessonId"], options: { readonly passedLessons: readonly LessonId[]; readonly aids: Aids }): CriterionId[] {
+  const check: LessonCheck = LESSON_CHECKS[lessonId] as LessonCheck;
+  return [...check.criteria, ...failingStandingIds({ lessonId, passedLessons: options.passedLessons, sync: options.aids.sync }, check.situations)];
+}
+
+/** Every criterion any Check can grade, in any mode: each Lesson's own, then every standing one. */
+export function gradableCriteria(): CriterionId[] {
+  const checks: readonly LessonCheck[] = Object.values(LESSON_CHECKS) as readonly LessonCheck[];
+  const own = checks.flatMap((check) => [...check.criteria, ...(check.placementCriteria ?? [])]);
+  return [...new Set([...own, ...STANDING_IDS.map((id) => `standing.${id}` as const)])];
+}
+
+/** The heard spans a task grades in, by name. The Lesson content finds them in the attempt's playhead. */
+function taskSections(task: LessonTask, window: CtxSpan): (readonly [string, CtxSpan])[] {
   switch (task.lessonId) {
     // Graded from a heard moment on to the end: a start the deck never reached voids the attempt.
     case "nudge-phase":
-      return [{ from: task.phaseFrom, to: window.to }];
+      return [["phaseFrom", { from: task.phaseFrom, to: window.to }]];
     case "tempo-by-ear":
-      return [{ from: task.matchFrom, to: window.to }];
+      return [["matchFrom", { from: task.matchFrom, to: window.to }]];
     case "beats-and-bars":
-      return [task.beatSection, task.downbeatSection];
+      return [["beatSection", task.beatSection], ["downbeatSection", task.downbeatSection]];
     case "phrases":
     case "headphone-cue":
-      return [task.tapSection];
+      return [["tapSection", task.tapSection]];
     case "crossfader":
-      return task.cutSection === null ? [task.blendSection] : [task.blendSection, task.cutSection.span];
+      return task.cutSection === null ? [["blendSection", task.blendSection]] : [["blendSection", task.blendSection], ["cutSection", task.cutSection.span]];
     default:
       return [];
   }
 }
 
+/** JSON keeps no Infinity: a bound the deck never reached reads null. */
+const finiteOrNull = (ctx: number): number | null => (Number.isFinite(ctx) ? ctx : null);
+
 /** A section the deck never reached, or never got to the end of, has no finite, non-empty span. */
 function isHeard(section: CtxSpan): boolean {
   return Number.isFinite(section.from) && Number.isFinite(section.to) && section.from < section.to;
+}
+
+interface Void {
+  readonly reason: VoidReason;
+  readonly diagnostics?: Readonly<Record<string, number | string | null>>;
+}
+
+function voidOf(spec: TaskSpec, attempt: GradedAttempt): Void | null {
+  const reason = voidReason(spec, attempt);
+  if (reason === null) return null;
+  if (reason !== "sectionNotHeard") return { reason };
+  const [name, span] = taskSections(spec.task, spec.window).find(([, section]) => !isHeard(section)) ?? ["?", { from: Number.NaN, to: Number.NaN }];
+  return {
+    reason,
+    diagnostics: { section: name, from: finiteOrNull(span.from), to: finiteOrNull(span.to), windowFrom: spec.window.from, windowTo: spec.window.to },
+  };
 }
 
 function voidReason(spec: TaskSpec, attempt: GradedAttempt): VoidReason | null {
@@ -101,7 +143,7 @@ function voidReason(spec: TaskSpec, attempt: GradedAttempt): VoidReason | null {
     return residual === undefined || !(residual <= MAX_GRID_RESIDUAL_MS);
   });
   if (untrusted) return "gridUntrusted";
-  return taskSections(spec.task, spec.window).every(isHeard) ? null : "sectionNotHeard";
+  return taskSections(spec.task, spec.window).every(([, section]) => isHeard(section)) ? null : "sectionNotHeard";
 }
 
 /** An aid left on where the Lesson locks it off would grade a different skill: a content bug. */
@@ -129,8 +171,11 @@ export function runCheck(spec: TaskSpec, attempt: GradedAttempt): CheckResult | 
     inputDevice: attempt.inputDevice,
   } as const;
 
-  const reason = voidReason(spec, attempt);
-  if (reason !== null) return { ...identity, outcome: { kind: "void", reason } };
+  const voided = voidOf(spec, attempt);
+  if (voided !== null) {
+    const outcome = { kind: "void", reason: voided.reason } as const;
+    return voided.diagnostics === undefined ? { ...identity, outcome } : { ...identity, outcome, diagnostics: voided.diagnostics };
+  }
 
   const context: CheckContext = { spec, attempt, window: spec.window, lessonId: spec.task.lessonId };
   const own = runOwn(context, spec.task);

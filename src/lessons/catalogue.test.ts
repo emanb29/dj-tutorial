@@ -78,7 +78,28 @@ describe("beats-and-bars", () => {
     expect(plan.startPos).toBeCloseTo(barStart(track.grid, 8));
     expect(plan).toMatchObject({ autoPlay: true, faderAtStart: 1 });
     expect(plan.endWhen).toEqual({ kind: "position", pos: barStart(track.grid, 25) + BEAT });
-    expect(plan.cues.map((cue) => cue.caption)).toEqual(["Count in: 1, 2, 3, 4", "Tap every beat (Space)", "Now only the 1"]);
+    expect(plan.cues.map((cue) => cue.caption)).toEqual([
+      "Count in: 1, 2, 3, 4",
+      "Tap every beat (Space)",
+      "Every beat · switch in 2 bars",
+      "Switch in 1 bar: 4",
+      "Switch in 1 bar: 4 · 3",
+      "Switch in 1 bar: 4 · 3 · 2",
+      "Switch in 1 bar: 4 · 3 · 2 · 1",
+      "Only the 1 now",
+    ]);
+  });
+
+  // Owner feedback: the switch from every beat to only the 1 came without enough warning.
+  it("warns of the switch two bars ahead, then counts the last bar down on its beats", () => {
+    const switchPos = barStart(track.grid, 17);
+    const warnings = plan.cues.slice(2);
+    const beatsBefore = [8, 4, 3, 2, 1, 0.5];
+    expect(warnings).toHaveLength(beatsBefore.length);
+    warnings.forEach((cue, index) => {
+      expect(cue.fromPos).toBeCloseTo(switchPos - (beatsBefore[index] ?? Number.NaN) * BEAT, 9);
+    });
+    expect(warnings.map((cue) => cue.countdown === true)).toEqual([false, true, true, true, true, true]);
   });
 
   const everyBeat = Array.from({ length: 32 }, (_, index) => heard(plan, beatsFrom + index * BEAT));

@@ -908,7 +908,25 @@ export class LessonSession {
       passedLessons,
       grading: this.grading,
     });
-    return runCheck(spec, attempt);
+    const outcome = runCheck(spec, attempt);
+    if ("criteria" in outcome || outcome.outcome.reason !== "sectionNotHeard") return outcome;
+    // What the Check saw of its own cue and the clock, so an owner's report of a void can be diagnosed.
+    const { context } = this.engine;
+    const heard = this.engine.heardTime();
+    const lastA = attempt.decks.A?.playhead.segments.slice(-4) ?? [];
+    const diagnostics = {
+      ...outcome.diagnostics,
+      recorderStartedCtx: attempt.startedCtx,
+      recorderStoppedCtx: attempt.endedCtx,
+      checkStartPos: plan.startPos,
+      heardNowCtx: heard.ok ? heard.ctx : null,
+      currentTime: context.currentTime,
+      outputLatencySec: context instanceof AudioContext ? context.outputLatency : null,
+      baseLatencySec: context instanceof AudioContext ? context.baseLatency : null,
+      lastSegmentsA: lastA.map((segment) => `${segment.fromCtx.toFixed(3)}@${segment.pos.toFixed(3)}×${String(segment.rate)}`).join(" "),
+    };
+    console.warn("[lesson] the Check is void: a graded section was not heard", diagnostics);
+    return { ...outcome, diagnostics };
   }
 
   /** Leaves a running Check without grading it (restart, leaving the page). */

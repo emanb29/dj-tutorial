@@ -1,4 +1,5 @@
 // What every criterion function reads: the spec, the attempt and per-deck lookups.
+import type { CriterionId } from "@shared/check-result.ts";
 import type {
   BeatGrid,
   CtxSpan,
@@ -68,6 +69,13 @@ export type TaskOf<Id extends LessonTask["lessonId"]> = Extract<LessonTask, { re
 
 export interface LessonCheck<Task extends LessonTask = LessonTask> {
   readonly situations: Situations;
+  /**
+   * Every criterion `run` grades in a Lesson's Check: announced before the Check ("Graded: …"), and
+   * runCheck refuses any other (a content bug), so the announcement cannot drift from the grading.
+   */
+  readonly criteria: readonly CriterionId[];
+  /** Criteria `run` adds only in a Placement task (credit for the group's earlier Lessons). */
+  readonly placementCriteria?: readonly CriterionId[];
   readonly run: (context: CheckContext, task: Task) => OwnCriteria;
 }
 

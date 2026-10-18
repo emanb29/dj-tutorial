@@ -14,6 +14,7 @@ const LIMITS = { full: { withinBars: 32, holdBars: 8 }, short: { withinBars: 24,
 
 export const tempoByEar: LessonCheck<TaskOf<"tempo-by-ear">> = {
   situations: { transition: false },
+  criteria: ["tempo-by-ear.tempo-match"],
   run(context, task) {
     const { attempt, window, spec } = context;
     const pair = phasePair(context);

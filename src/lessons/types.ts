@@ -327,6 +327,8 @@ export interface PositionCue {
   readonly caption: string;
   /** A checkpoint in a long attempt ("halfway ✓"): a quick tick on screen; the music keeps playing. */
   readonly checkpoint?: true;
+  /** Counts down to a change of task: drawn large, so it is seen without reading. */
+  readonly countdown?: true;
 }
 
 export interface LessonDefinition {

@@ -45,6 +45,7 @@ export function cueOnDownbeat(context: CheckContext, trackIds: readonly string[]
 
 export const cuePoint: LessonCheck<TaskOf<"cue-point">> = {
   situations: { transition: false },
+  criteria: ["cue-point.cue-on-downbeat"],
   run(context) {
     return { criteria: [cueOnDownbeat(context, context.spec.tracks.map((track) => track.trackId))], metrics: {} };
   },

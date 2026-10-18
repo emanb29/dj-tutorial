@@ -19,6 +19,7 @@ const BEAT_RATIO = 0.9;
 
 export const beatsAndBars: LessonCheck<TaskOf<"beats-and-bars">> = {
   situations: { transition: false },
+  criteria: ["beats-and-bars.beat-taps", "beats-and-bars.downbeat-taps"],
   run(context, { beatSection, downbeatSection }) {
     const limits = LIMITS[context.spec.variant];
     const tolerance = TAP_TOLERANCE_MS / 1000;

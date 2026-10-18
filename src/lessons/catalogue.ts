@@ -4,7 +4,7 @@ import type { Aids, Attempt, CheckMode, CheckVariant, CtxSpan, LessonId, LessonT
 import { EQ_FILTER_LESSONS, type EqFilterLessonId } from "./catalogue-eq-filter.ts";
 import { BY_EAR_LESSONS, type ByEarLessonId } from "./catalogue-by-ear.ts";
 import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
-import { barsSec, fromOwnCue, heardSpan, steadyPhrase } from "./plan.ts";
+import { barsSec, fromOwnCue, heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
 import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
@@ -81,7 +81,7 @@ const beatsAndBars: LessonDefinition = {
       cues: [
         { fromPos: countIn, caption: "Count in: 1, 2, 3, 4" },
         { fromPos: barStart(track.grid, beatsBar) - half, caption: "Tap every beat (Space)" },
-        { fromPos: barStart(track.grid, beatsBar + 8) - half, caption: "Now only the 1" },
+        ...switchCountdown(track, barStart(track.grid, beatsBar + 8), { doing: "Every beat", now: "Only the 1 now" }),
       ],
     };
   },

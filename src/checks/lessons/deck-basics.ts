@@ -9,6 +9,7 @@ export const CLIP_DBFS = -0.1;
 
 export const deckBasics: LessonCheck = {
   situations: { transition: false },
+  criteria: ["deck-basics.fade-in", "deck-basics.fade-out", "deck-basics.no-clip-local"],
   run(context) {
     const { attempt, window } = context;
     const deckA = loadedDeck(context, "A");

@@ -75,6 +75,7 @@ function lowestFader(context: CheckContext, spans: readonly CtxSpan[]): number {
 
 export const crossfader: LessonCheck<TaskOf<"crossfader">> = {
   situations: { transition: true },
+  criteria: ["crossfader.xf-blend", "crossfader.xf-cut", "crossfader.faders-up"],
   run(context, task) {
     const blend = handover(context, "A", "B", task.blendSection);
     const xfBlend = allOf("crossfader.xf-blend", [

@@ -14,6 +14,7 @@ const CUE_ON_FRACTION = 0.95;
 
 export const headphoneCue: LessonCheck<TaskOf<"headphone-cue">> = {
   situations: { transition: false },
+  criteria: ["headphone-cue.cued-taps", "headphone-cue.b-off-master"],
   run(context, { tapSection }) {
     const tolerance = CUED_TAP_TOLERANCE_MS / 1000;
     const deckB = loadedDeck(context, "B");

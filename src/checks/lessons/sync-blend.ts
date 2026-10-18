@@ -7,6 +7,7 @@ export const SYNC_BLEND_BARS = { full: [8 - 0.25, 16 + 0.25], short: [8, 9] } as
 
 export const syncBlend: LessonCheck<TaskOf<"sync-blend">> = {
   situations: { transition: true },
+  criteria: ["sync-blend.blend-start", "sync-blend.blend-length", "sync-blend.loud-steady", "sync-blend.trim-untouched"],
   run(context) {
     const move = handover(context, "A", "B");
     return {

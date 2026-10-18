@@ -33,6 +33,7 @@ export {
 } from "./coach.ts";
 export { blendPose, followBlend, START_BLEND, type BlendFollow } from "./blend-steps.ts";
 export { classifyTap } from "./feedback.ts";
+export { criterionLabel, gradedLine } from "./criterion-labels.ts";
 export {
   ancestorsOf,
   applyPlacement,

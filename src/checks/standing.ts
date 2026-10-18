@@ -1,7 +1,7 @@
 // Standing criteria (check-design §3): once their teaching Lesson is passed, every later Check
 // measures them, when its task contains their situation.
 import type { ControlId, CtxSpan, DeckId, LessonId } from "@shared/attempt.ts";
-import type { CriterionResult, Severity, StandingId } from "@shared/check-result.ts";
+import type { CriterionId, CriterionResult, Severity, StandingId } from "@shared/check-result.ts";
 import { barSeconds, framesWhere, loadedDeck, type CheckContext, type Situations } from "./context.ts";
 import { judge } from "./criterion.ts";
 import { TIME_EPSILON } from "./measures.ts";
@@ -241,13 +241,31 @@ const DEFINITIONS: readonly StandingDefinition[] = [
   { id: "overcorrect", from: ["tempo-by-ear"], situation: "any", measure: overcorrect },
 ];
 
+interface StandingScope {
+  readonly lessonId: LessonId;
+  readonly passedLessons: readonly LessonId[];
+  /** Whether the task offers sync. */
+  readonly sync: boolean;
+}
+
+/** The standing criteria a task grades, each with its severity there. */
+function applicable(scope: StandingScope, situations: Situations): { readonly definition: StandingDefinition; readonly severity: Severity }[] {
+  const passed: ReadonlySet<LessonId> = new Set(scope.passedLessons);
+  const present = (situation: StandingDefinition["situation"]) => situation === "any" || (situation === "syncAvailable" ? scope.sync : situations[situation]);
+  return DEFINITIONS.flatMap((definition) => {
+    const severity = standingSeverity(definition.id, scope.lessonId);
+    const applies = severity !== null && definition.from.some((lesson) => passed.has(lesson)) && present(definition.situation);
+    return applies ? [{ definition, severity }] : [];
+  });
+}
+
 export function standingCriteria(context: CheckContext, situations: Situations): CriterionResult[] {
   const passed: ReadonlySet<LessonId> = new Set(context.spec.passedLessons);
-  const present = (situation: StandingDefinition["situation"]) =>
-    situation === "any" || (situation === "syncAvailable" ? context.spec.aids.sync : situations[situation]);
-  return DEFINITIONS.flatMap((definition) => {
-    const severity = standingSeverity(definition.id, context.lessonId);
-    const applies = severity !== null && definition.from.some((lesson) => passed.has(lesson)) && present(definition.situation);
-    return applies ? [definition.measure(context, severity, passed)] : [];
-  });
+  const scope = { lessonId: context.lessonId, passedLessons: context.spec.passedLessons, sync: context.spec.aids.sync };
+  return applicable(scope, situations).map(({ definition, severity }) => definition.measure(context, severity, passed));
+}
+
+/** The standing criteria that can fail a task (severity `fail`), before it is run. */
+export function failingStandingIds(scope: StandingScope, situations: Situations): CriterionId[] {
+  return applicable(scope, situations).filter(({ severity }) => severity === "fail").map(({ definition }) => `standing.${definition.id}` as const);
 }

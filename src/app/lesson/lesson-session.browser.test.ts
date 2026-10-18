@@ -2,7 +2,7 @@
 // owner runs a Lesson: hook and practice first (the deck plays the Check's sections already), then
 // Checks in a row with every tap on a heard beat, at both common hardware sample rates.
 import { afterEach, describe, expect, it } from "vitest";
-import { createAudioEngine, type AudioEngine, type EngineCommand } from "@audio";
+import { audioContextClock, createAudioEngine, type AudioEngine, type EngineCommand } from "@audio";
 import {
   blendPositions,
   lessonDefinition,
@@ -66,9 +66,14 @@ interface Harness {
   readonly track: LessonTrack;
   readonly plan: CheckPlan;
   readonly engine: AudioEngine;
-  /** Renders up to heard time `ctx` (rounded up to a render quantum) and stops there. */
+  /** Renders up to context time `ctx` (rounded up to a render quantum) and stops there. */
   readonly renderTo: (ctx: number) => Promise<void>;
+  /** Renders until context time `ctx` is heard: the output latency later. */
+  readonly renderToHeard: (ctx: number) => Promise<void>;
+  /** Context (render) time now. */
   readonly now: () => number;
+  /** When the Check's Play took effect on deck A, once it has. */
+  readonly playedAt: () => number;
   readonly audioEnded: () => number;
 }
 
@@ -82,10 +87,29 @@ async function harness(options: {
   readonly partnerAudio?: (context: BaseAudioContext) => AudioBuffer;
   /** Every observation the session makes, in order. */
   readonly observed?: Observation[];
+  /**
+   * How far the output timestamp's contextTime trails what is rendered, as a real AudioContext reports
+   * it (macOS Bluetooth: 150–300 ms). Negative: the timestamp runs ahead of the render (a stale one
+   * extrapolated across a late callback, or the high side of an ISS-84 jump). Default 0: heard time is
+   * render time, as offline.
+   */
+  readonly latencySec?: number;
+  /** The engine's scheduling lookahead (a real context: baseLatency + 2 quanta). Default 0. */
+  readonly lookaheadSec?: number;
 }): Promise<Harness> {
   const { sampleRate, track } = options;
+  const latencySec = options.latencySec ?? 0;
   const context = new OfflineAudioContext({ numberOfChannels: 2, length: Math.round(options.renderSec * sampleRate), sampleRate });
-  const running = await createAudioEngine({ context, masterTempo: false });
+  // The real clock, over an output that reports `latencySec` behind the render.
+  const output = {
+    state: "running",
+    get currentTime() {
+      return context.currentTime;
+    },
+    getOutputTimestamp: () => ({ contextTime: context.currentTime - latencySec, performanceTime: performance.now() }),
+  } as unknown as AudioContext;
+  const clock = latencySec === 0 ? undefined : audioContextClock(output);
+  const running = await createAudioEngine({ context, masterTempo: false, ...(clock === undefined ? {} : { clock }), lookaheadSec: options.lookaheadSec ?? 0 });
   engine = running;
   const audio = options.audio(context);
   expect(await running.load("A", audio, { trackId: track.trackId, grid: track.grid })).toEqual({ ok: true });
@@ -119,7 +143,22 @@ async function harness(options: {
     // running in this time: the Check's end is waited for (`until`) and its start too (`startedCheck`).
     await new Promise((resolve) => setTimeout(resolve, 30));
   };
-  return { session, track, plan: definition.planCheck(track), engine: running, renderTo, now: () => context.currentTime, audioEnded: () => ended };
+  let playedAt = Number.NaN;
+  running.on("command", (event) => {
+    if (event.command.control === "play" && event.command.deck === "A" && event.rejected === null) playedAt = event.appliedCtx;
+  });
+  return {
+    session,
+    track,
+    plan: definition.planCheck(track),
+    engine: running,
+    renderTo,
+    // Nothing is heard before it is rendered, however far ahead the timestamp runs.
+    renderToHeard: (ctx) => renderTo(ctx + Math.max(0, latencySec)),
+    now: () => context.currentTime,
+    playedAt: () => playedAt,
+    audioEnded: () => ended,
+  };
 }
 
 /** Waits, on the wall clock, for something the session does on its own timers or promises. */
@@ -160,15 +199,15 @@ async function checkWithTaps(
   passed: readonly LessonId[],
 ): Promise<CheckResult | VoidAttempt> {
   await startedCheck(run);
-  const playAt = run.now();
+  const playAt = run.playedAt();
   const heard = (pos: number) => playAt + (pos - run.plan.startPos);
   for (const pos of positions) {
-    await run.renderTo(heard(pos));
+    await run.renderToHeard(heard(pos));
     run.engine.command({ control: "tap" }, { device: "keyboard" });
   }
   if (run.plan.endWhen.kind !== "position") throw new Error("this Check ends at a position");
   const endedBefore = run.audioEnded();
-  await run.renderTo(heard(run.plan.endWhen.pos) + 0.1);
+  await run.renderToHeard(heard(run.plan.endWhen.pos) + 0.1);
   await until(() => run.audioEnded() === endedBefore + 1, "the session's watch to end the Check's audio part");
   const graded = await run.session.grade(answers, passed);
   if (!graded.ok) throw new Error(graded.message);
@@ -202,6 +241,26 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     }
   });
 
+  // The owner's report: every Lesson 2 Check on the MacBook voided (sectionNotHeard). Real outputs, with
+  // the engine's real lookahead (baseLatency + 2 quanta ≈ 17 ms): Bluetooth and wired latencies, and an
+  // output timestamp running 20 ms ahead of the render, which put the Check's start after its own cue.
+  it.each([
+    { what: "Bluetooth output (250 ms)", latencySec: 0.25 },
+    { what: "wired output (40 ms)", latencySec: 0.04 },
+    { what: "an output timestamp 20 ms ahead of the render", latencySec: -0.02 },
+  ])("beats-and-bars after practice is graded, not voided, on $what", { timeout: 60_000 }, async ({ latencySec }) => {
+    const lookaheadSec = 0.0116 + 256 / sampleRate;
+    const run = await harness({ sampleRate, lessonId: "beats-and-bars", track: lamplightMoths(), audio: (context) => toneBuffer(context, ORIGINAL_SEC), renderSec: 40 + 2 * 40, latencySec, lookaheadSec });
+    const beatSec = 60 / run.track.grid.bpm;
+    run.session.preparePractice();
+    await run.renderTo(36);
+    const beats = [...Array.from({ length: 32 }, (_, index) => 32 + index), ...Array.from({ length: 8 }, (_, index) => 64 + 4 * index)];
+    const outcomes = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) outcomes.push(await checkWithTaps(run, beats.map((beat) => beat * beatSec), {}, ["deck-basics"]));
+    run.session.close();
+    for (const outcome of outcomes) expect(outcome.outcome, JSON.stringify(summary(outcome))).toEqual({ kind: "passed" });
+  });
+
   it("beats-and-bars: a deck stopped before the downbeat section voids the attempt instead of failing it", { timeout: 30_000 }, async () => {
     const run = await harness({ sampleRate, lessonId: "beats-and-bars", track: lamplightMoths(), audio: (context) => toneBuffer(context, ORIGINAL_SEC), renderSec: 30 });
     await startedCheck(run);
@@ -211,6 +270,10 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     const graded = await run.session.grade({}, ["deck-basics"]);
     run.session.close();
     expect(graded.ok && graded.outcome.outcome).toEqual({ kind: "void", reason: "sectionNotHeard" });
+    // Enough to diagnose an owner's report: which section, how far it got, and the clock.
+    const diagnostics = graded.ok && "diagnostics" in graded.outcome ? graded.outcome.diagnostics : undefined;
+    expect(diagnostics).toMatchObject({ section: "beatSection", to: null, checkStartPos: run.plan.startPos });
+    expect([typeof diagnostics?.["recorderStartedCtx"], typeof diagnostics?.["recorderStoppedCtx"]]).toEqual(["number", "number"]);
   });
 
   it("deck-basics: the Check ends when the fader reaches the bottom, not on the way down", { timeout: 30_000 }, async () => {

@@ -150,10 +150,12 @@ describe("output clock", () => {
     { contextTime: 18.7853, performanceTime: 24_066.6 },
     { contextTime: 18.6863, performanceTime: 24_102.4 },
   ];
-  function clockReading(timestamps: readonly { contextTime: number; performanceTime: number }[]) {
+  // `currentTime`: how far the graph has rendered; far ahead unless a test is about it.
+  function clockReading(timestamps: readonly { contextTime: number; performanceTime: number }[], currentTime = 1_000_000) {
     let next = 0;
     const context = {
       state: "running",
+      currentTime,
       getOutputTimestamp: () => timestamps[Math.min(next++, timestamps.length - 1)],
     } as unknown as AudioContext;
     return audioContextClock(context);
@@ -188,6 +190,26 @@ describe("output clock", () => {
     const tap = ctxOf(clock.heardTime(1_020));
     expect(readingAfterTap).toBeGreaterThan(0);
     expect(tap).toBeCloseTo(10.12, 9);
+  });
+
+  // The owner's Lesson 2 voids: a heard "now" past what was rendered put the Check's start after the
+  // cue the session had just scheduled (currentTime + lookahead), so the Check never found its cue.
+  it("never hears past what has been rendered, even extrapolating a stale timestamp", () => {
+    const clock = clockReading([{ contextTime: 10, performanceTime: 1_000 }], 10.02);
+    vi.spyOn(performance, "now").mockReturnValue(1_050);
+    expect(ctxOf(clock.heardTime())).toBeCloseTo(10.02, 9);
+    expect(ctxOf(clock.heardTime(1_040))).toBeCloseTo(10.02, 9);
+  });
+
+  it("holds the high side of a timestamp jump only up to what has been rendered", () => {
+    const clock = clockReading(loadedTimestamps, 18.8);
+    vi.spyOn(performance, "now").mockReturnValue(24_090);
+    const before = ctxOf(clock.heardTime());
+    vi.spyOn(performance, "now").mockReturnValue(24_102.4);
+    const after = ctxOf(clock.heardTime());
+    expect(before).toBeLessThanOrEqual(18.8);
+    expect(after).toBeLessThanOrEqual(18.8);
+    expect(after).toBeGreaterThanOrEqual(before);
   });
 
   it("maps as before while the output timestamps agree", () => {

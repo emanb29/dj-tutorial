@@ -17,7 +17,7 @@ strings) is used only for scheduling in the Skill profile. The two are never mix
 
 | Input | Shape | Source | Notes |
 |---|---|---|---|
-| Control-event timeline | `{ctx, control, deck?, value, appliedCtx?, byEngine?}[]`, ordered; ids and units in `shared/attempt.ts` `ControlId` (mixer, tempo, jog bend, SYNC, Master Tempo, CFX, Play, CUE, Lesson buttons) | virtual controller / MIDI | Input timestamps are mapped to *heard* time: `ctx = ts.contextTime + (event.timeStamp − ts.performanceTime)/1000`, with `ts = getOutputTimestamp()`. `appliedCtx` is when the change reached the audio and the playhead model; deck controls are lined up with the playhead on it |
+| Control-event timeline | `{ctx, control, deck?, value, appliedCtx?, byEngine?}[]`, ordered; ids and units in `shared/attempt.ts` `ControlId` (mixer, tempo, jog bend, SYNC, Master Tempo, CFX, Play, CUE, Lesson buttons) | virtual controller / MIDI | Input timestamps are mapped to *heard* time: `ctx = ts.contextTime + (event.timeStamp − ts.performanceTime)/1000`, with `ts = getOutputTimestamp()`, never past `currentTime`. `appliedCtx` is when the change reached the audio and the playhead model; deck controls are lined up with the playhead on it |
 | Deck playhead models | per deck: `{startCtx, startPos, rateSegments[]}` → `pos_d(t)` (track seconds) | deck engine | Integrated from playbackRate automation we schedule; jog bends are rate segments |
 | Beat grids | per track: `{bpm, firstBeat, downbeatIndex}` or a per-beat array, plus `rmsResidualMs` | analysis worker | `φ_d(t) = grid.beatAt(pos_d(t))` in beats; bar = 4 beats |
 | Phrase markers | per track: track-time list | Lesson track set (hand-checked) | `final-mix` only: 8-bar candidates from bar 1, confirmed by the Learner in track prep (§5.4) |
@@ -193,7 +193,11 @@ hidden during the task window, a grid fails `grid-trust`, the Learner abandons i
 played all of a section the task grades (`sectionNotHeard`: grading it would count every target missed).
 A recorded playhead model holds the track's whole history since it was loaded (hook, practice, earlier
 attempts, which play the same positions), so Lesson content looks for a section's heard times only
-after the Check's own cue inside the task window.
+after the Check's own cue inside the task window. That cue is scheduled at `currentTime` + lookahead just
+before the recorder starts, so heard time must never pass `currentTime` (nothing is heard before it is
+rendered): `audioContextClock` caps it there, or a timestamp running ahead would put the cue before the
+window and void every attempt. A void carries `diagnostics` (the section, its heard span, the window,
+the clock) for debugging; the Learner sees only the short reason.
 
 ## 7. Variants
 

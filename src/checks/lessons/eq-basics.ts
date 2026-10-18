@@ -20,6 +20,7 @@ export const EQ_BANDS = [
 
 export const eqBasics: LessonCheck<TaskOf<"eq-basics">> = {
   situations: { transition: false },
+  criteria: ["eq-basics.low-kill", "eq-basics.low-return", "eq-basics.eq-centred"],
   run(context) {
     const { attempt, window } = context;
     const deckA = loadedDeck(context, "A");

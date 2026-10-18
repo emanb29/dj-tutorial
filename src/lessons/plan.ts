@@ -2,7 +2,7 @@
 // own play-through of a position was heard. Pure.
 import type { Attempt, CtxSpan, DeckId } from "@shared/attempt.ts";
 import { BARS_PER_PHRASE, BEATS_PER_BAR, beatSec, cuedAt, heardTimeOf, trackOnDeck } from "./track.ts";
-import type { CheckPlan, LessonTrack } from "./types.ts";
+import type { CheckPlan, LessonTrack, PositionCue } from "./types.ts";
 
 export const barsSec = (track: LessonTrack, bars: number): number => bars * BEATS_PER_BAR * beatSec(track.grid);
 
@@ -43,6 +43,25 @@ export function fromOwnCue(plan: CheckPlan, attempt: Attempt, window: CtxSpan): 
   });
   const from = Math.max(window.from, ...cues);
   return { from: Math.min(from, window.to), to: window.to };
+}
+
+/**
+ * The captions that warn of a change of task mid-Check, at `switchPos` (a bar's 1): "<doing> · switch in
+ * 2 bars" two bars ahead, then the last bar counted down on its beats ("Switch in 1 bar: 4", "… 4 · 3",
+ * …), then `now` half a beat before the switch, as the new task's taps open.
+ */
+export function switchCountdown(track: LessonTrack, switchPos: number, captions: { readonly doing: string; readonly now: string }): PositionCue[] {
+  const beat = beatSec(track.grid);
+  const counts = Array.from({ length: BEATS_PER_BAR }, (_, index) => BEATS_PER_BAR - index);
+  return [
+    { fromPos: switchPos - barsSec(track, 2), caption: `${captions.doing} · switch in 2 bars` },
+    ...counts.map((_, index) => ({
+      fromPos: switchPos - (BEATS_PER_BAR - index) * beat,
+      caption: `Switch in 1 bar: ${counts.slice(0, index + 1).join(" · ")}`,
+      countdown: true as const,
+    })),
+    { fromPos: switchPos - beat / 2, caption: captions.now, countdown: true },
+  ];
 }
 
 /** The first phrase at or after 2 whose 16 bars hold no breakdown or build (they may have no kick). */
