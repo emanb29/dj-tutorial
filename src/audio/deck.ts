@@ -242,15 +242,15 @@ export class Deck {
       const back = this.returnToCue(when);
       return back.ok ? { ok: true, cuePointSet: null } : back;
     }
+    // Paused, as a CDJ does: away from the cue point the press sets it there, and in both cases the
+    // deck plays from the cue point while CUE is held (one press and hold, not a press then a hold).
     const position = track.track.record.playhead.positionAt(when);
-    if (position !== this.cuePointSec) {
-      this.cuePointSec = position;
-      return { ok: true, cuePointSet: position };
-    }
+    const cuePointSet = position === this.cuePointSec ? null : position;
+    if (cuePointSet !== null) this.cuePointSec = cuePointSet;
     const started = this.start(track.track, when, position);
     if (!started.ok) return started;
     this.previewing = true;
-    return { ok: true, cuePointSet: null };
+    return { ok: true, cuePointSet };
   }
 
   /** Deck CUE released: ends a preview by returning to the cue point. */

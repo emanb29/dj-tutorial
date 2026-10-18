@@ -115,16 +115,26 @@ describe("deck transport", () => {
     expect(engine.playheadAt("A", 0.9)?.positionSec).toBe(0);
   });
 
-  it("deck CUE: while paused away from the cue point it sets a new cue point there", async () => {
-    const context = offlineContext(0.2);
+  it("deck CUE: while paused away from the cue point one press sets a new cue point there and plays from it while held", async () => {
+    const context = offlineContext(1);
     const engine = await createAudioEngine({ context });
     await engine.load("A", toneBuffer(context, { frequency: 1000, peak: 0.5, seconds: 3 }), { trackId: "t", grid: null });
     const cuePoints: unknown[] = [];
     engine.on("cue-point", (cuePoint) => cuePoints.push(cuePoint));
-    send(engine, { control: "seek", deck: "A", value: 1.5 }, { control: "deck-cue", deck: "A", value: true });
+    send(engine, { control: "crossfader", value: 0 }, { control: "seek", deck: "A", value: 1.5 }, { control: "deck-cue", deck: "A", value: true });
 
     expect(engine.deckState("A").cuePointSec).toBe(1.5);
     expect(cuePoints).toEqual([{ ctx: 0, deck: "A", trackId: "t", pos: 1.5 }]);
+    const releasedAt = at(context, 0.4, () => {
+      send(engine, { control: "deck-cue", deck: "A", value: false });
+    });
+    const rendered = await context.startRendering();
+    await releasedAt;
+
+    // Heard at once, from the new cue point, without a second press; released, back to it and silent.
+    expect(channelRmsDb(rendered, 0, 0.1, 0.35)).toBeGreaterThan(-12);
+    expect(channelRmsDb(rendered, 0, 0.5, 1)).toBeLessThan(-100);
+    expect(engine.playheadAt("A", 0.9)?.positionSec).toBe(1.5);
   });
 
   it("deck CUE: held at the cue point it previews, and releasing returns to the cue point", async () => {
