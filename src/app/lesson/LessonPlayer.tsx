@@ -2,7 +2,7 @@
 // strip gives live feedback, and the result card follows each Check. Hook → practice → Check → result
 // → Check again is one loop driven by the pure runtime; Enter always goes (back) into the Check.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
-import { createAudioEngine, describeError, MasterOnlyMonitor, SplitCueMonitor, type AudioEngine } from "@audio";
+import { createAudioEngine, describeError, outputLine, type AudioEngine } from "@audio";
 import { applyCheckResult, CUE_PLACEMENT_TOLERANCE_MS } from "@checks";
 import {
   COVERED_DISPLAYS,
@@ -30,6 +30,7 @@ import { withHeadphonesChecked, withSkillProfile, type LearnerRecord } from "@sh
 import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
 import { inputWording, useWording } from "../controller/wording.ts";
+import { currentOutputPlan } from "../audio-output.ts";
 import type { SaveStatus } from "../save-queue.ts";
 import { FeedbackStrip, type TapMark } from "./FeedbackStrip.tsx";
 import { needsHeadphonesCheck } from "./headphones-check.ts";
@@ -158,10 +159,13 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     };
     void (async () => {
       try {
-        // Headphone Lessons use split cue: cue in the left ear, master in the right. Master Tempo
-        // (time-stretching) loads only where it is taught or already on the controller.
+        // The Learner's output (Controller page): split cue by default, cue in the left ear and master
+        // in the right; or through the FLX4, or two devices. Master Tempo (time-stretching) loads only
+        // where it is taught or already on the controller.
         const masterTempo = listed.masterTempo === true || unlocksAfter(passedLessons(learnerRef.current)).has("B.master-tempo");
-        engine = await createAudioEngine({ masterTempo, monitor: listed.headphones === true ? new SplitCueMonitor() : new MasterOnlyMonitor() });
+        const plan = await currentOutputPlan();
+        if (cancelled()) return;
+        engine = await createAudioEngine({ masterTempo, output: { plan, headphones: listed.headphones === true } });
         const ready = await loadLessonTrack(listed, {
           preference: trackPreference,
           signal: abort.signal,
@@ -227,6 +231,13 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 
   const engine = setup.kind === "ready" ? setup.engine : null;
   const session = setup.kind === "ready" ? setup.session : null;
+
+  // The ear check is for split cue; with the FLX4 or two devices, the cue has its own output.
+  const outputHasOwnCue = engine?.output != null && engine.output.kind !== "split-cue";
+  useEffect(() => {
+    if (outputHasOwnCue) setHeadphonesGate(false);
+  }, [outputHasOwnCue]);
+  const whereSoundGoes = engine?.output == null ? null : outputLine(engine.output, definition.headphones === true);
 
   // The hook starts once the deck is ready and, for headphone Lessons, the headphones check passed.
   const deckReady = session !== null;
@@ -448,7 +459,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           </section>
         ) : null}
 
-        {headphonesGate && engine !== null ? <HeadphonesGate context={engine.context} onPassed={headphonesPassed} /> : null}
+        {headphonesGate && engine !== null && !outputHasOwnCue ? <HeadphonesGate context={engine.context} onPassed={headphonesPassed} /> : null}
 
         {phase.kind === "result" || phase.kind === "void" ? (
           <ResultCard
@@ -480,7 +491,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             </p>
           ) : null
         ) : (
-          <Controller engine={engine} unlocks={unlocks} pulse={step?.control ?? null} captions={captions} concealed={concealed} />
+          <Controller engine={engine} unlocks={unlocks} pulse={step?.control ?? null} captions={captions} concealed={concealed} outputLine={whereSoundGoes} />
         )}
       </div>
     </main>

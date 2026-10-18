@@ -15,6 +15,8 @@ import { createMeter, loadMeterProcessor, type BusMeterFrame } from "./meter.ts"
 import { Mixer, type EqBand, type MixerState } from "./mixer.ts";
 import { MasterOnlyMonitor, type MonitorOutput } from "./monitor.ts";
 import { audioContextClock, renderTimeClock, type OutputClock } from "./output-clock.ts";
+import { createOutputRouting } from "./output-routing.ts";
+import type { OutputPlan } from "./output.ts";
 import { PendingWork } from "./pending-work.ts";
 import { fail, OK, type AudioEngineError, type Result } from "./result.ts";
 import { phaseAlignedPosition, syncTempo } from "./sync.ts";
@@ -26,6 +28,11 @@ export interface AudioEngineOptions {
   readonly context: AudioContext | OfflineAudioContext;
   /** Defaults to MasterOnlyMonitor (speakers). Use SplitCueMonitor for headphone cueing on one output. */
   readonly monitor: MonitorOutput;
+  /**
+   * Where the sound goes (output.ts): builds the context and the monitor for the plan, in place of
+   * `context` and `monitor`. `headphones` is whether the Lesson cues in headphones.
+   */
+  readonly output: { readonly plan: OutputPlan; readonly headphones: boolean };
   /** Defaults to getOutputTimestamp() for an AudioContext and render time for an OfflineAudioContext. */
   readonly clock: OutputClock;
   /** Load signalsmith-stretch for Master Tempo. Defaults to true. */
@@ -98,20 +105,33 @@ export const TRACK_HISTORY_LIMIT = 32;
 const RENDER_QUANTUM = 128;
 
 export async function createAudioEngine(options: Partial<AudioEngineOptions> = {}): Promise<AudioEngine> {
-  const context = options.context ?? new AudioContext({ latencyHint: "interactive" });
+  const routing = options.output === undefined ? null : createOutputRouting(options.output.plan, { headphones: options.output.headphones });
+  const context = routing?.context ?? options.context ?? new AudioContext({ latencyHint: "interactive" });
+  const monitor = routing?.monitor ?? options.monitor ?? new MasterOnlyMonitor();
   try {
     await loadMeterProcessor(context);
     const stretch = options.masterTempo === false ? disabledStretch() : await loadStretchNodes(context);
-    const clock = options.clock ?? (context instanceof AudioContext ? audioContextClock(context) : renderTimeClock(context));
+    const clock = masterDelayed(options.clock ?? (context instanceof AudioContext ? audioContextClock(context) : renderTimeClock(context)), monitor);
     const quanta = (2 * RENDER_QUANTUM) / context.sampleRate;
     const lookaheadSec = options.lookaheadSec ?? (context instanceof AudioContext ? context.baseLatency + quanta : 0);
     const stretchLeadSec = Math.max(lookaheadSec, stretch.latencySec + quanta);
-    return new AudioEngine(context, options.monitor ?? new MasterOnlyMonitor(), clock, stretch, { lookaheadSec, stretchLeadSec });
+    return new AudioEngine(context, monitor, clock, stretch, { lookaheadSec, stretchLeadSec }, routing?.plan ?? null);
   } catch (error) {
     // Do not leak a context this function created.
     if (options.context === undefined && context instanceof AudioContext) await context.close();
     throw error;
   }
+}
+
+/** Heard time on the master device: an output that delays the master is heard that much later. */
+function masterDelayed(clock: OutputClock, monitor: MonitorOutput): OutputClock {
+  if (monitor.masterDelaySec === undefined) return clock;
+  return {
+    heardTime(performanceTimeMs) {
+      const heard = clock.heardTime(performanceTimeMs);
+      return heard.ok ? { ok: true, ctx: heard.ctx - (monitor.masterDelaySec?.() ?? 0) } : heard;
+    },
+  };
 }
 
 interface StretchNodes {
@@ -169,6 +189,8 @@ export class AudioEngine {
     private readonly clock: OutputClock,
     stretch: StretchNodes,
     timing: { lookaheadSec: number; stretchLeadSec: number },
+    /** Where the sound goes, when the engine was made from an output plan (a fallback says so); null otherwise. */
+    readonly output: OutputPlan | null = null,
   ) {
     this.lookaheadSec = timing.lookaheadSec;
     this.stretchLeadSec = timing.stretchLeadSec;

@@ -1,0 +1,174 @@
+/* The Controller page: connection, sound output, the controls checklist, the MIDI monitor and the LED test. */
+
+.controller-page {
+  box-sizing: border-box;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+}
+
+.controller-page-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.controller-page h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 750;
+}
+
+.hw-card {
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.hw-card h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-md);
+}
+
+.hw-card p {
+  margin: 0 0 var(--space-3);
+}
+
+.hw-hint {
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.hw-count {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.hw-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--play);
+}
+
+.hw-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-3);
+}
+
+.hw-group h3 {
+  margin: 0 0 var(--space-1);
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hw-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.hw-group li[data-seen="true"] {
+  color: var(--play);
+}
+
+.hw-monitor {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.hw-monitor code {
+  display: inline-block;
+  min-width: 7.5em;
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+}
+
+.hw-keys {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+}
+
+.output-picker fieldset {
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  border: 0;
+}
+
+.output-option {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-2) 0;
+  cursor: pointer;
+}
+
+.output-option[data-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.output-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.output-option small {
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.output-option small.hw-ok {
+  color: var(--play);
+}
+
+.output-option small.hw-warn,
+.hw-warn {
+  color: var(--warn);
+}
+
+.output-two {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 420px;
+  margin-bottom: var(--space-3);
+}
+
+.output-device {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.output-device select {
+  min-height: 36px;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: var(--panel-raised);
+  font: inherit;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

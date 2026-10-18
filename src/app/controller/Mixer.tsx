@@ -55,7 +55,7 @@ function ChannelStrip({ deck }: { readonly deck: DeckId }) {
   );
 }
 
-export function Mixer() {
+export function Mixer({ outputLine = null }: { readonly outputLine?: string | null }) {
   return (
     <section className="mixer" aria-label="Mixer">
       <div className="mixer-channels">
@@ -67,6 +67,11 @@ export function Mixer() {
             <span className="group-label">HEADPHONES</span>
             <Knob id="cue-mix" label="MIXING" size="small" title="MIXING: left is the cued channels, right is the master." />
             <Knob id="headphone-level" label="LEVEL" size="small" title="Headphone LEVEL: how loud your headphone ear is." />
+            {outputLine === null ? null : (
+              <span className="output-line" data-testid="output-line">
+                {outputLine}
+              </span>
+            )}
           </div>
         </div>
         <ChannelStrip deck="B" />

@@ -46,7 +46,7 @@
     filter 400ms ease;
 }
 
-.control.locked > :not(.caption) {
+.control.locked > :not(.caption, .not-yet) {
   opacity: 0.2;
   filter: grayscale(1);
 }
@@ -855,6 +855,16 @@
   font-weight: 700;
 }
 
+/* Where the sound goes (split cue, the FLX4, or two devices): never a surprise. */
+.output-line {
+  max-width: 120px;
+  color: var(--ink-dim);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-align: center;
+}
+
 .crossfader {
   width: 100%;
 }
@@ -1191,5 +1201,91 @@
   .deck-B .transport {
     gap: 8px 12px;
     align-self: center;
+  }
+}
+
+/* hardware controller (src/app/controller/hardware.ts) */
+
+/* A locked control touched on the hardware: a short "not yet", not a padlock. */
+.not-yet {
+  position: absolute;
+  z-index: 6;
+  top: 50%;
+  left: 50%;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--body);
+  background: var(--ink-dim);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: not-yet 1.2s ease-out forwards;
+}
+
+@keyframes not-yet {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Soft takeover: where the physical fader or knob is until it picks up the value. */
+.pickup-mark {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed var(--cue);
+  border-radius: 4px;
+}
+
+.fader-vertical .pickup-mark {
+  left: 50%;
+  width: 46px;
+  height: 24px;
+  margin-left: -23px;
+  bottom: calc(10px + (100% - 20px) * var(--along));
+  transform: translateY(50%);
+}
+
+.fader-horizontal .pickup-mark {
+  top: 50%;
+  width: 26px;
+  height: 40px;
+  margin-top: -20px;
+  left: calc(14px + (100% - 28px) * var(--along));
+  transform: translateX(-50%);
+}
+
+.knob-hit {
+  position: relative;
+}
+
+.knob .pickup-mark {
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: calc(var(--knob-hit) / 2);
+  margin-left: -2px;
+  border-width: 0;
+  border-radius: 2px;
+  background: var(--cue);
+  transform-origin: 50% 0;
+  transform: rotate(calc(var(--angle) + 180deg));
+}
+
+/* A finger on the hardware platter. */
+.jog-surface[data-touched="true"] .jog-ring {
+  box-shadow:
+    inset 0 0 0 3px var(--accent),
+    0 6px 18px rgb(0 0 0 / 45%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .not-yet {
+    animation: none;
   }
 }

@@ -7,7 +7,7 @@
 import { useEffect, useRef, type PointerEvent } from "react";
 import type { DeckId } from "@audio";
 import { deckControl } from "./control-ids.ts";
-import { useController } from "./context.tsx";
+import { useController, useSessionValue } from "./context.tsx";
 import { ControlFrame, type CaptionSide } from "./ControlFrame.tsx";
 import { useFrame } from "./frame-loop.ts";
 import { wheelTravelPx } from "./gestures.ts";
@@ -45,6 +45,7 @@ export function JogWheel({ deck, captionSide }: { readonly deck: DeckId; readonl
   const platter = useRef<HTMLDivElement>(null);
   const turning = useRef<Turning | null>(null);
   const stillTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touched = useSessionValue((snapshot) => snapshot.jogTouched[deck]);
 
   useFrame(frames, () => {
     const reading = engine.playhead(deck);
@@ -111,6 +112,7 @@ export function JogWheel({ deck, captionSide }: { readonly deck: DeckId; readonl
       <div
         ref={surface}
         className="jog-surface"
+        data-touched={touched}
         role="group"
         aria-roledescription="jog wheel"
         aria-label={`Deck ${deck} jog wheel: drag round or scroll; paused it searches, playing it nudges`}

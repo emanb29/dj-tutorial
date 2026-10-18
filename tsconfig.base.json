@@ -34,6 +34,8 @@
       "@tracks": ["./src/tracks/index.ts"],
       "@tracks/*": ["./src/tracks/*"],
       "@lessons/*": ["./src/lessons/*"],
+      "@midi": ["./src/midi/index.ts"],
+      "@midi/*": ["./src/midi/*"],
       "@shared": ["./shared/index.ts"],
       "@shared/*": ["./shared/*"],
       "@server/*": ["./server/*"]

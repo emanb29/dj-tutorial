@@ -1,5 +1,6 @@
 import { continuousSpec, type ContinuousControlId } from "./gestures.ts";
 import { ControlFrame, type CaptionSide } from "./ControlFrame.tsx";
+import { PickupMark } from "./PickupMark.tsx";
 import { useContinuousControl } from "./use-continuous.ts";
 
 /** A rotary knob swept over 270°, dragged vertically. The hit area is larger than the cap. */
@@ -38,6 +39,7 @@ export function Knob({
         <div className={`knob-cap${centred && value === spec.resetValue ? " at-rest" : ""}`} style={{ transform: `rotate(${String(angle)}deg)` }}>
           <span className="knob-pointer" />
         </div>
+        <PickupMark id={id} />
       </div>
     </ControlFrame>
   );

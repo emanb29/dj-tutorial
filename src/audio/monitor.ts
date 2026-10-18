@@ -19,6 +19,11 @@ export interface MonitorOutput {
   /** Headphone LEVEL as an amplitude gain (1 is unity) on the headphone path; outputs without one ignore it. */
   setHeadphoneGain(gain: number): void;
   detach(): void;
+  /**
+   * How much later than the context's output timestamp the master is heard, when the output delays it
+   * (TwoDeviceMonitor lining up two devices). The engine's clock subtracts it. Absent = 0.
+   */
+  masterDelaySec?(): number;
 }
 
 function sameBuses(a: MonitorBuses | null, b: MonitorBuses): boolean {

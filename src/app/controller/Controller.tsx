@@ -6,12 +6,14 @@
 // progress bar, so a newly unlocked control plays a small reward animation.
 
 import { useEffect, useMemo, useState } from "react";
+import { midiConnection } from "@midi";
 import type { ControlId, ControllerUnlocks } from "./control-ids.ts";
 import { ControllerContext, type ControllerCaption, type ControllerContextValue, type MeterLevels } from "./context.tsx";
 import { ControlButton } from "./ControlButton.tsx";
 import { Deck } from "./Deck.tsx";
 import { DeckReadout, PhaseStrip } from "./displays.tsx";
 import { FrameLoop } from "./frame-loop.ts";
+import { HardwareBridge } from "./hardware.ts";
 import { isMacPlatform } from "./input-device.ts";
 import { globalKeyAllowed, keyHintFor, type FocusedElement } from "./keymap.ts";
 import { KeyLegend } from "./KeyLegend.tsx";
@@ -33,6 +35,8 @@ export interface ControllerProps {
   readonly concealed?: ReadonlySet<ControlId>;
   /** Whether the key legend starts open. The Learner can toggle it with "?" or its button. */
   readonly defaultLegendOpen?: boolean;
+  /** Where the sound goes, one short line by the headphone controls (src/audio/output.ts outputLine). */
+  readonly outputLine?: string | null;
 }
 
 const NO_CAPTIONS: readonly ControllerCaption[] = [];
@@ -43,7 +47,7 @@ function focusedElement(target: EventTarget | null): FocusedElement | null {
   return { tagName: target.tagName, role: target.getAttribute("role"), isContentEditable: target.isContentEditable };
 }
 
-export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIONS, concealed = NONE_CONCEALED, defaultLegendOpen = false }: ControllerProps) {
+export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIONS, concealed = NONE_CONCEALED, defaultLegendOpen = false, outputLine = null }: ControllerProps) {
   const [session] = useState(() => new ControllerSession(engine, { unlocks, macPlatform: isMacPlatform(navigator) }));
   const [frames] = useState(() => new FrameLoop());
   const [meters] = useState<MeterLevels>(() => new Map());
@@ -55,6 +59,9 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   }, [session, unlocks, concealed]);
 
   useEffect(() => session.connect(), [session]);
+
+  // The DDJ-FLX4, when one is connected: the same session, so the same locks and the same recording.
+  useEffect(() => new HardwareBridge(session, engine, midiConnection()).attach(), [session, engine]);
 
   useEffect(
     () =>
@@ -136,7 +143,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
         </header>
         <div className="controller-body">
           <Deck deck="A" />
-          <Mixer />
+          <Mixer outputLine={outputLine} />
           <Deck deck="B" />
         </div>
         {legendOpen ? <KeyLegend /> : null}

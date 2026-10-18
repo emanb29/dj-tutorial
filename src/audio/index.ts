@@ -31,6 +31,23 @@ export type {
 } from "./recorder.ts";
 
 export { MasterOnlyMonitor, SplitCueMonitor } from "./monitor.ts";
+export { ControllerCueMonitor, deviceHeadphoneSink, TwoDeviceMonitor } from "./device-monitors.ts";
+export type { HeadphoneSink } from "./device-monitors.ts";
+export {
+  CONTEXT_HOP_SEC,
+  DEFAULT_OUTPUT,
+  HEADPHONE_OFFSET_LIMIT_MS,
+  isControllerAudio,
+  lineUpDelays,
+  outputDevicesFrom,
+  outputLine,
+  parseOutputChoice,
+  planOutput,
+  supportsOutputSelection,
+} from "./output.ts";
+export type { OutputChoice, OutputDevice, OutputPlan } from "./output.ts";
+export { createOutputRouting, startAlignmentClicks } from "./output-routing.ts";
+export type { AlignmentClicks, OutputRouting } from "./output-routing.ts";
 export type { MonitorBuses, MonitorOutput } from "./monitor.ts";
 
 export type { BusMeterFrame, MeterBus } from "./meter.ts";

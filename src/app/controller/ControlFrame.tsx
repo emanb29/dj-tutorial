@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import type { ControlId } from "./control-ids.ts";
-import { useController } from "./context.tsx";
+import { useController, useSessionValue } from "./context.tsx";
 
 export type CaptionSide = "above" | "below" | "left" | "right";
 
@@ -53,6 +53,8 @@ export function ControlFrame({ id, label, className, keyHint = null, captionSide
     element.current?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
   }, [pulsing]);
 
+  // A locked control touched on the hardware controller: a brief "not yet" on its screen twin.
+  const notYet = useSessionValue((snapshot) => snapshot.notYet === id);
   const caption = captions.get(id);
   const classes = ["control", className, held ? "locked" : null, pulsing ? "pulse" : null].filter(Boolean).join(" ");
   return (
@@ -63,6 +65,11 @@ export function ControlFrame({ id, label, className, keyHint = null, captionSide
         <kbd className="key-hint" aria-hidden="true">
           {keyHint}
         </kbd>
+      ) : null}
+      {notYet ? (
+        <span className="not-yet" role="status">
+          Not yet
+        </span>
       ) : null}
       {caption === undefined ? null : (
         <span className={`caption caption-${captionSide}`} role="note">

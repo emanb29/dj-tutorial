@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties, type ReactNode } from "react";
 import { continuousSpec, type ContinuousControlId } from "./gestures.ts";
 import { ControlFrame, type CaptionSide } from "./ControlFrame.tsx";
+import { PickupMark } from "./PickupMark.tsx";
 import { useContinuousControl, type DragAxis } from "./use-continuous.ts";
 
 /** A channel fader, tempo fader or crossfader. The whole track is the hit area; grabbing never jumps. */
@@ -55,6 +56,7 @@ export function Fader({
           {marks}
         </div>
         <div className="fader-thumb" style={thumbStyle} />
+        <PickupMark id={id} />
       </div>
     </ControlFrame>
   );

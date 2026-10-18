@@ -1,6 +1,6 @@
 # learn-to-dj
 
-An interactive wizard that teaches DJing, controller-first and tuned for ADHD. It introduces one or two concepts at a time on a simulated two-deck controller that grows toward a real one (DDJ-FLX4 layout). Music comes from Audius, local files and a Creative Commons starter pack; Spotify is used for metadata only. Hardware controller support is a later effort. The map is "Map: Learn to DJ v1" in Linear (ISS-46).
+An interactive wizard that teaches DJing, controller-first and tuned for ADHD. It introduces one or two concepts at a time on a simulated two-deck controller that grows toward a real one (DDJ-FLX4 layout). Music comes from Audius, local files and a Creative Commons starter pack; Spotify is used for metadata only. The DDJ-FLX4 works as a hardware controller over Web MIDI (see below). The map is "Map: Learn to DJ v1" in Linear (ISS-46).
 
 ## Agent skills
 
@@ -27,6 +27,13 @@ The stack is in `docs/adr/0001-v1-stack.md`. Node 24 (`.nvmrc`).
 - `npm run test:e2e`: builds, then runs Playwright against `vite preview` on 4179 and the API on 4180, so it never clashes with a dev server. The Originals player (`/originals`) is tested on its own pair, 4181 and 4182, over a tiny fixture folder the spec writes. `E2E_APP_PORT`, `E2E_API_PORT`, `E2E_ORIGINALS_APP_PORT` and `E2E_ORIGINALS_API_PORT` move those four ports, so parallel runs (other agents) don't collide: `E2E_APP_PORT=4279 E2E_API_PORT=4280 E2E_ORIGINALS_APP_PORT=4281 E2E_ORIGINALS_API_PORT=4282 npm run test:e2e`.
 
 The API reads `API_HOST` and `API_PORT` (defaults `127.0.0.1`, `5180`). It also reads, from the environment or a `.env` file at the repo root (the owner's mounted 1Password Environment; gitignored, never commit it): `ANTHROPIC_API_KEY` (optional; unset = no-key mode, the deterministic Coach answers everything), `COACH_MONTHLY_CAP_USD` (default `5`), `COACH_LOG_PAYLOADS` (`1` logs Coach payloads; default off), `DATA_DIR` (profile store and spend ledger; default `.local/data`), `ORIGINALS_DIR` (the generator's Originals served under `/api/originals`; default `.local/tracks/originals`) `ALLOWED_ORIGINS` (comma-separated; default the dev app, the tunnel and the e2e preview) and `MAX_LEARNERS` (profile store size; default `16`, the e2e API sets `1000`). Tests never call the Anthropic API: they inject a client with faked HTTP (`server/test-support.ts`). Tests never play sound: Chromium runs with `--mute-audio` and audio tests render through `OfflineAudioContext`. `prototypes/` and `spikes/` are outside the build, the lint and the tests.
+
+## Hardware controller (DDJ-FLX4) and sound output
+
+- `src/midi/` owns Web MIDI: `connection.ts` (the one `requestMIDIAccess`, finds the port named `DDJ-FLX4`), `decoder.ts` (MIDI to what was touched, per AlphaTheta's list in `docs/research/flx4-midi.md`), `encoder.ts` (LEDs), `soft-takeover.ts`, `jog.ts`. All pure except `connection.ts`.
+- `src/app/controller/hardware.ts` feeds decoded input into the same `ControllerSession` as the screen and keyboard: one lock check, device `"midi"`, the MIDI message's `timeStamp` as the event time (same clock as a key press). Locked controls say "Not yet" on screen. Mapping choices the list does not make (TAP, MASTER TEMPO, Lesson keys) are at the top of that file, with a TODO for loops, Beat FX and pad modes.
+- Sound output is engine-owned: `src/audio/output.ts` (the three modes: split cue, through the FLX4, two devices), `device-monitors.ts`, `output-routing.ts`. The Learner picks on `/controller`; the choice is in `localStorage` (`src/app/audio-output.ts`). Nothing switches output by itself.
+- Tests never need hardware or real devices: unit tests feed the list's bytes, `hardware.browser.test.ts` drives a real offline engine, and `e2e/hardware.spec.ts` replaces `navigator.requestMIDIAccess` and `enumerateDevices` in an init script.
 
 ## Dev server and remote access
 

@@ -3,6 +3,7 @@ import { curriculumRequest, isBuiltLesson, placementCurriculumRequest, withCurri
 import type { CheckResult } from "@shared/check-result.ts";
 import type { PlacementResult } from "@shared/placement.ts";
 import { DEFAULT_LEARNER_ID, emptyLearnerRecord, LearnerIdSchema, type LearnerId, type LearnerRecord } from "@shared/learner.ts";
+import { midiConnection } from "@midi";
 import { HealthIndicator } from "./HealthIndicator.tsx";
 import { loadLearner, requestCurriculum, saveLearner } from "./lesson/api-client.ts";
 import { LessonList } from "./lesson/LessonList.tsx";
@@ -14,6 +15,7 @@ const Playground = lazy(() => import("./playground/Playground.tsx").then((module
 const LessonPlayer = lazy(() => import("./lesson/LessonPlayer.tsx").then((module) => ({ default: module.LessonPlayer })));
 // The Originals player is its own small page, and its own chunk.
 const Placement = lazy(() => import("./placement/Placement.tsx").then((module) => ({ default: module.Placement })));
+const ControllerPage = lazy(() => import("./controller-page/ControllerPage.tsx").then((module) => ({ default: module.ControllerPage })));
 const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
@@ -33,6 +35,8 @@ export function playgroundEnabled(location: { pathname: string; search: string }
   return devServer || new URLSearchParams(location.search).has("playground");
 }
 const LESSON_PATH = /^\/lesson\/([a-z-]+)$/;
+/** The hardware page: the DDJ-FLX4's connection, a MIDI monitor, a controls checklist and the sound output. */
+export const CONTROLLER_PAGE_PATH = "/controller";
 /** Re-taking Placement, from the Lesson list. A first run (no profile yet) shows it at "/". */
 export const PLACEMENT_PATH = "/placement";
 
@@ -77,6 +81,11 @@ export function App() {
     return () => {
       window.removeEventListener("popstate", onPop);
     };
+  }, []);
+
+  // A controller allowed on an earlier visit connects by itself; the first time, the Controller page asks.
+  useEffect(() => {
+    void midiConnection().connectIfAllowed();
   }, []);
 
   useEffect(() => {
@@ -182,6 +191,14 @@ export function App() {
     );
   }
 
+  if (path.replace(/\/$/, "") === CONTROLLER_PAGE_PATH) {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening the Controller page…</p>}>
+        <ControllerPage onBack={exit} />
+      </Suspense>
+    );
+  }
+
   const placementRun = path.replace(/\/$/, "") === PLACEMENT_PATH ? "retake" : path === "/" && firstRun ? "first" : null;
   if (placementRun !== null && learner.kind === "ready") {
     return (
@@ -223,6 +240,16 @@ export function App() {
     <main className="home">
       <header className="home-head">
         <h1>Learn to DJ</h1>
+        <a
+          className="home-controller-link"
+          href={CONTROLLER_PAGE_PATH}
+          onClick={(event) => {
+            event.preventDefault();
+            navigate(CONTROLLER_PAGE_PATH);
+          }}
+        >
+          Controller
+        </a>
         <HealthIndicator />
       </header>
       {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} /> : <p>Loading your progress…</p>}

@@ -3,11 +3,12 @@
 // grades it; this component owns the engine, the headphones check and the questions, and reports the
 // outcome (graded or void) to the Placement.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createAudioEngine, describeError, MasterOnlyMonitor, SplitCueMonitor, type AudioEngine } from "@audio";
+import { createAudioEngine, describeError, outputLine, type AudioEngine } from "@audio";
 import { peakDbfsOf, readyUsedIn, type ControlId, type LessonTrack, type PlacementTaskDefinition, type TaskOutcome } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { withHeadphonesChecked, type LearnerRecord } from "@shared/learner.ts";
+import { currentOutputPlan } from "../audio-output.ts";
 import { Controller } from "../controller/Controller.tsx";
 import { inputWording, useWording } from "../controller/wording.ts";
 import { needsHeadphonesCheck } from "../lesson/headphones-check.ts";
@@ -56,7 +57,9 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
     let session: LessonSession | null = null;
     void (async () => {
       try {
-        engine = await createAudioEngine({ masterTempo: false, monitor: definition.headphones === true ? new SplitCueMonitor() : new MasterOnlyMonitor() });
+        const plan = await currentOutputPlan();
+        if (cancelled()) return;
+        engine = await createAudioEngine({ masterTempo: false, output: { plan, headphones: definition.headphones === true } });
         const ready = await loadTrack(engine.context.sampleRate);
         if (cancelled()) return;
         const channels = Array.from({ length: ready.audio.numberOfChannels }, (_, channel) => ready.audio.getChannelData(channel));
@@ -126,7 +129,9 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
   const [gateOpen, setGateOpen] = useState(headphonesGate);
   useEffect(() => {
     if (setup === null) return;
-    if (gateOpen) {
+    // The ear check is for split cue; with the FLX4 or two devices, the cue has its own output.
+    const ownCue = setup.engine.output !== null && setup.engine.output.kind !== "split-cue";
+    if (gateOpen && !ownCue) {
       setPhase("headphones");
       return;
     }
@@ -251,7 +256,9 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
             }}
           />
         ) : null}
-        {setup === null ? null : <Controller engine={setup.engine} unlocks={unlocks} />}
+        {setup === null ? null : (
+          <Controller engine={setup.engine} unlocks={unlocks} outputLine={setup.engine.output === null ? null : outputLine(setup.engine.output, definition.headphones === true)} />
+        )}
       </div>
     </>
   );

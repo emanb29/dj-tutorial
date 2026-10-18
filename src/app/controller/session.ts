@@ -33,6 +33,10 @@ const JOG_MIN_INTERVAL_MS = 16;
  */
 export const KEY_BEND = 0.04;
 export const KEY_BEND_FINE = 0.01;
+/** How long a locked hardware control shows "not yet" after it was touched. */
+export const NOT_YET_MS = 1200;
+/** A hardware fader or knob that has not moved for this long has ended its gesture (it has no release). */
+export const HARDWARE_SETTLE_MS = WHEEL_GESTURE_END_MS;
 const NO_MODIFIERS: KeyModifiers = { shiftKey: false, ctrlKey: false, metaKey: false, altKey: false };
 
 export interface ControllerSnapshot {
@@ -44,6 +48,24 @@ export interface ControllerSnapshot {
 
   /** Heard BPM from the loaded track's grid and the tempo fader, null without a grid. */
   readonly bpm: Readonly<Record<DeckId, number | null>>;
+
+  /** A locked control just touched on the hardware: it shows "not yet" for a moment. */
+  readonly notYet: ControlId | null;
+  /**
+   * Hardware faders and knobs that have not picked up the app's value yet (soft takeover), with where
+   * the physical control is, in the control's own units. The screen shows it until they meet.
+   */
+  readonly pickup: Readonly<Partial<Record<ContinuousControlId, number>>>;
+  /** A finger on the hardware jog's platter. */
+  readonly jogTouched: Readonly<Record<DeckId, boolean>>;
+}
+
+/** How a jog gesture turns platter movement into a bend or a search; the screen's defaults suit a finger or trackpad. */
+export interface JogFeel {
+  /** Bend per radian-per-second of platter speed. */
+  readonly bendGain: number;
+  /** Track seconds per radian of platter turn on a paused deck. */
+  readonly searchSecPerRadian: number;
 }
 
 export interface KeyboardEventLike extends KeyModifiers {
@@ -100,6 +122,7 @@ const browserSchedule: Schedule = (run, delayMs) => {
 };
 
 const keyNudgeGesture = (code: string) => `key-nudge:${code}`;
+const SCREEN_JOG: JogFeel = { bendGain: JOG_GAIN, searchSecPerRadian: JOG_SEARCH_SEC_PER_RADIAN };
 
 const emptySlots = (): (number | null)[] => Array.from({ length: HOT_CUE_SLOTS }, () => null);
 
@@ -115,6 +138,7 @@ export class ControllerSession {
   private readonly heldKeys = new Set<string>();
   private nextGestureId = 0;
   private legendToggle: (() => void) | null = null;
+  private cancelNotYet: (() => void) | null = null;
 
   constructor(
     private readonly engine: ControllerEngine,
@@ -129,7 +153,9 @@ export class ControllerSession {
       mixer: engine.mixerState(),
       hotCues: { A: emptySlots(), B: emptySlots() },
       shiftHeld: { A: false, B: false },
-
+      notYet: null,
+      pickup: {},
+      jogTouched: { A: false, B: false },
       bpm: { A: this.bpmOf("A", engine.deckState("A")), B: this.bpmOf("B", engine.deckState("B")) },
     };
   }
@@ -169,6 +195,8 @@ export class ControllerSession {
   /** Changes the unlocked controls. Anything held on a control that just locked is released. */
   setUnlocks(unlocks: ControllerUnlocks): void {
     this.unlocks = unlocks;
+    // Listeners (the hardware LEDs) follow the locks as well as the snapshot.
+    this.update({});
     for (const [key, gesture] of [...this.open]) {
       if (!unlocks.has(gesture.control)) this.close(key, undefined);
     }
@@ -304,7 +332,7 @@ export class ControllerSession {
    * bends pitch (`jog-bend`, needs `jog-bend` unlocked too). The mode is chosen per turn, so a deck that
    * starts or stops mid-gesture switches with it.
    */
-  beginJog(deck: DeckId, device: InputDevice): JogGesture | null {
+  beginJog(deck: DeckId, device: InputDevice, feel: JogFeel = SCREEN_JOG): JogGesture | null {
     const control = deckControl(deck, "jog");
     if (!this.isUnlocked(control)) return null;
     const key = `jog:${String(this.nextGestureId++)}`;
@@ -332,7 +360,7 @@ export class ControllerSession {
         if (!this.open.has(key)) return;
         const state = this.current.decks[deck];
         if (!state.playing) {
-          pendingSearchSec += angleRad * JOG_SEARCH_SEC_PER_RADIAN;
+          pendingSearchSec += angleRad * feel.searchSecPerRadian;
           if (timing.eventTimeMs - lastSearchMs < JOG_MIN_INTERVAL_MS) return;
           lastSearchMs = timing.eventTimeMs;
           flushSearch({ device, eventTimeMs: timing.eventTimeMs, gestureEnd: false });
@@ -343,7 +371,7 @@ export class ControllerSession {
         if (elapsedMs <= 0) return;
         if (timing.eventTimeMs - lastSentMs < JOG_MIN_INTERVAL_MS) return;
         const speed = (angleRad / elapsedMs) * 1000;
-        const bend = Math.max(-JOG_MAX_BEND, Math.min(JOG_MAX_BEND, speed * JOG_GAIN));
+        const bend = Math.max(-JOG_MAX_BEND, Math.min(JOG_MAX_BEND, speed * feel.bendGain));
         if (Math.abs(bend - lastBend) < JOG_MIN_STEP) return;
         lastBend = bend;
         bent = true;
@@ -447,6 +475,59 @@ export class ControllerSession {
     // Starting playback is PLAY's job; with PLAY locked the pad only jumps.
     const mayPlay = this.isUnlocked(deckControl(deck, "play"));
     if (sent.ok && mayPlay && !this.current.decks[deck].playing) this.send({ control: "play", deck }, { ...input, gestureEnd: true });
+  }
+
+  // ---- hardware controller -------------------------------------------------------------------
+
+  /**
+   * A hardware fader or knob moved to `value` (already picked up: soft takeover is the caller's). It
+   * has no release, so its gesture ends HARDWARE_SETTLE_MS after the last move, with that move's value
+   * and time. Returns false, sending nothing, when the control is locked.
+   */
+  hardwareValue(id: ContinuousControlId, value: number, eventTimeMs: number): boolean {
+    if (!this.isUnlocked(id)) return false;
+    const key = `hardware:${id}`;
+    this.sendValue(id, value, { device: "midi", eventTimeMs, gestureEnd: false });
+    this.wheelTimers.get(key)?.();
+    this.open.set(key, {
+      control: id,
+      finish: () => {
+        this.wheelTimers.get(key)?.();
+        this.wheelTimers.delete(key);
+        this.sendValue(id, value, { device: "midi", eventTimeMs, gestureEnd: true });
+      },
+    });
+    this.wheelTimers.set(
+      key,
+      this.schedule(() => {
+        this.close(key, eventTimeMs);
+      }, HARDWARE_SETTLE_MS),
+    );
+    return true;
+  }
+
+  /** A locked control was touched on the hardware: it says "not yet" for a moment. */
+  refuse(control: ControlId): void {
+    this.cancelNotYet?.();
+    this.update({ notYet: control });
+    this.cancelNotYet = this.schedule(() => {
+      this.cancelNotYet = null;
+      if (this.current.notYet === control) this.update({ notYet: null });
+    }, NOT_YET_MS);
+  }
+
+  /** Where a hardware control is while it has not picked up the value (null once it has). */
+  setPickup(id: ContinuousControlId, hardwareValue: number | null): void {
+    const now = this.current.pickup[id] ?? null;
+    if (now === hardwareValue) return;
+    const others = Object.entries(this.current.pickup).filter(([control]) => control !== id);
+    const pickup = Object.fromEntries(hardwareValue === null ? others : [...others, [id, hardwareValue]]) as ControllerSnapshot["pickup"];
+    this.update({ pickup });
+  }
+
+  setJogTouched(deck: DeckId, touched: boolean): void {
+    if (this.current.jogTouched[deck] === touched) return;
+    this.update({ jogTouched: { ...this.current.jogTouched, [deck]: touched } });
   }
 
   // ---- keyboard ------------------------------------------------------------------------------
