@@ -16,7 +16,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -26,10 +26,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-
-      - run: npm run typecheck
-
-      - run: npm run lint
 
       # Both the Vitest browser project and the end-to-end tests need Chromium. The browser download
       # is cached per Playwright version; the system libraries still install each run.
@@ -52,14 +48,58 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
+      - run: npm run typecheck
+
+      - run: npm run lint
+
       - run: npm test
 
-      - run: npm run test:e2e
+  # The end-to-end suite plays Lessons in real time, so it is split across parallel shards to keep
+  # each job well under its timeout. Add a shard when one gets near 15 minutes.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Both the Vitest browser project and the end-to-end tests need Chromium. The browser download
+      # is cached per Playwright version; the system libraries still install each run.
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
 
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
