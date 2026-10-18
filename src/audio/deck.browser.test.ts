@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BeatGrid } from "./beat-grid.ts";
+import type { EngineCommand } from "./commands.ts";
 import { createAudioEngine, type CommandEvent, type EngineDeckSnapshot } from "./engine.ts";
 import {
   at,
@@ -11,6 +12,7 @@ import {
   onsetSec,
   outputTimeOf,
   peakSec,
+  SAMPLE_RATE,
   send,
   toneBuffer,
   toneFrequency,
@@ -306,6 +308,83 @@ describe("jog search while paused", () => {
     expect(engine.playheadAt("A", 0.1)?.positionSec).toBe(0);
     send(engine, { control: "jog-search", deck: "A", value: 10 });
     expect(engine.playheadAt("A", 0.1)?.positionSec).toBeCloseTo(3, 6);
+  });
+
+  describe("is heard, as a CDJ scrubs", () => {
+    const QUANTUM = 128 / SAMPLE_RATE;
+    // Every search lands on a render quantum, where an offline suspend can stop; one jog step is 8 quanta.
+    const STEP = 8 * QUANTUM;
+    const searchTimes = Array.from({ length: 10 }, (_, index) => (40 + 8 * index) * QUANTUM);
+    const CLICKS = [1.05, 1.13];
+
+    /** A quiet 200 Hz bed under loud clicks: the bed shows when anything plays, the clicks show where. */
+    function scrubTrack(context: OfflineAudioContext): AudioBuffer {
+      const buffer = clickBuffer(context, 3, CLICKS);
+      for (let channel = 0; channel < 2; channel++) {
+        const data = buffer.getChannelData(channel);
+        data.forEach((sample, index) => (data[index] = sample + 0.05 * Math.sin((2 * Math.PI * 200 * index) / context.sampleRate)));
+      }
+      return buffer;
+    }
+
+    async function scrubbed(deltaSec: number, setUp: EngineCommand[] = []) {
+      const context = offlineContext(0.8);
+      const engine = await createAudioEngine({ context, lookaheadSec: 0.01, masterTempo: false });
+      await engine.load("A", scrubTrack(context), { trackId: "t", grid: null });
+      send(engine, { control: "crossfader", value: 0 }, { control: "seek", deck: "A", value: 1.1 }, ...setUp);
+      const searches: { appliedCtx: number; from: number; to: number }[] = [];
+      engine.on("command", (event) => {
+        if (event.command.control !== "jog-search") return;
+        const to = engine.playheadAt("A", event.appliedCtx + 1e-6)?.positionSec ?? Number.NaN;
+        searches.push({ appliedCtx: event.appliedCtx, from: to - deltaSec, to });
+      });
+      for (const time of searchTimes) {
+        void at(context, time, () => {
+          send(engine, { control: "jog-search", deck: "A", value: deltaSec });
+        });
+      }
+      const rendered = await context.startRendering();
+      return { rendered, searches, engine };
+    }
+
+    /** When the grain that passed over track position `pos` plays it: grains after the first play at speed 1. */
+    function heardAt(searches: readonly { appliedCtx: number; from: number; to: number }[], pos: number): number {
+      const search = searches.slice(1).find(({ from, to }) => pos >= Math.min(from, to) && pos < Math.max(from, to));
+      if (search === undefined) throw new Error(`No search moved over ${String(pos)} s.`);
+      return search.appliedCtx + Math.abs(pos - search.from);
+    }
+
+    it("plays what the playhead moves over, as it moves, then goes quiet when the jog stops", async () => {
+      // Back to 1.0 first, so the forward scrub crosses both clicks.
+      const { rendered, searches, engine } = await scrubbed(STEP, [{ control: "seek", deck: "A", value: 1 }]);
+      expect(searches).toHaveLength(searchTimes.length);
+      expect(engine.deckState("A").playing).toBe(false);
+
+      for (const click of CLICKS) {
+        const expected = heardAt(searches, click);
+        // The 1 ms click's loudest sample is within it: within 1 ms of where its start is heard.
+        expect(Math.abs(peakSec(rendered, expected, 0.004) - expected)).toBeLessThan(0.001);
+      }
+      // The bed is heard all through the scrub, at about its level (a sine of peak 0.05 is −29 dB RMS)...
+      const first = searches[1]?.appliedCtx ?? Number.NaN;
+      const last = searches.at(-1)?.appliedCtx ?? Number.NaN;
+      expect(channelRmsDb(rendered, 0, first, last)).toBeGreaterThan(-35);
+      // ...and nothing once the last grain is over, though the track goes on past the playhead.
+      expect(channelRmsDb(rendered, 0, last + STEP + 0.01, 0.8)).toBeLessThan(-120);
+    });
+
+    it("plays the audio backwards when the jog turns back", async () => {
+      const { rendered, searches } = await scrubbed(-STEP);
+
+      // Scrubbing back from 1.1 passes the click at 1.05; played backwards, its end (1.051) is heard first.
+      const expected = heardAt(searches, 1.05 + 0.001);
+      expect(Math.abs(peakSec(rendered, expected, 0.004) - expected)).toBeLessThan(0.001);    });
+
+    it("goes through the channel: with fader A down, the scrub is silent", async () => {
+      const { rendered } = await scrubbed(STEP, [{ control: "channel-fader", deck: "A", value: 0 }]);
+
+      expect(channelRmsDb(rendered, 0, 0, 0.8)).toBeLessThan(-120);
+    });
   });
 
   it("then deck CUE sets the cue point where the search stopped", async () => {

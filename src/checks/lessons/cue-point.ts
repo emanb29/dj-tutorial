@@ -2,12 +2,16 @@
 import type { CriterionResult } from "@shared/check-result.ts";
 import type { CheckContext, LessonCheck, TaskOf } from "../context.ts";
 import { judgeAll } from "../criterion.ts";
-import { isDownbeat, trackBeat } from "../timeline.ts";
+import { trackBeat } from "../timeline.ts";
 import { CUE_PLACEMENT_TOLERANCE_MS } from "../tolerance.ts";
 
 /**
  * `cue-point.cue-on-downbeat`: for each track, the last cue set on it is within ±20 ms of its
  * nearest beat, and that beat is beat 1. Also used by `cut-on-phrase` in Placement.
+ *
+ * The detail carries each cue, numbered from 1 in task order, for the result card's per-cue lines:
+ * `cue<N>.offsetMs` (signed: positive is late, after the beat) and `cue<N>.beat` (the beat of the bar,
+ * 1 to 4, it is nearest). A cue that was never set has neither key.
  */
 export function cueOnDownbeat(context: CheckContext, trackIds: readonly string[]): CriterionResult {
   const placements = trackIds.map((trackId) => {
@@ -16,8 +20,15 @@ export function cueOnDownbeat(context: CheckContext, trackIds: readonly string[]
     if (cue === undefined || grid === undefined) return null;
     const beat = trackBeat(grid, cue.pos);
     const nearest = Math.round(beat);
-    return { offsetMs: (Math.abs(beat - nearest) * 60_000) / grid.bpm, downbeat: isDownbeat(grid, nearest) };
+    const signedMs = ((beat - nearest) * 60_000) / grid.bpm;
+    const beatOfBar = ((((nearest - grid.downbeatIndex) % 4) + 4) % 4) + 1;
+    return { offsetMs: Math.abs(signedMs), signedMs, beatOfBar, downbeat: beatOfBar === 1 };
   });
+  const perCue = Object.fromEntries(
+    placements.flatMap((placement, index) =>
+      placement === null ? [] : [[`cue${String(index + 1)}.offsetMs`, placement.signedMs], [`cue${String(index + 1)}.beat`, placement.beatOfBar]],
+    ),
+  );
   const found = placements.filter((placement) => placement !== null);
   const missing = placements.length - found.length;
   const wrongBeat = found.filter((placement) => !placement.downbeat).length;
@@ -30,7 +41,7 @@ export function cueOnDownbeat(context: CheckContext, trackIds: readonly string[]
       unit: "ms",
       threshold: { op: "<=", value: CUE_PLACEMENT_TOLERANCE_MS, unit: "ms" },
       measured: worstMs,
-      detail: { tracks: trackIds.length, wrongBeat, missing },
+      detail: { tracks: trackIds.length, wrongBeat, missing, ...perCue },
     },
     {
       id: "cue-point.cue-on-downbeat",

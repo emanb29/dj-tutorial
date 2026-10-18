@@ -698,7 +698,7 @@
   white-space: nowrap;
 }
 
-/* Under a result criterion: what exactly went wrong (Lesson 3's picks and missed phrases), one line each. */
+/* Under a result criterion: what exactly went wrong (Lesson 3's picks and missed phrases, Lesson 6's cues), one line each. */
 .result-criteria .result-detail {
   display: grid;
   gap: var(--space-1);

@@ -370,6 +370,40 @@ function describePerformance(criterion: CriterionResult): string | null {
   }
 }
 
+/** One cue under the cue-point criterion on the result card. */
+export interface CueLine {
+  readonly met: boolean;
+  readonly text: string;
+}
+
+/** Offsets under this read "on the 1" with no number: below what anyone can hear or jog to. */
+const CUE_EXACT_MS = 0.5;
+
+/**
+ * One short line per cue for `cue-point.cue-on-downbeat` (from its per-cue detail), e.g. "Cue 2: 34 ms
+ * late" or "Cue 3: on beat 3, not the 1". Empty for every other criterion, and for a result recorded
+ * before the detail carried each cue.
+ */
+export function describeCues(criterion: CriterionResult): readonly CueLine[] {
+  if (criterion.id !== "cue-point.cue-on-downbeat" || criterion.unit !== "ms") return [];
+  const detail = criterion.detail ?? {};
+  const tolerance = thresholdValue(criterion);
+  const count = detail["tracks"] ?? 0;
+  const set = Array.from({ length: count }, (_, index) => detail[`cue${String(index + 1)}.beat`]).filter((beat) => beat !== undefined).length;
+  // A result recorded before the detail carried each cue has only the counts: nothing per cue to say.
+  if (set !== count - (detail["missing"] ?? 0)) return [];
+  return Array.from({ length: count }, (_, index) => {
+    const label = `Cue ${String(index + 1)}`;
+    const offset = detail[`cue${String(index + 1)}.offsetMs`];
+    const beat = detail[`cue${String(index + 1)}.beat`];
+    if (offset === undefined || beat === undefined) return { met: false, text: `${label}: not set` };
+    if (beat !== 1) return { met: false, text: `${label}: on beat ${String(beat)}, not the 1` };
+    const met = Math.abs(offset) <= tolerance;
+    if (Math.abs(offset) < CUE_EXACT_MS) return { met, text: `${label}: on the 1` };
+    return { met, text: `${label}: ${round(Math.abs(offset))} ms ${offset < 0 ? "early" : "late"}` };
+  });
+}
+
 /** One plain line per criterion for the result card: what was measured against what was needed. */
 export function describeCriterion(criterion: CriterionResult): string {
   const measured = criterion.measured;

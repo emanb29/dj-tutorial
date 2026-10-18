@@ -55,3 +55,40 @@ describe("the result card's Count phrases lines", () => {
     expect(container.textContent).toBe("");
   });
 });
+
+describe("the result card's Set a cue point by ear lines", () => {
+  const cues: CriterionResult = {
+    ...criterion("cue-point.cue-on-downbeat", "notMet", {
+      tracks: 4,
+      wrongBeat: 1,
+      missing: 1,
+      "cue1.offsetMs": 4.1,
+      "cue1.beat": 1,
+      "cue2.offsetMs": 34.2,
+      "cue2.beat": 1,
+      "cue3.offsetMs": -2,
+      "cue3.beat": 3,
+    }),
+    measured: 34.2,
+    unit: "ms",
+    threshold: { op: "<=", value: 20, unit: "ms" },
+  };
+
+  it("shows one line per cue: ms early or late, the wrong beat, or not set, with ✓ for the good ones", () => {
+    render(<CriterionFeedback criterion={cues} previews={null} />);
+    const lines = [...screen.getByRole("list", { name: "Each cue" }).querySelectorAll("li")];
+
+    expect(lines.map((line) => [line.textContent, line.dataset["right"]])).toEqual([
+      ["Cue 1: 4 ms late ✓", "true"],
+      ["Cue 2: 34 ms late ✗", "false"],
+      ["Cue 3: on beat 3, not the 1 ✗", "false"],
+      ["Cue 4: not set ✗", "false"],
+    ]);
+  });
+
+  it("shows nothing for a result saved before the per-cue detail", () => {
+    const { container } = render(<CriterionFeedback criterion={{ ...cues, detail: { tracks: 3, wrongBeat: 1, missing: 0 } }} previews={null} />);
+
+    expect(container.textContent).toBe("");
+  });
+});

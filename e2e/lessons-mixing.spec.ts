@@ -120,6 +120,8 @@ test("cue-point: the jog searches a paused deck, and three cue points on a 1 pas
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
   await expect(card).toContainText("Cue points: worst");
+  // One line per cue: each was set 4 ms after its 1.
+  await expect(card.getByRole("list", { name: "Each cue" }).getByRole("listitem")).toHaveText(["Cue 1: 4 ms late ✓", "Cue 2: 4 ms late ✓", "Cue 3: 4 ms late ✓"]);
 });
 
 test("cut-on-phrase: CUE B, fader B up, then PLAY B and cut A on the phrase start, passes", async ({ page }) => {

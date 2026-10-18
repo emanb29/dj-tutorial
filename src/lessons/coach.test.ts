@@ -5,7 +5,7 @@ import type { RetentionChange } from "@checks";
 import { emptySkillProfile, type CriterionRecord, type SkillProfile } from "@shared/skill-profile.ts";
 import type { LessonId } from "@shared/catalogue.ts";
 import { emptyLearnerRecord, type LearnerRecord } from "@shared/learner.ts";
-import { checkLineRequest, curriculumRequest, describeCriterion, lineFacts, skipGroupsPassed, toCoachSummary, withCurriculum } from "./coach.ts";
+import { checkLineRequest, curriculumRequest, describeCriterion, describeCues, lineFacts, skipGroupsPassed, toCoachSummary, withCurriculum } from "./coach.ts";
 
 const NO_FACTS = { focusHistory: [], bestMarginBefore: null, retentionChange: null } as const;
 
@@ -113,6 +113,38 @@ describe("describeCriterion", () => {
     expect(describeCriterion(criterion("cut-on-phrase.cut-tight", 0.42, "beats", 1))).toBe("A out 0.42 beats from B in (need 1 or less)");
     expect(describeCriterion({ ...criterion("cut-on-phrase.cued-before", 6.1, "s", 2), threshold: { op: ">=", value: 2, unit: "s" } })).toBe("CUE B on 6.1 s before the cut (need 2)");
     expect(describeCriterion(criterion("cut-on-phrase.loud-jump", 0.31, "dB", 2))).toBe("Level jump at the cut: 0.3 dB (need 2 or less)");
+  });
+
+  it("gives one line per cue point: ms early or late, the wrong beat, or not set", () => {
+    const cues = criterion("cue-point.cue-on-downbeat", 34.2, "ms", 20, {
+      tracks: 5,
+      wrongBeat: 1,
+      missing: 1,
+      "cue1.offsetMs": -12.4,
+      "cue1.beat": 1,
+      "cue2.offsetMs": 34.2,
+      "cue2.beat": 1,
+      "cue3.offsetMs": 3,
+      "cue3.beat": 3,
+      "cue5.offsetMs": 0.2,
+      "cue5.beat": 1,
+    });
+    expect(describeCues(cues)).toEqual([
+      { met: true, text: "Cue 1: 12 ms early" },
+      { met: false, text: "Cue 2: 34 ms late" },
+      { met: false, text: "Cue 3: on beat 3, not the 1" },
+      { met: false, text: "Cue 4: not set" },
+      { met: true, text: "Cue 5: on the 1" },
+    ]);
+  });
+
+  it("gives no cue lines for other criteria, or for a result saved before the per-cue detail", () => {
+    expect(describeCues(criterion("cut-on-phrase.cut-start", 35.2, "ms", 120))).toEqual([]);
+    expect(describeCues(criterion("cue-point.cue-on-downbeat", 12.4, "ms", 20, { tracks: 3, wrongBeat: 1, missing: 0 }))).toEqual([]);
+    expect(describeCues(criterion("cue-point.cue-on-downbeat", null, "ms", 20, { tracks: 2, wrongBeat: 0, missing: 2 }))).toEqual([
+      { met: false, text: "Cue 1: not set" },
+      { met: false, text: "Cue 2: not set" },
+    ]);
   });
 
   it("words the Lessons 8–11 criteria: BPMs, clips, the blend, the crossfader and the LOW", () => {

@@ -3,7 +3,7 @@
 // suggestion, and the unlock when the Lesson is passed for the first time.
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { phraseTapMissesOf, sectionAnswersOf } from "@checks";
-import { checkLineRequest, describeCriterion, LESSONS, phraseTapLine, sectionAnswerLine, type BuiltLessonId, type LessonDefinition, type LessonPhase } from "@lessons";
+import { checkLineRequest, describeCriterion, describeCues, LESSONS, phraseTapLine, sectionAnswerLine, type BuiltLessonId, type LessonDefinition, type LessonPhase } from "@lessons";
 import type { CriterionResult } from "@shared/check-result.ts";
 import { lessonById } from "@shared/catalogue.ts";
 import { RECENT_LINES_MAX } from "@shared/coach-contract.ts";
@@ -152,7 +152,8 @@ function GradedCard({ phase, definition, previews, learnerId, missionTags, attem
 /**
  * Under a criterion, what exactly went wrong, one short line each. Lesson 3 (Count phrases): each
  * section's pick against the right phrase, with ▶ on the right phrase (and on the pick) when wrong; and
- * which phrase starts the taps missed, when they failed.
+ * which phrase starts the taps missed, when they failed. Lesson 6 (Set a cue point by ear): how far
+ * off each cue was, or on which beat it landed.
  */
 export function CriterionFeedback({ criterion, previews }: { readonly criterion: CriterionResult; readonly previews: PhrasePreviewSession | null }) {
   const wording = useWording();
@@ -161,6 +162,18 @@ export function CriterionFeedback({ criterion, previews }: { readonly criterion:
     return line === null ? null : (
       <ul className="result-detail">
         <li data-testid="phrase-tap-misses">{inputWording(line, wording)}</li>
+      </ul>
+    );
+  }
+  const cues = describeCues(criterion);
+  if (cues.length > 0) {
+    return (
+      <ul className="result-detail" aria-label="Each cue">
+        {cues.map((cue) => (
+          <li key={cue.text} data-right={cue.met}>
+            {cue.text} <span aria-label={cue.met ? "right" : "wrong"}>{cue.met ? "✓" : "✗"}</span>
+          </li>
+        ))}
       </ul>
     );
   }

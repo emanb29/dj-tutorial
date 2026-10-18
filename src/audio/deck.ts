@@ -10,6 +10,7 @@ import { PlayheadTracker } from "./playhead.ts";
 import { fail, OK, type Result } from "./result.ts";
 import { tempoRate, type TempoRangePercent } from "./tempo.ts";
 import type { CtxTime, DeckId } from "./types.ts";
+import { ScrubVoice } from "./scrub.ts";
 import { RateVoice, StretchVoice, type DeckVoice } from "./voices.ts";
 
 export type MasterTempoAvailability = { available: true } | { available: false; reason: string };
@@ -59,6 +60,8 @@ interface Loaded {
   readonly record: TrackRecord;
   readonly rateVoice: RateVoice;
   readonly stretchVoice: StretchVoice | null;
+  /** Jog search on the paused deck, heard. */
+  readonly scrubVoice: ScrubVoice;
 }
 
 export const DEFAULT_TEMPO_RANGE: TempoRangePercent = 10;
@@ -121,6 +124,7 @@ export class Deck {
       this.voiceOf(track).stop(when);
       if (this.masterTempo) this.stretchAudibleUntil = Math.max(this.stretchAudibleUntil, when);
     }
+    track?.scrubVoice.stop(when);
     this.track = null;
     this.playing = false;
     this.previewing = false;
@@ -150,6 +154,7 @@ export class Deck {
         record,
         rateVoice: new RateVoice(this.context, buffer, this.output),
         stretchVoice: this.stretch === null ? null : new StretchVoice(this.stretch, this.pending),
+        scrubVoice: new ScrubVoice(this.context, buffer, this.output),
       };
       return { ok: true, record };
     } catch (error) {
@@ -211,15 +216,22 @@ export class Deck {
     return OK;
   }
 
-  /** Jog search on a paused deck: moves the playhead by `deltaSec`, stopping at the track's ends. */
+  /**
+   * Jog search on a paused deck: moves the playhead by `deltaSec`, stopping at the track's ends, and
+   * plays a short grain of what it moved over (src/audio/scrub.ts), so the search is heard as on a CDJ.
+   */
   search(when: CtxTime, deltaSec: number): Result {
     const track = this.requireTrack();
     if (!track.ok) return track;
     if (this.playing) return fail({ kind: "deck-playing", deck: this.id });
     const { durationSec, playhead } = track.track.record;
-    const target = Math.min(durationSec, Math.max(0, playhead.positionAt(when) + deltaSec));
+    const from = playhead.positionAt(when);
+    const target = Math.min(durationSec, Math.max(0, from + deltaSec));
     // Searching leaves any loop (the model's seek ends it), as a seek does.
-    return playhead.seek(when, target);
+    const moved = playhead.seek(when, target);
+    if (!moved.ok) return moved;
+    track.track.scrubVoice.scrub(when, from, target);
+    return OK;
   }
 
   /** Deck CUE pressed. Returns the new cue point when the press set one. */
@@ -451,6 +463,7 @@ export class Deck {
     const keepsLoop = loop !== null && Math.abs(position - playhead.positionAt(when)) < 1e-9;
     if (!keepsLoop) playhead.seek(when, position);
     playhead.setRate(when, this.rate());
+    track.scrubVoice.stop(when);
     this.voiceOf(track).play(when, position, this.rate(), playhead.loop());
     this.playing = true;
     return OK;
