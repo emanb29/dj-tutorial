@@ -88,6 +88,12 @@ describe("tempo-fader", () => {
     expect(byId(result, "tempo-fader.set-bpm")).toMatchObject({ status: "met" });
   });
 
+  it("leaves the ear part not applicable when no clip was played (Master Tempo could not load)", () => {
+    const result = check(setTo(TARGETS), { clips: [], answers: {} });
+    expect(byId(result, "tempo-fader.master-tempo-ear")).toMatchObject({ status: "notApplicable", measured: null });
+    expect(result.outcome).toEqual({ kind: "passed" });
+  });
+
   it("needs a confirm press per target", () => {
     expect(byId(check(setTo(TARGETS), { events: confirms.slice(0, 2) }), "tempo-fader.set-bpm")).toMatchObject({
       status: "notMet",

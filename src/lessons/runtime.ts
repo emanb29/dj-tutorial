@@ -156,6 +156,8 @@ function triggerStep(trigger: HookTrigger, observation: Observation): 1 | 0 | "r
       return observation.kind === "tempo-guess" ? 1 : 0;
     case "tempo-match":
       return observation.kind === "tempo-match" ? 1 : 0;
+    case "blend-step":
+      return observation.kind === "blend-step" && observation.good && observation.step === trigger.step ? 1 : 0;
     case "beat-taps":
       return observation.kind === "tap" && observation.onBeat ? 1 : 0;
     case "downbeat-taps":
@@ -216,6 +218,10 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
     case "tempo-ear":
       if (observation.kind === "tempo-guess") return withRep(config, phase, observation.right);
       return observation.kind === "tempo-match" ? withRep(config, phase, observation.good) : phase;
+    case "blend-step":
+      // A missed step says why at once, where the last concept was named.
+      if (observation.kind !== "blend-step") return phase;
+      return withRep(config, observation.mistake === null ? phase : { ...phase, named: observation.mistake }, observation.good);
   }
 }
 

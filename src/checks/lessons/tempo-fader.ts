@@ -1,7 +1,7 @@
 // Lesson 8, `tempo-fader`: set B to target BPMs, and hear whether Master Tempo is on (check-design §4).
 import type { Attempt, CtxTime, DeckId } from "@shared/attempt.ts";
 import { loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";
-import { judge } from "../criterion.ts";
+import { judge, notApplicable } from "../criterion.ts";
 import { TIME_EPSILON } from "../measures.ts";
 import { tempoBpmAt } from "../phase.ts";
 import { controlEvents } from "../timeline.ts";
@@ -37,6 +37,7 @@ export const tempoFader: LessonCheck<TaskOf<"tempo-fader">> = {
     });
     const worst = errors.some((error) => error === null) ? null : Math.max(...errors.filter((error) => error !== null));
     const correct = task.masterTempoClips.filter((clip) => attempt.answers[clip.answerKey] === (clip.masterTempoOn ? 1 : 0)).length;
+    const earThreshold = { op: ">=", value: task.masterTempoClips.length, unit: "count" } as const;
 
     return {
       criteria: [
@@ -49,13 +50,16 @@ export const tempoFader: LessonCheck<TaskOf<"tempo-fader">> = {
           detail: { targets: task.targetsBpm.length, confirmed: confirms.length },
           evidence: confirms.map((at) => ({ from: at, to: at, label: "BPM set" })),
         }),
-        judge({
-          id: "tempo-fader.master-tempo-ear",
-          severity: "fail",
-          unit: "count",
-          threshold: { op: ">=", value: task.masterTempoClips.length, unit: "count" },
-          measured: correct,
-        }),
+        // No clip was played (Master Tempo could not load): there is nothing the ear was asked.
+        task.masterTempoClips.length === 0
+          ? notApplicable("tempo-fader.master-tempo-ear", "fail", "count", earThreshold)
+          : judge({
+              id: "tempo-fader.master-tempo-ear",
+              severity: "fail",
+              unit: "count",
+              threshold: earThreshold,
+              measured: correct,
+            }),
       ],
       metrics: {},
     };

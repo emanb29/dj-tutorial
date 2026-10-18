@@ -92,7 +92,9 @@ export type Observation =
   /** tempo-by-ear practice: the first tempo move of a round went the way that brings the decks together. */
   | { readonly kind: "tempo-guess"; readonly right: boolean }
   /** tempo-by-ear practice: Ready (R) with the tempos `offBpm` apart; `good` within the Check's 0.1 BPM. */
-  | { readonly kind: "tempo-match"; readonly offBpm: number; readonly good: boolean };
+  | { readonly kind: "tempo-match"; readonly offBpm: number; readonly good: boolean }
+  /** sync-blend's stepped blend (blend-steps.ts): a step made in order, or missed with what went wrong. */
+  | { readonly kind: "blend-step"; readonly step: number; readonly good: boolean; readonly mistake: string | null };
 
 export type EqBand = "low" | "mid" | "high";
 
@@ -127,7 +129,9 @@ export type HookTrigger =
   /** A tempo-by-ear round's first tempo move (right or wrong). */
   | { readonly kind: "tempo-guess" }
   /** A tempo-by-ear round's Ready (matched or not). */
-  | { readonly kind: "tempo-match" };
+  | { readonly kind: "tempo-match" }
+  /** The stepped blend made up to and including `step` (0-based), in order. */
+  | { readonly kind: "blend-step"; readonly step: number };
 
 export interface HookStep {
   /** What to do, a few words with the key: "Press X". */
@@ -150,9 +154,10 @@ export interface PracticeConfig {
    * (B's Play within 1 beat of A's phrase start), a Ready with B on the target BPM, a LOW brought back
    * on a phrase start (within 1 beat), a bass swap (good within 1 beat of A's phrase start), A's fader
    * closed after a high-pass sweep on CFX A (good at 70% or more, on for 8–16 bars), a drill round
-   * held in phase (`phase-hold`), or a tempo-by-ear round's guess and its Ready (`tempo-ear`: each is a rep).
+   * held in phase (`phase-hold`), a tempo-by-ear round's guess and its Ready (`tempo-ear`: each is a rep), or a step of the
+   * stepped blend (good when made in order).
    */
-  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out" | "phase-hold" | "tempo-ear";
+  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out" | "phase-hold" | "tempo-ear" | "blend-step";
   readonly window: number;
   readonly needed: number;
 }

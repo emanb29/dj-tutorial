@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { lessonDefinition } from "./catalogue.ts";
 import { initialLessonState, lessonReducer, type LessonEvent, type LessonState } from "./runtime.ts";
+import type { CheckResult, CriterionResult } from "@shared/check-result.ts";
 import type { LessonDefinition, Observation } from "./types.ts";
 
 function run(definition: LessonDefinition, events: readonly LessonEvent[], from?: LessonState): LessonState {
@@ -13,6 +14,45 @@ function run(definition: LessonDefinition, events: readonly LessonEvent[], from?
 const seen = (observation: Observation): LessonEvent => ({ type: "observed", observation });
 const ready: LessonEvent = { type: "track-ready" };
 const skip: LessonEvent = { type: "skip-hook" };
+
+/** A graded sync-blend result that failed only `id`. */
+function failedOn(id: CriterionResult["id"]): CheckResult {
+  const criterion = (criterionId: CriterionResult["id"], met: boolean): CriterionResult => ({
+    id: criterionId,
+    severity: "fail",
+    status: met ? "met" : "notMet",
+    measured: met ? 1 : 5.7,
+    unit: "dB",
+    threshold: { op: "<=", value: 3, unit: "dB" },
+    margin: met ? 2 : -2.7,
+    evidence: [],
+  });
+  return {
+    schemaVersion: 1,
+    attemptId: "a1",
+    learnerId: "default",
+    lessonId: "sync-blend",
+    mode: "lesson",
+    variant: "full",
+    startedAt: "2026-10-17T10:00:00.000Z",
+    endedAt: "2026-10-17T10:01:00.000Z",
+    inputDevice: "trackpad",
+    endReason: "done",
+    outcome: { kind: "failed", failedCriteria: [id] },
+    criteria: [criterion("sync-blend.blend-start", true), criterion(id, false)],
+    tracks: [],
+    aids: { sync: true, quantize: false, bpmDisplay: true, phaseMeter: false, lessonText: true },
+    metrics: {},
+  };
+}
+
+const graded = (outcome: CheckResult): LessonEvent => ({
+  type: "graded",
+  result: outcome,
+  reviewTriggers: [],
+  firstPass: false,
+  lineFacts: { focusHistory: [], bestMarginBefore: null, retentionChange: null },
+});
 
 describe("tempo-fader", () => {
   const definition = lessonDefinition("tempo-fader");
@@ -45,10 +85,29 @@ describe("sync-blend", () => {
     expect(run(definition, [seen({ kind: "sync", deck: "B", on: true })], hooked).phase).toMatchObject({ kind: "hook", step: 1 });
   });
 
-  it("counts a blend start within a beat of A's phrase start as a good rep, however far off a cut would be", () => {
+  const step = (index: number, good = true, mistake: string | null = null) => seen({ kind: "blend-step", step: index, good, mistake });
+
+  it("ends the hook when B and then A are at ¾ (the stepped blend's second step)", () => {
+    const hooked = run(definition, [ready, seen({ kind: "sync", deck: "B", on: true }), seen({ kind: "play", deck: "B", playing: true })]);
+    expect(run(definition, [step(0)], hooked).phase).toMatchObject({ kind: "hook", step: 2 });
+    expect(run(definition, [step(0), step(1)], hooked).phase).toMatchObject({ kind: "practice", named: "Both at ¾: a blend. Then B up, A down." });
+  });
+
+  it("is ready once all four steps are made in order; a missed step says why at once", () => {
     const practising = run(definition, [ready, skip]);
-    expect(run(definition, [seen({ kind: "cut", offsetMs: 300, onPhrase: false, withinBeat: true })], practising).phase).toMatchObject({ ready: true });
-    expect(run(definition, [seen({ kind: "cut", offsetMs: 700, onPhrase: false, withinBeat: false })], practising).phase).toMatchObject({ ready: false });
+    expect(run(definition, [step(0), step(1), step(2)], practising).phase).toMatchObject({ ready: false });
+    expect(run(definition, [step(0), step(1), step(2), step(3)], practising).phase).toMatchObject({ ready: true });
+    const tooLoud = run(definition, [step(0), step(1, false, "Both faders full: +3 dB louder. Stop B at ¾ first.")], practising);
+    expect(tooLoud.phase).toMatchObject({ ready: false, named: "Both faders full: +3 dB louder. Stop B at ¾ first." });
+  });
+
+  it("explains the +3 dB after a second blend that was too loud (both faders full)", () => {
+    const loud = graded(failedOn("sync-blend.loud-steady"));
+    const once = run(definition, [ready, skip, { type: "start-check" }, { type: "audio-ended" }, loud]);
+    expect(once.phase).toMatchObject({ kind: "result", tip: null });
+    const twice = run(definition, [{ type: "practice-again" }, { type: "start-check" }, { type: "audio-ended" }, loud], once);
+    expect(twice.phase).toMatchObject({ kind: "result", tip: expect.stringContaining("+3 dB") as string });
+    expect(twice.phase).toMatchObject({ tip: expect.stringContaining("B to ¾, A to ¾") as string });
   });
 });
 

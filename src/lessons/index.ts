@@ -31,6 +31,7 @@ export {
   type LineContext,
   type LineFacts,
 } from "./coach.ts";
+export { blendPose, followBlend, START_BLEND, type BlendFollow } from "./blend-steps.ts";
 export { classifyTap } from "./feedback.ts";
 export {
   ancestorsOf,
@@ -51,7 +52,7 @@ export {
   type TaskOutcome,
 } from "./placement.ts";
 export { placementControls, placementTask, placementTrackProblems, type PlacementTaskDefinition } from "./placement-tasks.ts";
-export { pairProblems, PAIR_MAX_APART, PAIR_MIN_APART, tempoTargets } from "./catalogue-sync.ts";
+export { pairProblems, PAIR_MAX_APART, PAIR_MIN_APART, tempoTargets, withoutMasterTempo } from "./catalogue-sync.ts";
 export { blendPositions, eqPairProblems } from "./catalogue-eq-filter.ts";
 export { partnerOrder } from "./plan.ts";
 export { BY_EAR_LESSONS, COVERED_DISPLAYS, describeByEar, kickRun } from "./catalogue-by-ear.ts";

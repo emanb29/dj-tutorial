@@ -7,7 +7,7 @@ import { attempt, channel, deckState, event, frames, MUSIC, ramp, type FrameLeve
 import type { Attempt, ControlEvent, CtxSpan, LessonId, PlayheadSegment } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { checkSpecFor, LESSONS, lessonDefinition, readyUsedIn, unlocksAfter } from "./catalogue.ts";
-import { pairProblems, tempoTargets } from "./catalogue-sync.ts";
+import { pairProblems, tempoTargets, withoutMasterTempo } from "./catalogue-sync.ts";
 import { partnerOrder } from "./plan.ts";
 import { SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, syntheticLessonTrack } from "./synthetic-track.ts";
 import { barStart, beatSec, phraseStart } from "./track.ts";
@@ -171,6 +171,21 @@ describe("tempo-fader", () => {
     expect(failed(grade(fromRecorderStart(definition), plan, tempoAttempt(targets, rightAnswers), CUED + 31))).toEqual(
       expect.arrayContaining(["tempo-fader.set-bpm", "standing.no-clip"]),
     );
+  });
+
+  it("without Master Tempo (the time-stretcher failed to load): no clips, no questions, no MASTER TEMPO step; BPMs graded alone", () => {
+    const missing = withoutMasterTempo(definition);
+    const bare = missing.planCheck(track, 1);
+    expect(bare.clips).toBeUndefined();
+    expect(bare.readyCues).toEqual(["Set B to 127.0 BPM, then R", "Now 121.5 BPM, then R", "Last one: 125.5 BPM, then R"]);
+    expect(missing.questions).toEqual([]);
+    expect(missing.hook.map((step) => step.control)).toEqual(["B.tempo", "B.tempo-range"]);
+    expect(missing.practiceCaptionFor?.(track)).toBe("Set B to 126.0 BPM, then R · Master Tempo can't load here, so no clips");
+    // Never graded against a Master Tempo state the audio did not have: the ear part is not applicable.
+    const result = grade(missing, bare, tempoAttempt(targets, {}), CUED + 31);
+    expect(result.outcome).toEqual({ kind: "passed" });
+    expect(byId(result, "tempo-fader.master-tempo-ear")?.status).toBe("notApplicable");
+    expect(withoutMasterTempo(lessonDefinition("sync-blend"))).toBe(lessonDefinition("sync-blend"));
   });
 
   it("fails a target 0.1 BPM off, and a clip named wrong", () => {

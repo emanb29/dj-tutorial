@@ -73,42 +73,74 @@ const tempoFader: LessonDefinition = {
   practiceCaptionFor: (track) => `Set B to ${bpmText(roundBpm(track.grid.bpm + PRACTICE_OFFSET_BPM))} BPM, then R`,
   checkCaption: "This one counts: three BPMs, then two clips",
   questions: CLIP_IDS.map((id, index) => ({ id, caption: `Clip ${String(index + 1)}: Master Tempo on or off?`, options: 2, choices: ON_OFF })),
-  planCheck: (track, attempt = 1): CheckPlan => {
-    const decks = tempoDecks(track);
-    const [first, second, third] = tempoTargets(track).map(bpmText);
-    const pattern = CLIP_PATTERNS[(attempt - 1) % CLIP_PATTERNS.length] ?? CLIP_PATTERNS[0] ?? [true, false];
-    const clip = (masterTempo: boolean): ListeningClip => ({
-      deck: "B",
-      pos: decks.A.pos,
-      leadBars: CLIP_LEAD_BARS,
-      bars: CLIP_FAST_BARS,
-      tempo: CLIP_TEMPO,
-      rangePercent: CLIP_RANGE,
-      masterTempo,
-    });
-    return {
-      startPos: decks.A.pos,
-      autoPlay: false,
-      faderAtStart: 0,
-      ...(decks.B === undefined ? {} : { deckB: decks.B }),
-      loop: tempoLoop(track),
-      endWhen: { kind: "readies", deck: "B", count: TARGET_OFFSETS_BPM.length },
-      timeoutSec: 90,
-      cues: [],
-      readyCues: [`Set B to ${first ?? ""} BPM, then R`, `Now ${second ?? ""} BPM, then R`, `Last one: ${third ?? ""} BPM, then R`, "Now listen: two clips"],
-      clips: { [CLIP_IDS[0]]: clip(pattern[0]), [CLIP_IDS[1]]: clip(pattern[1]) },
-    };
-  },
+  planCheck: (track, attempt = 1) => tempoPlan(track, attempt, true),
   taskFor: (track, plan): LessonTask => ({
     lessonId: "tempo-fader",
     targetsBpm: tempoTargets(track),
-    masterTempoClips: CLIP_IDS.map((id) => ({ answerKey: id, masterTempoOn: plan.clips?.[id]?.masterTempo ?? false })),
+    // Only the clips the plan played: without them (no Master Tempo) the ear part is not graded.
+    masterTempoClips: CLIP_IDS.flatMap((id) => {
+      const clip = plan.clips?.[id];
+      return clip === undefined ? [] : [{ answerKey: id, masterTempoOn: clip.masterTempo }];
+    }),
   }),
   tips: {
     "tempo-fader.set-bpm": ["Watch B's BPM; stop when it reads the target.", "Close? Fine-tune: hold Shift as you drag, or slide your finger out to the side."],
     "tempo-fader.master-tempo-ear": ["Off: faster and higher. On: faster, same note.", "Listen to the bass note when the tempo jumps."],
   },
 };
+
+/** The tempo-fader Check: three BPMs, then (`withClips`) the two Master Tempo clips. */
+function tempoPlan(track: LessonTrack, attempt: number, withClips: boolean): CheckPlan {
+  const decks = tempoDecks(track);
+  const [first, second, third] = tempoTargets(track).map(bpmText);
+  const pattern = CLIP_PATTERNS[(attempt - 1) % CLIP_PATTERNS.length] ?? CLIP_PATTERNS[0] ?? [true, false];
+  const clip = (masterTempo: boolean): ListeningClip => ({
+    deck: "B",
+    pos: decks.A.pos,
+    leadBars: CLIP_LEAD_BARS,
+    bars: CLIP_FAST_BARS,
+    tempo: CLIP_TEMPO,
+    rangePercent: CLIP_RANGE,
+    masterTempo,
+  });
+  return {
+    startPos: decks.A.pos,
+    autoPlay: false,
+    faderAtStart: 0,
+    ...(decks.B === undefined ? {} : { deckB: decks.B }),
+    loop: tempoLoop(track),
+    endWhen: { kind: "readies", deck: "B", count: TARGET_OFFSETS_BPM.length },
+    timeoutSec: 90,
+    cues: [],
+    readyCues: [
+      `Set B to ${first ?? ""} BPM, then R`,
+      `Now ${second ?? ""} BPM, then R`,
+      `Last one: ${third ?? ""} BPM, then R`,
+      ...(withClips ? ["Now listen: two clips"] : []),
+    ],
+    ...(withClips ? { clips: { [CLIP_IDS[0]]: clip(pattern[0]), [CLIP_IDS[1]]: clip(pattern[1]) } } : {}),
+  };
+}
+
+/**
+ * A Lesson as it runs where Master Tempo cannot load (signalsmith-stretch failed): for tempo-fader, the
+ * Check sets the three BPMs and asks no clip questions, since a clip would play with Master Tempo off
+ * whatever its answer said. The BPMs are graded alone; the ear part is not applicable (not failed), so
+ * the Lesson can still be passed on that device. Other Lessons are unchanged.
+ */
+const NO_MASTER_TEMPO = "Master Tempo can't load here, so no clips";
+
+export function withoutMasterTempo<Definition extends LessonDefinition>(definition: Definition): Definition {
+  if (definition.id !== "tempo-fader") return definition;
+  return {
+    ...definition,
+    hook: definition.hook.filter((step) => !step.control.endsWith(".master-tempo")),
+    questions: [],
+    checkCaption: "This one counts: three BPMs",
+    practiceCaptionFor: (track) => `${definition.practiceCaptionFor?.(track) ?? definition.practice.caption} · ${NO_MASTER_TEMPO}`,
+    planCheck: (track, attempt = 1) => tempoPlan(track, attempt, false),
+  };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Two-track Lessons: sync-blend (9) and crossfader (10)
@@ -139,6 +171,11 @@ const BLEND_TAIL_BARS = 2;
  * measures short of 8; asking for 10 leaves room on both sides.
  */
 const BLEND_ASKED_BARS = 10;
+/**
+ * sync-blend's stepped blend (blend-steps.ts), for one pointer: B to ¾ on the phrase's 1 and A to ¾ a
+ * beat later, both at ¾ until this bar, then B up and A down a beat apart. About 9 bars as heard.
+ */
+const STEP_UP_BARS = 9;
 
 /** Phrases of groove the two-track Lessons need from the blend's start: the blend, and the cut after it. */
 const STEADY_PHRASES = 3;
@@ -186,15 +223,15 @@ const syncBlend: LessonDefinition = {
   hook: [
     { caption: "Press BEAT SYNC on B", control: "B.sync", trigger: { kind: "sync-on", deck: "B" }, named: "SYNC: B now runs at A's tempo." },
     { caption: "On the phrase's 1: Press ,", control: "B.play", trigger: { kind: "play", deck: "B" }, named: "B starts in time with A. Fader down: only you know." },
-    { caption: "Slide fader B up, then A down", control: "B.channel-fader", trigger: { kind: "fader-up", deck: "B" }, named: "That's a blend: both play, then B takes over." },
+    { caption: "Fader B to ¾, then A to ¾", control: "B.channel-fader", trigger: { kind: "blend-step", step: 1 }, named: "Both at ¾: a blend. Then B up, A down." },
   ],
-  practice: { caption: "Press , on the phrase's 1, then fader B up, A down", rep: "blend-start", window: 2, needed: 1 },
-  checkCaption: `This one counts: SYNC B, Press , on the 1, blend over ${String(BLEND_ASKED_BARS)} bars`,
+  // One rep per step: ready once all four are made in order.
+  practice: { caption: "On the 1: Press , B to ¾, A to ¾. Later: B up, A down", rep: "blend-step", window: 4, needed: 4 },
+  checkCaption: "This one counts: SYNC B, Press , on the 1. B ¾, A ¾ … B up, A down",
   questions: [],
   planCheck: (track) => {
     const decks = syncDecks(track);
     const { blendPos, leadPos } = blendPositions(track);
-    const beat = beatSec(track.grid);
     return {
       startPos: leadPos,
       autoPlay: true,
@@ -205,17 +242,22 @@ const syncBlend: LessonDefinition = {
       timeoutSec: barsSec(track, BLEND_LEAD_BARS + BLEND_MAX_BARS + 4) + 5,
       cues: [
         { fromPos: leadPos, caption: "SYNC B on, CUE 🎧 B on" },
-        { fromPos: blendPos - barsSec(track, 2), caption: "Next phrase: Press , and slide B up" },
-        { fromPos: blendPos + beat, caption: `Fader B up, A down: take ${String(BLEND_ASKED_BARS)} bars` },
-        { fromPos: blendPos + barsSec(track, BLEND_ASKED_BARS), caption: "A all the way down" },
+        { fromPos: blendPos - barsSec(track, 2), caption: "Next 1: Press , and fader B to ¾" },
+        { fromPos: blendPos, caption: "Now fader A to ¾" },
+        { fromPos: blendPos + barsSec(track, 1), caption: "Both at ¾. Hold, count the bars" },
+        { fromPos: blendPos + barsSec(track, STEP_UP_BARS - 1), caption: "Next 1: fader B all the way up" },
+        { fromPos: blendPos + barsSec(track, STEP_UP_BARS), caption: "Now A all the way down" },
       ],
     };
   },
   taskFor: (): LessonTask => ({ lessonId: "sync-blend" }),
   tips: {
     "sync-blend.blend-start": ["Press , on the 1 of the new phrase, then start fader B.", "Count A's 8 bars on the 1s; go on the next 1."],
-    "sync-blend.blend-length": [`Take ${String(BLEND_ASKED_BARS)} bars: count them on the 1s.`, "Done by 16 bars: A all the way down."],
-    "sync-blend.loud-steady": ["B up as A goes down: never both full.", "Cross in the middle: half B, half A."],
+    "sync-blend.blend-length": [`Hold both at ¾ for ${String(STEP_UP_BARS)} bars: count them on the 1s.`, "Done by 16 bars: A all the way down."],
+    "sync-blend.loud-steady": [
+      "Both faders full is +3 dB louder. B to ¾, A to ¾, then B up and A down.",
+      "Stop B at ¾ before A moves: never both full, never both low.",
+    ],
     "sync-blend.trim-untouched": ["Hands off TRIM mid-blend: the faders do it."],
   },
 };
@@ -295,7 +337,7 @@ const crossfaderLesson: LessonDefinition = {
     };
   },
   tips: {
-    "crossfader.xf-blend": ["Press , on the phrase's 1, then ease the crossfader toward B.", `Slow and steady: take ${String(BLEND_ASKED_BARS)} bars to reach B.`],
+    "crossfader.xf-blend": ["Press , on the phrase's 1, then ease the crossfader toward B.", `One hand, one slow move: the crossfader holds the level (no ¾ steps). Take ${String(BLEND_ASKED_BARS)} bars.`],
     "crossfader.xf-cut": ["CUE 🎧 A on early, then snap to A right on the 1 (C).", "Snap the crossfader to A on the phrase's 1 (C)."],
     "crossfader.faders-up": ["Leave both channel faders up: the crossfader does it all."],
   },

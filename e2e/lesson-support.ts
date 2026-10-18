@@ -15,7 +15,7 @@ export interface LessonWindow {
   learnToDjLesson?: {
     engine: {
       playhead(deck: DeckId): { ok: boolean; beat?: number | null; positionSec?: number };
-      deckState(deck: DeckId): { playing: boolean; cuePointSec: number; masterTempo?: boolean; syncOn?: boolean; tempoRate?: number };
+      deckState(deck: DeckId): { playing: boolean; cuePointSec: number; masterTempo?: boolean; syncOn?: boolean; tempoRate?: number; masterTempoAvailability?: { available: boolean } };
       command(command: Record<string, unknown>, input: { device: string }): { ok: boolean };
       heardTime(performanceTimeMs?: number): { ok: boolean; ctx?: number };
       playheadAt(deck: DeckId, ctx: number): { beat: number | null } | null;

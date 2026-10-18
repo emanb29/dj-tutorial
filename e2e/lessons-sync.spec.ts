@@ -66,24 +66,61 @@ test("tempo-fader: three BPMs set and confirmed with Ready, then both Master Tem
   await expect(card).toContainText("Unlocked: Blend with sync");
 });
 
-/** A blend on the channel faders over `bars`, in steps, B's amplitude rising as A's falls. */
-function channelBlend(fromBeat: number, bars: number): { beat: number; command: Record<string, unknown> }[] {
-  // A step every 0.4 beats (under 200 ms): one continuous drag, as a trackpad sends it.
-  const steps = Math.round((bars * 4) / 0.4);
-  return Array.from({ length: steps + 1 }, (_, step) => {
-    const share = step / steps;
-    const beat = fromBeat + (share * bars * 4);
-    // Amplitude is position²: equal steps in amplitude keep the sum steady.
-    return [
-      { beat, command: { control: "channel-fader", deck: "B", value: Math.sqrt(share) } },
-      { beat, command: { control: "channel-fader", deck: "A", value: Math.sqrt(1 - share) } },
-    ];
-  }).flat();
+test("tempo-fader where Master Tempo cannot load: no MASTER TEMPO step, no clip questions, the BPMs alone pass", async ({ page }) => {
+  test.setTimeout(90_000);
+  // signalsmith-stretch loads its worklet from a blob URL; refusing it is the failure a browser can have.
+  await page.addInitScript(() => {
+    const original = Object.getOwnPropertyDescriptor(Worklet.prototype, "addModule")?.value as (this: Worklet, url: string | URL, options?: WorkletOptions) => Promise<void>;
+    AudioWorklet.prototype.addModule = function (this: AudioWorklet, url: string | URL, options?: WorkletOptions) {
+      return String(url).startsWith("blob:") ? Promise.reject(new Error("blocked by the test")) : original.call(this, url, options);
+    };
+  });
+  const learnerId = learner("tempo-no-mt");
+  await seedPassed(page, learnerId, ["deck-basics"]);
+  await openLesson(page, learnerId, "tempo-fader");
+  expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").masterTempoAvailability?.available)).toBe(false);
+
+  await expect(caption(page)).toContainText("Slide TEMPO B");
+  await command(page, { control: "tempo", deck: "B", value: 0.2 });
+  await expect(caption(page)).toContainText("Tap ±6% on B");
+  await page.getByRole("button", { name: /Deck B tempo range/ }).click();
+  // Practice says why there will be no clips.
+  await expect(caption(page)).toContainText("Set B to 126.0 BPM, then R · Master Tempo can't load here, so no clips");
+
+  await page.keyboard.press("Enter");
+  for (const bpm of [127, 121.5, 125.5]) {
+    await command(page, { control: "tempo", deck: "B", value: faderFor(bpm) });
+    await expect(page.locator('[data-control="B.bpm"] .readout-number')).toHaveText(bpm.toFixed(1));
+    await page.waitForTimeout(300);
+    await page.keyboard.press("KeyR");
+  }
+
+  const card = resultCard(page);
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("group", { name: /Clip 1/ })).toHaveCount(0);
+  await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
+  await expect(card).toContainText(/BPMs: worst 0\.0\d BPM off/);
+  await expect(card).not.toContainText("Master Tempo clips");
+});
+
+/** One fader dragged from `from` to `to` over half a beat, starting on `beat` (a trackpad drag in steps). */
+function drag(beat: number, deck: "A" | "B", from: number, to: number): { beat: number; command: Record<string, unknown> }[] {
+  return Array.from({ length: 6 }, (_, step) => ({ beat: beat + step * 0.1, command: { control: "channel-fader", deck, value: from + ((to - from) * step) / 5 } }));
 }
 
-test("sync-blend: SYNC B, PLAY B on A's phrase start, a 10-bar channel-fader blend, passes", async ({ page }) => {
-  test.setTimeout(120_000);
-  const learnerId = learner("syncblend");
+/** The stepped blend one pointer can make: B to ¾ on the 1, A to ¾ a beat later, then B up and A down on bar 9. */
+const steppedBlend = (fromBeat: number) => [
+  ...drag(fromBeat, "B", 0, 0.75),
+  ...drag(fromBeat + 1, "A", 1, 0.75),
+  ...drag(fromBeat + 36, "B", 0.75, 1),
+  ...drag(fromBeat + 37, "A", 0.75, 0),
+];
+
+/** What a single pointer does without the steps: B all the way up, A all the way down later. */
+const naiveBlend = (fromBeat: number) => [...drag(fromBeat, "B", 0, 1), ...drag(fromBeat + 36, "A", 1, 0)];
+
+async function syncBlendCheck(page: Page, name: string, moves: (fromBeat: number) => { beat: number; command: Record<string, unknown> }[]) {
+  const learnerId = learner(name);
   await seedPassed(page, learnerId, [...FIRST_SEVEN, "tempo-fader"], { headphones: true });
   await openLesson(page, learnerId, "sync-blend");
   await expect(caption(page)).toContainText("Press BEAT SYNC on B");
@@ -96,15 +133,29 @@ test("sync-blend: SYNC B, PLAY B on A's phrase start, a 10-bar channel-fader ble
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.getByRole("button", { name: "Deck B beat sync" }).click();
   await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").syncOn)).toBe(true);
+  await expect(page.locator(".lesson-cue")).toHaveText("Next 1: Press , and fader B to ¾", { timeout: 20_000 });
   await keysAtBeats(page, [32], { codes: ["Comma"] });
-  await commandsAtBeats(page, channelBlend(32, 10));
-
+  await commandsAtBeats(page, moves(32));
   const card = resultCard(page);
   await expect(card).toBeVisible({ timeout: 30_000 });
+  return card;
+}
+
+test("sync-blend: SYNC B, PLAY B on A's phrase start, the stepped blend (B ¾, A ¾, B up, A down), passes", async ({ page }) => {
+  test.setTimeout(120_000);
+  const card = await syncBlendCheck(page, "syncblend", steppedBlend);
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
   await expect(card).toContainText(/Blend start: 0\.\d\d beats from the phrase start/);
-  await expect(card).toContainText(/Blend: (8|9)\.\d bars/);
+  await expect(card).toContainText(/Blend: 9\.\d bars/);
+  await expect(card).toContainText(/Level through the blend: moved [0-2]\.\d dB/);
   await expect(card).toContainText("TRIM left alone during the blend");
+});
+
+test("sync-blend: B all the way up while A is full is too loud, and the Check says so", async ({ page }) => {
+  test.setTimeout(120_000);
+  const card = await syncBlendCheck(page, "syncnaive", naiveBlend);
+  await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "failed");
+  await expect(card).toContainText(/✗ Level through the blend: moved [3-9]\.\d dB \(need 3 or less\)/);
 });
 
 test("crossfader: a crossfader blend to B on the phrase, then a cut back to A with C, passes", async ({ page }) => {

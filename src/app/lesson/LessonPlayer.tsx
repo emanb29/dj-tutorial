@@ -14,6 +14,7 @@ import {
   skipGroupsPassed,
   lessonReducer,
   unlocksAfter,
+  withoutMasterTempo,
   type BuiltLessonId,
   type ControlId,
   type DeckId,
@@ -107,7 +108,11 @@ function tapMark(observation: Observation): TapMark | null {
 }
 
 export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, onRetrySave, onSkipGroupPassed, trackPreference, onExit, onOpenLesson }: LessonPlayerProps) {
-  const definition = useMemo(() => lessonDefinition(lessonId), [lessonId]);
+  const listed = useMemo(() => lessonDefinition(lessonId), [lessonId]);
+  // Where Master Tempo cannot load, a Lesson that needs it runs without it (withoutMasterTempo): known
+  // once the engine is up, before the hook starts.
+  const [masterTempoMissing, setMasterTempoMissing] = useState(false);
+  const definition = useMemo(() => (masterTempoMissing ? withoutMasterTempo(listed) : listed), [listed, masterTempoMissing]);
   // Asked once per Learner, before the first headphone-cue Lesson; read at mount only.
   const [headphonesGate, setHeadphonesGate] = useState(() => needsHeadphonesCheck(definition, learner));
   const reducer = useMemo(() => lessonReducer(definition), [definition]);
@@ -155,9 +160,9 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       try {
         // Headphone Lessons use split cue: cue in the left ear, master in the right. Master Tempo
         // (time-stretching) loads only where it is taught or already on the controller.
-        const masterTempo = definition.masterTempo === true || unlocksAfter(passedLessons(learnerRef.current)).has("B.master-tempo");
-        engine = await createAudioEngine({ masterTempo, monitor: definition.headphones === true ? new SplitCueMonitor() : new MasterOnlyMonitor() });
-        const ready = await loadLessonTrack(definition, {
+        const masterTempo = listed.masterTempo === true || unlocksAfter(passedLessons(learnerRef.current)).has("B.master-tempo");
+        engine = await createAudioEngine({ masterTempo, monitor: listed.headphones === true ? new SplitCueMonitor() : new MasterOnlyMonitor() });
+        const ready = await loadLessonTrack(listed, {
           preference: trackPreference,
           signal: abort.signal,
           sampleRate: engine.context.sampleRate,
@@ -169,7 +174,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         const peakOf = (audio: AudioBuffer) => peakDbfsOf(Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel)));
         const partner = ready.track.partner === undefined || ready.partnerAudio === undefined ? undefined : { ...ready.track.partner, peakDbfs: peakOf(ready.partnerAudio) };
         const track: LessonTrack = { ...ready.track, peakDbfs: peakOf(ready.audio), ...(partner === undefined ? {} : { partner }) };
-        const withDeckB = LessonSession.usesDeckB(definition, track);
+        const withDeckB = LessonSession.usesDeckB(listed, track);
         for (const deck of withDeckB ? (["A", "B"] as const) : (["A"] as const)) {
           const onDeck = deck === "B" && partner !== undefined ? partner : track;
           const audio = deck === "B" && ready.partnerAudio !== undefined ? ready.partnerAudio : ready.audio;
@@ -177,9 +182,12 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           if (!loaded.ok) throw new Error(`deck ${deck} refused the track: ${describeError(loaded.error)}`);
         }
         if (cancelled()) return;
+        const availability = engine.deckState("B").masterTempoAvailability;
+        const missing = listed.masterTempo === true && !availability.available;
+        if (!availability.available && missing) console.warn(`[lesson] Master Tempo is unavailable (${availability.reason}); ${listed.id} runs without its clips`);
         const created = new LessonSession(
           engine,
-          definition,
+          missing ? withoutMasterTempo(listed) : listed,
           track,
           ready.audio,
           learnerRef.current.learnerId,
@@ -198,6 +206,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         session = created;
         const running = engine;
         window.learnToDjLesson = { engine: running, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip() };
+        setMasterTempoMissing(missing);
         setSetup({ kind: "ready", engine: running, session: created });
       } catch (error) {
         if (abort.signal.aborted) return;
@@ -214,7 +223,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       delete window.learnToDjLesson;
       closeEngine();
     };
-  }, [definition, trackPreference]);
+  }, [listed, trackPreference]);
 
   const engine = setup.kind === "ready" ? setup.engine : null;
   const session = setup.kind === "ready" ? setup.session : null;

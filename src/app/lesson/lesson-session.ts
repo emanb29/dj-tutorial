@@ -7,6 +7,7 @@
 import { AttemptRecorder, eqKnobToDecibels, type AudioEngine, type CommandEvent, type EngineCommand, type RecordedAttempt, type Result } from "@audio";
 import { CLASH_LOW_DB, runCheck } from "@checks";
 import {
+  blendPose,
   checkDecksFor,
   checkSpecFor,
   classifyTap,
@@ -20,7 +21,10 @@ import {
   sliceTrack,
   tempoPercentApart,
   trackOnDeck,
+  followBlend,
+  START_BLEND,
   withPlannedGrids,
+  type BlendFollow,
   type CheckPlan,
   type EqBand,
   type ListeningClip,
@@ -123,6 +127,8 @@ export class LessonSession {
   private sweep: { readonly fromCtx: number; depth: number } | null = null;
   /** Whether each channel fader is open now, so a close is seen once. */
   private readonly faderOpen: Record<DeckId, boolean> = { A: true, B: true };
+  /** sync-blend: how far the Learner is through the stepped blend (blend-steps.ts). */
+  private blend: BlendFollow = START_BLEND;
   /** The listening clip playing now (tempo-fader questions), if any. */
   private clip: ListeningClip | null = null;
   /** The by-ear practice drill running now (Lessons 14–16), if any. */
@@ -263,6 +269,7 @@ export class LessonSession {
     const wasOpen = this.faderOpen[deck];
     this.faderOpen[deck] = value > FADER_DOWN;
     if (deck === "A" && wasOpen && !this.faderOpen.A && this.definition.practice.rep === "filter-out") this.onFilterOut(heardCtx);
+    if (this.definition.practice.rep === "blend-step") this.followBlend();
     const check = this.check;
     if (check !== null && check.stopped === null) {
       if (value <= FADER_DOWN) {
@@ -277,6 +284,14 @@ export class LessonSession {
         if (this.check === check) this.endAudio();
       }, FADE_OUT_SETTLE_MS);
     }
+  }
+
+  /** The stepped blend: where both channel faders are now, as a step made or missed. */
+  private followBlend(): void {
+    const { channels } = this.engine.mixerState();
+    const { state, result } = followBlend(this.blend, blendPose(channels.A["channel-fader"], channels.B["channel-fader"]));
+    this.blend = state;
+    if (result !== null) this.observe({ kind: "blend-step", ...result });
   }
 
   private onTap(heardCtx: number | null): void {
@@ -458,6 +473,7 @@ export class LessonSession {
   }
 
   private cueDecks(decks: DeckSetups): void {
+    this.blend = START_BLEND;
     this.settingUpWith(() => {
       this.cueDeck("A", decks.A);
       if (decks.B !== undefined && this.onDeck.B !== null) this.cueDeck("B", decks.B);
