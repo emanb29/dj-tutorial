@@ -31,4 +31,11 @@ describe("lessonKey: the Lesson's own keys", () => {
     expect(lessonKey({ code: "Digit4", repeat: false, ctrlKey: false, metaKey: false, altKey: false }, { answering: true })).toEqual({ kind: "answer", value: 4 });
     expect(lessonKey({ code: "Digit9", repeat: false, ctrlKey: false, metaKey: false, altKey: false }, { answering: true })).toBeNull();
   });
+
+  it("while answering, previews with Shift + 1–8 or P (the focused chip), instead of answering or practice", () => {
+    const answering = (code: string, shiftKey = false) => lessonKey({ code, repeat: false, ctrlKey: false, metaKey: false, altKey: false, shiftKey }, { answering: true });
+    expect(answering("Digit3", true)).toEqual({ kind: "preview", value: 3 });
+    expect(answering("KeyP")).toEqual({ kind: "preview-focused" });
+    expect(answering("Digit3")).toEqual({ kind: "answer", value: 3 });
+  });
 });

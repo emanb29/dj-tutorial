@@ -23,6 +23,9 @@ import {
   tempoPercentApart,
   trackOnDeck,
   followBlend,
+  PHRASE_COUNT_START,
+  phraseCountStep,
+  phrasePosition,
   START_BLEND,
   triggerStep,
   withPlannedGrids,
@@ -38,6 +41,8 @@ import {
   type HookTrigger,
   type LoopPlan,
   type Observation,
+  type PhraseCountState,
+  type PhrasePosition,
   type PositionCue,
 } from "@lessons";
 import type { DeckId, LessonId } from "@shared/attempt.ts";
@@ -86,6 +91,12 @@ export type GradeOutcome =
   | { readonly ok: true; readonly outcome: CheckResult | VoidAttempt }
   | { readonly ok: false; readonly message: string };
 
+/** The live 8-bar count in the phrases hook and practice: where deck A is heard, and whether it shows. */
+export interface PhraseCount extends PhrasePosition {
+  /** False once the Learner taps phrases by ear ("now by ear"); back after 2 misses in a row. */
+  readonly shown: boolean;
+}
+
 export interface BeatClock {
   /** performance.now() milliseconds of the next beat heard. */
   readonly nextBeatAtMs: number;
@@ -127,6 +138,8 @@ interface RunningCheck {
   /** How often the `did-then` end's action happened, and when it last did (performance.now()). */
   did: number;
   didAtMs: number | null;
+  /** The far-tap cue shows until deck A is heard at this track position (plan.farTapCue). */
+  farTapUntilPos: number | null;
 }
 
 export class LessonSession {
@@ -156,6 +169,11 @@ export class LessonSession {
   private blend: BlendFollow = START_BLEND;
   /** The listening clip playing now (tempo-fader questions), if any. */
   private clip: ListeningClip | null = null;
+  /** The phrases hook and practice's 8-bar count, and the phrase whose start it last judged. */
+  private phraseCountState: PhraseCountState = PHRASE_COUNT_START;
+  private judgedPhrase: number | null = null;
+  /** The phrase preview playing now (phrases' questions): its 1-based phrase, where it stops, when it was cued. */
+  private preview: { readonly phrase: number; readonly endPos: number; readonly cuedCtx: number } | null = null;
   /** The by-ear practice drill running now (Lessons 14–16), if any. */
   private drill: DrillRunner | null = null;
   /**
@@ -381,7 +399,44 @@ export class LessonSession {
     const track = this.onDeck[deck];
     if (heardCtx === null || track === null || !this.engine.deckState(deck).playing) return;
     const reading = this.engine.playheadAt(deck, heardCtx);
-    if (reading !== null) this.observe(classifyTap(track.grid, track.phraseStarts, reading.positionSec));
+    if (reading === null) return;
+    const tap = classifyTap(track.grid, track.phraseStarts, reading.positionSec);
+    this.observe(tap);
+    if (this.settingUp) return;
+    if (this.check === null && this.definition.phraseCount === true) this.phraseCountState = phraseCountStep(this.phraseCountState, { kind: "tap", onPhraseStart: tap.onPhraseStart });
+    this.farTap(track, reading.positionSec);
+  }
+
+  /** A Check tap well off every phrase start, after the plan's `farTapCue.fromPos`: its cue shows for a while. */
+  private farTap(track: LessonTrack, positionSec: number): void {
+    const check = this.check;
+    const cue = check?.plan.farTapCue;
+    if (check?.stopped !== null || cue === undefined || positionSec < cue.fromPos) return;
+    const beat = beatSecOf(track);
+    const far = track.phraseStarts.every((start) => Math.abs(positionSec - start) >= cue.beats * beat - 1e-9);
+    if (far) check.farTapUntilPos = positionSec + cue.bars * 4 * beat;
+  }
+
+  /**
+   * The phrases practice count, a bar after each phrase start: was it tapped? Only a step into the next
+   * phrase judges one; a loop back to an earlier phrase just follows the deck.
+   */
+  private followPhraseCount(): void {
+    const track = this.onDeck.A;
+    const reading = this.engine.playhead("A");
+    if (track === null || !reading.ok || !this.engine.deckState("A").playing) return;
+    const { phrase, bar } = phrasePosition(track.grid, reading.positionSec);
+    if (bar < 2 || phrase === this.judgedPhrase) return;
+    if (this.judgedPhrase !== null && phrase === this.judgedPhrase + 1) this.phraseCountState = phraseCountStep(this.phraseCountState, { kind: "phrase-passed" });
+    this.judgedPhrase = phrase;
+  }
+
+  /** The 8-bar count to show now: in the hook and practice of a Lesson with one, while deck A plays. */
+  phraseCount(): PhraseCount | null {
+    const track = this.onDeck.A;
+    if (this.definition.phraseCount !== true || this.check !== null || track === null || !this.engine.deckState("A").playing) return null;
+    const reading = this.engine.playhead("A");
+    return reading.ok ? { ...phrasePosition(track.grid, reading.positionSec), shown: this.phraseCountState.shown } : null;
   }
 
   /** B started while A plays: a cut (or a blend's start), placed against A's nearest phrase start. */
@@ -655,6 +710,7 @@ export class LessonSession {
 
   /** Hook and practice: the Lesson's practice set-up, looping where the Lesson loops. */
   preparePractice(): void {
+    this.stopPreview();
     this.abandonCheck();
     this.stopClip();
     const generation = ++this.generation;
@@ -664,8 +720,13 @@ export class LessonSession {
       this.cueDecks(decks);
       this.playDecks(decks);
       const drill = this.startDrill(decks);
-      this.watchLoop(decks, practiceLoopFor(this.definition, this.track), drill === null ? undefined : () => {
-        drill.tick();
+      // Back in practice, the count shows again until the Learner taps by ear.
+      this.phraseCountState = PHRASE_COUNT_START;
+      this.judgedPhrase = null;
+      const counting = this.definition.phraseCount === true;
+      this.watchLoop(decks, practiceLoopFor(this.definition, this.track), drill === null && !counting ? undefined : () => {
+        drill?.tick();
+        if (counting) this.followPhraseCount();
       });
     });
   }
@@ -714,6 +775,7 @@ export class LessonSession {
 
   /** Starts (or restarts) the Check's audio part: auto-jump, record, and watch for its end. */
   startCheck(): void {
+    this.stopPreview();
     this.abandonCheck();
     this.stopDrill();
     this.stopClip();
@@ -761,7 +823,7 @@ export class LessonSession {
       this.listener.checkFailed(`The attempt could not be recorded (${started.error.kind}). Try again with Enter.`);
       return;
     }
-    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null, cueCtx: this.engine.context.currentTime, stop: 0, stopSet: false, steps: 0, did: 0, didAtMs: null };
+    const check: RunningCheck = { plan, startedMs: performance.now(), readies: new Map(), readyCount: 0, slice: 0, sliceCued: false, stopped: null, closedAtMs: new Map(), heldFromMs: null, heldSeenMs: null, cueCtx: this.engine.context.currentTime, stop: 0, stopSet: false, steps: 0, did: 0, didAtMs: null, farTapUntilPos: null };
     this.check = check;
     this.faderWasUp = false;
     this.playDecks(decks);
@@ -989,6 +1051,52 @@ export class LessonSession {
     }, WATCH_MS);
   }
 
+  /**
+   * Plays the first bars of the Check's phrase `phrase` (1-based) on deck A at the Check's own fader,
+   * once the audio part is over, then stops. One at a time: it stops any other. The recorder has
+   * stopped, so nothing here is graded or counted as a tap. False when there is nothing to play.
+   */
+  previewPhrase(phrase: number): boolean {
+    const check = this.check;
+    const previews = check?.stopped == null ? undefined : check.plan.phrasePreviews;
+    const pos = previews?.starts[phrase - 1];
+    const track = this.onDeck.A;
+    if (check == null || previews === undefined || pos === undefined || track === null) return false;
+    this.stopClip();
+    this.stopPreview();
+    const fader = checkDecksFor(check.plan).A.fader;
+    this.settingUpWith(() => {
+      for (const deck of DECKS) if (this.onDeck[deck] !== null) this.send({ control: "pause", deck });
+      this.send({ control: "seek", deck: "A", value: pos });
+      this.send({ control: "channel-fader", deck: "A", value: fader });
+      this.send({ control: "play", deck: "A" });
+    });
+    const preview = { phrase, endPos: pos + previews.bars * 4 * beatSecOf(track), cuedCtx: this.engine.context.currentTime };
+    this.preview = preview;
+    this.watch = setInterval(() => {
+      // Until the cue is heard, the heard playhead still shows where the deck was before it.
+      const heard = this.engine.heardTime();
+      const reading = this.engine.playhead("A");
+      if (this.preview === preview && heard.ok && heard.ctx >= preview.cuedCtx + CUE_SETTLE_SEC && reading.ok && reading.positionSec >= preview.endPos) this.stopPreview();
+    }, WATCH_MS);
+    return true;
+  }
+
+  /** The phrase previewing now, if any (end-to-end tests read it). */
+  previewingPhrase(): number | null {
+    return this.preview?.phrase ?? null;
+  }
+
+  /** Stops a phrase preview (an answer chosen, another preview, grading). */
+  stopPreview(): void {
+    if (this.preview === null) return;
+    this.preview = null;
+    this.stopWatching();
+    this.settingUpWith(() => {
+      if (this.onDeck.A !== null) this.send({ control: "pause", deck: "A" });
+    });
+  }
+
   /** The listening clip a question plays, once the Check's audio part is over; null without one. */
   clipFor(questionId: string): ListeningClip | null {
     const check = this.check;
@@ -1021,8 +1129,11 @@ export class LessonSession {
       const caption = readyCues[Math.min(check.readyCount, readyCues.length - 1)];
       return caption === undefined ? null : { fromPos: 0, caption };
     }
+    // Until the Check's own cue is heard, the deck still plays wherever practice left it.
     const reading = this.engine.playhead("A");
-    if (!reading.ok) return null;
+    if (!reading.ok || !this.cueHeard(check)) return null;
+    const farTap = check.plan.farTapCue;
+    if (farTap !== undefined && check.farTapUntilPos !== null && reading.positionSec < check.farTapUntilPos) return { fromPos: 0, caption: farTap.caption };
     return check.plan.cues.findLast((cue) => cue.fromPos <= reading.positionSec) ?? null;
   }
 
@@ -1051,6 +1162,7 @@ export class LessonSession {
     if (check === null) return { ok: false, message: "No Check was running to grade. Start it again with Enter." };
     if (check.stopped === null) this.endAudio();
     this.stopClip();
+    this.stopPreview();
     this.check = null;
     this.stopWatching();
     // endAudio has always set it by now.
@@ -1114,6 +1226,7 @@ export class LessonSession {
     this.closed = true;
     this.stopDrill();
     this.stopClip();
+    this.stopPreview();
     this.abandonCheck();
     clearInterval(this.levelTimer);
     this.unsubscribe();

@@ -72,6 +72,8 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   await seedPassed(page, learnerId, ["deck-basics", "beats-and-bars"]);
   await openLesson(page, learnerId, "phrases");
   await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("Tap Space when something changes");
+  // The hook and practice count the bars of each phrase.
+  await expect(page.getByTestId("phrase-count")).toContainText(/bar [1-8] of 8/);
 
   // The synthetic groove: phrase k starts on beat 32·(k − 1). The Check leads in from bar 7 (beat 24)
   // and taps phrases 2–9 (beats 32 … 256): the breakdown is the 4th tapped phrase, the drop the 6th.
@@ -80,12 +82,16 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   await page.keyboard.press("Enter");
   await checkPlayingPast(page, 24.5);
   const caption = page.getByRole("status", { name: "Lesson caption" });
-  await expect(caption).toContainText("Tap each new phrase");
+  // No count in the Check: phrase 1 is counted in instead, the last bar large on its beats.
+  await expect(caption).toContainText("Phrase 1 starts in 2 bars");
+  await expect(page.getByTestId("phrase-count")).toHaveCount(0);
+  const cue = page.locator(".lesson-cue");
+  await expect(cue).toHaveAttribute("data-countdown", "true", { timeout: 5000 });
+  await expect(cue).toContainText("1 bar: 4");
 
   // First half: phrases 2–5, then the first phrase of the second half (beat 160).
   await tapAtBeats(page, [32, 64, 96, 128, 160]);
   // Halfway: a tick and one caption, while the music keeps playing.
-  const cue = page.locator(".lesson-cue");
   await expect(cue).toHaveAttribute("data-checkpoint", "true", { timeout: 3000 });
   await expect(cue).toHaveText("Halfway: keep tapping each phrase");
   expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing)).toBe(true);
@@ -98,7 +104,17 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   await expect(questions).toBeVisible({ timeout: 30_000 });
   const lineRequest = page.waitForRequest((request) => request.url().endsWith(`/api/learners/${learnerId}/coach/line`));
   const curriculumRequest = page.waitForRequest((request) => request.url().endsWith(`/api/learners/${learnerId}/coach/curriculum`));
-  await page.keyboard.press("Digit4");
+  // Each phrase can be heard again before it is chosen: ▶ plays it on deck A; choosing stops it.
+  const playing = () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing);
+  const breakdown = questions.getByRole("group", { name: /breakdown/ });
+  await breakdown.getByRole("button", { name: "Play phrase 4" }).click();
+  await expect.poll(playing).toBe(true);
+  await breakdown.getByRole("button", { name: "Phrase 4", exact: true }).click();
+  await expect.poll(playing).toBe(false);
+  await expect(breakdown.getByRole("button", { name: "Phrase 4", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // Shift + 6 plays phrase 6, and 6 chooses it.
+  await page.keyboard.press("Shift+Digit6");
+  await expect.poll(playing).toBe(true);
   await page.keyboard.press("Digit6");
 
   const card = page.getByRole("region", { name: "Result" });

@@ -575,3 +575,87 @@
     animation: none;
   }
 }
+
+/* The phrases hook and practice's 8-bar count: "bar 3 of 8", dots filling; lit on a phrase's bar 1. */
+.phrase-count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--ink-dim);
+  font-size: var(--text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  transition: opacity 600ms ease-out;
+}
+
+.phrase-count[data-playing="false"] {
+  opacity: 0;
+}
+
+.phrase-count[data-bar="1"][data-shown="true"] {
+  color: var(--accent);
+}
+
+.phrase-count-dots {
+  display: inline-flex;
+  gap: 4px;
+  transition: opacity 600ms ease-out;
+}
+
+.phrase-count-dots > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  opacity: 0.3;
+}
+
+.phrase-count-dots > span[data-on="true"] {
+  opacity: 1;
+}
+
+.phrase-count[data-bar="1"][data-shown="true"] .phrase-count-dots > span[data-dot="1"] {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* By ear: the dots fade out; the words say so. */
+.phrase-count[data-shown="false"] .phrase-count-dots {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phrase-count,
+  .phrase-count-dots {
+    transition: none;
+  }
+}
+
+/* phrases' questions: a "Phrase N" chip per phrase, each with its own ▶; they wrap on a phone. */
+.lesson-question:has(.phrase-chip) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.lesson-question [role="group"]:has(.phrase-chip) {
+  flex-wrap: wrap;
+}
+
+.phrase-chip {
+  display: inline-flex;
+}
+
+.phrase-chip .phrase-chip-play {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.phrase-chip .phrase-chip-pick {
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  white-space: nowrap;
+}

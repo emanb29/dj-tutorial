@@ -200,6 +200,72 @@ describe("phrases", () => {
     expect(failed.outcome).toEqual({ kind: "failed", failedCriteria: ["phrases.phrase-taps"] });
   });
 
+  // Owner feedback: no clear start to the first phrase, so one early miscount ruined the rest.
+  it("counts in to phrase 1 like Lesson 2's switch: 2 bars ahead, the last bar on its beats, then TAP", () => {
+    expect(plan.cues.slice(0, 7).map((cue) => [cue.caption, cue.countdown === true])).toEqual([
+      ["Phrase 1 starts in 2 bars", false],
+      ["1 bar: 4", true],
+      ["1 bar: 4 · 3", true],
+      ["1 bar: 4 · 3 · 2", true],
+      ["1 bar: 4 · 3 · 2 · 1", true],
+      ["TAP — phrase 1!", true],
+      ["Tap each new phrase (Space)", false],
+    ]);
+    const beatsBefore = [8, 4, 3, 2, 1, 0.5, -4];
+    plan.cues.slice(0, 7).forEach((cue, index) => {
+      expect(cue.fromPos).toBeCloseTo(firstPhrase - (beatsBefore[index] ?? Number.NaN) * BEAT, 9);
+    });
+    // The Check starts on the count-in's first caption.
+    expect(plan.cues[0]?.fromPos).toBeCloseTo(plan.startPos, 9);
+  });
+
+  it("after phrase 1 shows no count, only a nudge for a tap 2 beats or more off every phrase start", () => {
+    expect(plan.cues.filter((cue) => cue.fromPos > firstPhrase).map((cue) => cue.caption)).toEqual([
+      "Tap each new phrase (Space)",
+      "Halfway: keep tapping each phrase",
+      "Tap each new phrase (Space)",
+    ]);
+    expect(plan.farTapCue).toEqual({ fromPos: firstPhrase + BEAT, beats: 2, bars: 2, caption: "Count from the last change" });
+  });
+
+  it("starts phrase 1 on a change in the music where the track has one: an Original's breakdown", () => {
+    // Lamplight Moths' layout: intro 1–4, build 5–6, drop 7–10, breakdown 11–12, build 13–14, drop 15–18, outro 19–22.
+    const original: LessonTrack = {
+      ...track,
+      phraseStarts: Array.from({ length: 22 }, (_, index) => phraseStart(track.grid, index + 1)),
+      sections: [
+        { name: "intro", phrase: 1 },
+        { name: "build", phrase: 5 },
+        { name: "drop", phrase: 7 },
+        { name: "breakdown", phrase: 11 },
+        { name: "build", phrase: 13 },
+        { name: "drop", phrase: 15 },
+        { name: "outro", phrase: 19 },
+      ],
+    };
+    const originalPlan = definition.planCheck(original);
+    // Not phrase 8, mid-drop with nothing to hear: phrase 11, where the kick leaves.
+    expect(originalPlan.startPos).toBeCloseTo(phraseStart(track.grid, 11) - 8 * BEAT, 9);
+    const window = { from: 0, to: 1e6 };
+    const task = definition.taskFor(original, originalPlan, recorded(original, originalPlan, {}), window);
+    expect(task).toMatchObject({ lessonId: "phrases", sections: { breakdown: 1, drop: 5 } });
+    expect(definition.practiceStart(original)).toBeCloseTo(phraseStart(track.grid, 11) - 8 * BEAT, 9);
+  });
+
+  // Owner feedback: naming the sections from memory of the count, after 64 bars, tested memory, not ears.
+  it("asks for the breakdown and the drop in plain words, each phrase playable before choosing it", () => {
+    expect(definition.questions).toEqual([
+      { id: "breakdown", caption: "Which phrase was the breakdown? (the kick drops out)", options: 8, previews: "phrases" },
+      { id: "drop", caption: "Which phrase was the drop? (the kick slams back)", options: 8, previews: "phrases" },
+    ]);
+    // Phrase N's ▶ plays from the tapped window's phrase N start, for 2 bars.
+    expect(plan.phrasePreviews?.bars).toBe(2);
+    expect(plan.phrasePreviews?.starts).toHaveLength(8);
+    plan.phrasePreviews?.starts.forEach((start, index) => {
+      expect(start).toBeCloseTo(phraseStart(track.grid, 2 + index), 9);
+    });
+  });
+
   it("cannot run on a track with no named breakdown and drop", () => {
     expect(definition.trackProblems({ ...track, sections: [] })).not.toEqual([]);
     expect(definition.trackProblems(track)).toEqual([]);

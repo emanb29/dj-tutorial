@@ -5,25 +5,31 @@ import { EQ_FILTER_LESSONS, type EqFilterLessonId } from "./catalogue-eq-filter.
 import { BY_EAR_LESSONS, type ByEarLessonId } from "./catalogue-by-ear.ts";
 import { PERFORMANCE_LESSONS, type PerformanceLessonId } from "./catalogue-performance.ts";
 import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
-import { barsSec, fromOwnCue, heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
+import { barCountdown, barsSec, fromOwnCue, heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
 import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor, UNMEASURED_PEAK_DB } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
 const BARS_PER_PHRASE = 8;
+/** phrases: how much of a phrase its ▶ plays before the Learner names the breakdown or the drop. */
+const PREVIEW_BARS = 2;
 /** How long a checkpoint's tick and caption stay up. */
 const CHECKPOINT_BARS = 4;
 
 /** Lesson aids for Lessons 1–3: no sync or quantize to speak of, captions on. */
 export const LESSON_AIDS: Aids = { sync: false, quantize: false, bpmDisplay: false, phaseMeter: false, lessonText: true };
 
-/** The first tap window (8 phrases from phrase ≥ 2) that holds a breakdown and a later drop. */
+/**
+ * The tap window (8 phrases from phrase ≥ 2) that holds a breakdown and a later drop. Its phrase 1, the
+ * one everything is counted from, starts on a change the Learner can hear (a section starting there:
+ * the breakdown's kick leaving, a drop) where any window does; else the first window.
+ */
 function phraseWindow(track: LessonTrack): { first: number; breakdown: number; drop: number } | null {
-  for (let first = 2; first + BARS_PER_PHRASE <= track.phraseStarts.length; first += 1) {
+  const windows = Array.from({ length: Math.max(0, track.phraseStarts.length - BARS_PER_PHRASE - 1) }, (_, index) => index + 2).flatMap((first) => {
     const breakdown = phraseOf(track.sections, "breakdown", first);
     const drop = breakdown === null ? null : phraseOf(track.sections, "drop", breakdown + 1);
-    if (breakdown !== null && drop !== null && drop < first + BARS_PER_PHRASE) return { first, breakdown, drop };
-  }
-  return null;
+    return breakdown !== null && drop !== null && drop < first + BARS_PER_PHRASE ? [{ first, breakdown, drop }] : [];
+  });
+  return windows.find(({ first }) => track.sections.some((section) => section.phrase === first)) ?? windows[0] ?? null;
 }
 
 const deckBasics: LessonDefinition = {
@@ -108,33 +114,40 @@ const phrases: LessonDefinition = {
   practiceStart: (track) => barStart(track.grid, ((phraseWindow(track)?.first ?? 2) - 1) * BARS_PER_PHRASE - 1),
   trackProblems: (track) =>
     phraseWindow(track) === null ? ["The track needs a named breakdown and a later drop within 8 phrases."] : [],
+  phraseCount: true,
   hook: [
     { caption: "Tap Space when something changes", control: "tap", trigger: { kind: "phrase-taps", count: 1 }, named: "That change every 8 bars is a phrase." },
   ],
-  practice: { caption: "Tap each new phrase: count 8 bars", rep: "phrase-tap", window: 2, needed: 2 },
+  // Three right in a row: the count fades after two, so the last is by ear.
+  practice: { caption: "Tap each new phrase: count 8 bars", rep: "phrase-tap", window: 3, needed: 3 },
   checkCaption: "This one counts: tap every phrase, then name the breakdown and drop",
   questions: [
-    { id: "breakdown", caption: "Which phrase was the breakdown?", options: BARS_PER_PHRASE },
-    { id: "drop", caption: "Which phrase was the drop?", options: BARS_PER_PHRASE },
+    // Heard again, not remembered: each phrase can be played before choosing it.
+    { id: "breakdown", caption: "Which phrase was the breakdown? (the kick drops out)", options: BARS_PER_PHRASE, previews: "phrases" },
+    { id: "drop", caption: "Which phrase was the drop? (the kick slams back)", options: BARS_PER_PHRASE, previews: "phrases" },
   ],
   planCheck: (track): CheckPlan => {
     const first = phraseWindow(track)?.first ?? 2;
-    const firstBar = (first - 1) * BARS_PER_PHRASE + 1;
+    const firstPos = phraseStart(track.grid, first);
     // Two 32-bar halves, one Check: the tick lands a beat after the second half's first phrase start.
     const halfway = phraseStart(track.grid, first + BARS_PER_PHRASE / 2);
     const tapCaption = "Tap each new phrase (Space)";
     return {
-      startPos: barStart(track.grid, firstBar - 2),
+      startPos: firstPos - barsSec(track, 2),
       autoPlay: true,
       faderAtStart: 1,
       endWhen: { kind: "position", pos: phraseStart(track.grid, first + BARS_PER_PHRASE) + beatSec(track.grid) },
       timeoutSec: 150,
       cues: [
-        { fromPos: barStart(track.grid, firstBar - 2), caption: "Get ready: phrase 1 is coming" },
-        { fromPos: barStart(track.grid, firstBar) - beatSec(track.grid), caption: tapCaption },
+        // Phrase 1 is the anchor every later phrase is counted from: counted in, unmistakably.
+        ...barCountdown(track, firstPos, { twoBars: "Phrase 1 starts in 2 bars", lastBar: "1 bar", now: "TAP — phrase 1!" }),
+        { fromPos: firstPos + barsSec(track, 1), caption: tapCaption },
         { fromPos: halfway + beatSec(track.grid), caption: "Halfway: keep tapping each phrase", checkpoint: true },
         { fromPos: halfway + CHECKPOINT_BARS * 4 * beatSec(track.grid), caption: tapCaption },
       ],
+      // After phrase 1, no count (it is what is graded); a tap well off every phrase start gets a nudge.
+      farTapCue: { fromPos: firstPos + beatSec(track.grid), beats: 2, bars: 2, caption: "Count from the last change" },
+      phrasePreviews: { starts: Array.from({ length: BARS_PER_PHRASE }, (_, index) => phraseStart(track.grid, first + index)), bars: PREVIEW_BARS },
     };
   },
   taskFor: (track, plan, attempt, attemptWindow): LessonTask => {

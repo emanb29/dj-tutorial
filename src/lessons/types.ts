@@ -338,6 +338,16 @@ export interface CheckPlan {
    * longer fit a deck that loops or jumps): each caption shows after its `after` happened.
    */
   readonly stepCues?: readonly { readonly after: HookTrigger; readonly caption: string }[];
+  /**
+   * A tap at or after `fromPos` this many beats or more from every phrase start shows `caption` for
+   * `bars` bars (phrases: "count from the last change"). It says nothing about where the phrase is.
+   */
+  /**
+   * Once the audio part is over, a question with `previews: "phrases"` lets the Learner play the first
+   * `bars` bars of phrase N (`starts[N − 1]`, track positions) on deck A before answering. Not graded.
+   */
+  readonly phrasePreviews?: { readonly starts: readonly number[]; readonly bars: number };
+  readonly farTapCue?: { readonly fromPos: number; readonly beats: number; readonly bars: number; readonly caption: string };
 }
 
 export interface CheckQuestion {
@@ -345,6 +355,8 @@ export interface CheckQuestion {
   readonly caption: string;
   /** Answers are 1…options. */
   readonly options: number;
+  /** Each answer is a "Phrase N" chip with ▶ to hear the plan's `phrasePreviews` first (phrases). */
+  readonly previews?: "phrases";
   /** Named answers instead of numbers: key 1 picks the first, and `value` is what the attempt records. */
   readonly choices?: readonly { readonly label: string; readonly value: number }[];
 }
@@ -385,6 +397,11 @@ export interface LessonDefinition {
   readonly practiceLoop?: (track: LessonTrack) => LoopPlan | null;
   /** Split cue: headphones on, the one-time headphones check first. */
   readonly headphones?: true;
+  /**
+   * The hook and practice show a live 8-bar count on deck A ("bar 3 of 8"), fading out once the
+   * Learner taps phrases right by ear (phrase-count.ts). Never in the Check.
+   */
+  readonly phraseCount?: true;
   /** Which deck's grid taps are placed on (headphone-cue taps deck B). Default A. */
   readonly tapDeck?: DeckId;
   /**

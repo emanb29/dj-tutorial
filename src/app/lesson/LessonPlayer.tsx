@@ -41,6 +41,7 @@ import { needsHeadphonesCheck } from "./headphones-check.ts";
 import { HeadphonesGate } from "./HeadphonesGate.tsx";
 import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
+import { PhraseCounter } from "./PhraseCounter.tsx";
 import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
 import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
 import { ResultCard } from "./ResultCard.tsx";
@@ -363,6 +364,10 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   useEffect(() => {
     if (session !== null && asking !== null) session.playClip(asking);
   }, [session, asking]);
+  // Choosing an answer stops a phrase preview.
+  useEffect(() => {
+    if (answering !== null) session?.stopPreview();
+  }, [session, answering]);
   // While a clip plays, its deck's tempo controls are held locked and unlit: MASTER TEMPO lit (or a
   // press to compare) would give the answer away.
   const clipDeck = session === null || asking === null ? null : (session.clipFor(asking)?.deck ?? null);
@@ -401,6 +406,15 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           const question = definition.questions.find((candidate) => answering !== null && !(candidate.id in answering));
           const value = question === undefined ? null : answerValue(question, key.value);
           if (question !== undefined && value !== null) dispatch({ type: "answer", questionId: question.id, value });
+          break;
+        }
+        case "preview":
+          session?.previewPhrase(key.value);
+          break;
+        case "preview-focused": {
+          const chip = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>("[data-phrase]") : null;
+          const phrase = Number(chip?.dataset["phrase"]);
+          if (Number.isInteger(phrase)) session?.previewPhrase(phrase);
           break;
         }
       }
@@ -456,6 +470,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null}
             cueLine={cueLine}
           />
+          {session !== null && inPractice && definition.phraseCount === true ? <PhraseCounter session={session} /> : null}
         </p>
         {wording === "touch" ? <TouchGo phase={phase} dispatch={dispatch} /> : null}
         {wording === "touch" && session !== null ? <TouchReady phase={phase} session={session} definition={definition} /> : null}
@@ -469,7 +484,9 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
               <div key={question.id} className="lesson-question" data-answered={question.id in phase.answers}>
                 <span>{question.caption}</span>
                 <div role="group" aria-label={question.caption}>
-                  {(question.choices ?? Array.from({ length: question.options }, (_, index) => ({ label: String(index + 1), value: index + 1 }))).map((choice) => (
+                  {question.previews === "phrases" && session !== null ? (
+                    <PhraseChips question={question} chosen={phase.answers[question.id]} session={session} dispatch={dispatch} />
+                  ) : (question.choices ?? Array.from({ length: question.options }, (_, index) => ({ label: String(index + 1), value: index + 1 }))).map((choice) => (
                     <button
                       key={choice.value}
                       type="button"
@@ -529,6 +546,39 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       </div>
     </main>
   );
+}
+
+/**
+ * A question answered by phrase (phrases' breakdown and drop): a "Phrase N" chip per phrase, each with
+ * its own ▶ that plays the phrase's first bars again. Hearing it is the skill: no waveform, no levels.
+ */
+function PhraseChips({ question, chosen, session, dispatch }: { readonly question: CheckQuestion; readonly chosen: number | undefined; readonly session: LessonSession; readonly dispatch: (action: { type: "answer"; questionId: string; value: number }) => void }) {
+  return Array.from({ length: question.options }, (_, index) => index + 1).map((phrase) => (
+    <span key={phrase} className="phrase-chip">
+      <button
+        type="button"
+        className="btn phrase-chip-play"
+        data-phrase={phrase}
+        aria-label={`Play phrase ${String(phrase)}`}
+        onClick={() => {
+          session.previewPhrase(phrase);
+        }}
+      >
+        ▶
+      </button>
+      <button
+        type="button"
+        className="btn phrase-chip-pick"
+        data-phrase={phrase}
+        aria-pressed={chosen === phrase}
+        onClick={() => {
+          dispatch({ type: "answer", questionId: question.id, value: phrase });
+        }}
+      >
+        Phrase {phrase}
+      </button>
+    </span>
+  ));
 }
 
 /** The URL when it is a web link; track metadata comes from manifests, so `javascript:` and the like never become links. */
@@ -615,7 +665,13 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
     case "answering": {
       const question = definition.questions.find((candidate) => !(candidate.id in phase.answers));
       if (question === undefined) return <span className="lesson-do" />;
-      const keys = question.choices === undefined ? `1–${String(question.options)}` : question.choices.map((choice, index) => `${String(index + 1)} ${choice.label}`).join(", ");
+      const numbers = `1–${String(question.options)}`;
+      const keys =
+        question.previews === "phrases"
+          ? `${numbers} choose · Shift + ${numbers} or P plays`
+          : question.choices === undefined
+            ? numbers
+            : question.choices.map((choice, index) => `${String(index + 1)} ${choice.label}`).join(", ");
       return (
         <span className="lesson-do">
           {question.caption}

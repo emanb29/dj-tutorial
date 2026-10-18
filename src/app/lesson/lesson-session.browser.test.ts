@@ -427,3 +427,121 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     expect(outcome.outcome, JSON.stringify(summary(outcome))).toEqual({ kind: "passed" });
   });
 });
+
+// Owner feedback: Lesson 3 had no clear start to the first phrase. A Learner who does exactly what the
+// captions say passes: the practice count shows the bars, then steps aside once they tap by ear; the
+// Check counts in to phrase 1 and says TAP on its downbeat; a tap well off gets a nudge, not a hint.
+describe.each([
+  { what: "wired output (40 ms)", latencySec: 0.04 },
+  { what: "Bluetooth output (250 ms)", latencySec: 0.25 },
+])("phrases at 48 kHz on $what, following the captions", ({ latencySec }) => {
+  const sampleRate = 48_000;
+  const groove = (context: BaseAudioContext) => {
+    const samples = synthesizeHouse(SYNTHETIC_HOUSE, context.sampleRate);
+    const buffer = context.createBuffer(1, samples.length, context.sampleRate);
+    buffer.copyToChannel(samples, 0);
+    return buffer;
+  };
+
+  it("practice counts the bars and fades by ear, then the counted-in Check passes", { timeout: 120_000 }, async () => {
+    const track = syntheticLessonTrack(SYNTHETIC_HOUSE);
+    const lookaheadSec = 0.0116 + 256 / sampleRate;
+    const run = await harness({ sampleRate, lessonId: "phrases", track, audio: groove, renderSec: 60 + 150, latencySec, lookaheadSec });
+    const definition = lessonDefinition("phrases");
+    const beat = 60 / track.grid.bpm;
+    const bar = 4 * beat;
+    const phrase = (n: number) => (n - 1) * 8 * bar;
+    const tap = () => run.engine.command({ control: "tap" }, { device: "keyboard" });
+
+    // Practice: from 2 bars before phrase 2, looping 24 bars. Walk it a bar at a time, as the count does.
+    run.session.preparePractice();
+    await until(() => run.engine.deckState("A").playing, "the session to play the practice");
+    const practiceAt = run.playedAt();
+    const practiceStart = definition.practiceStart(track);
+    const heardInPractice = (pos: number) => practiceAt + (pos - practiceStart);
+    // Half a bar at a time: the session's watch looks at the deck between renders, as it would live.
+    const walkHeard = async (target: number) => {
+      let at = run.now() - Math.max(0, latencySec);
+      while (target - at > 0.005) {
+        at = Math.min(target, at + bar / 2);
+        await run.renderToHeard(at);
+      }
+    };
+    const walkTo = (pos: number) => walkHeard(heardInPractice(pos));
+    await walkTo(phrase(2) + 2 * bar + 1.5 * beat);
+    expect(run.session.phraseCount()).toEqual({ phrase: 2, bar: 3, beat: 2, shown: true });
+    await walkTo(phrase(3) - 2 * bar);
+    // Two phrase starts tapped right in a row: the count steps aside.
+    await walkTo(phrase(3));
+    tap();
+    await walkTo(phrase(3) + 2 * bar);
+    expect(run.session.phraseCount()?.shown).toBe(true);
+    await walkTo(phrase(4));
+    tap();
+    await walkTo(phrase(4) + 2 * bar);
+    expect(run.session.phraseCount()?.shown).toBe(false);
+    // Two misses in a row (a tap off the phrase, then a phrase start untapped): it comes back.
+    tap();
+    await walkTo(practiceStart + 24 * bar - bar);
+    expect(run.session.phraseCount()?.shown).toBe(false);
+    // The loop is 3 phrases long, so it counts on across the jump back: phrase 2's start, untapped.
+    await walkHeard(run.now() - Math.max(0, latencySec) + 5 * bar);
+    expect(run.session.phraseCount()).toMatchObject({ phrase: 2, shown: true });
+
+    // The Check: the captions count in, then say TAP on phrase 1's downbeat.
+    await startedCheck(run);
+    const playAt = run.playedAt();
+    const { plan } = run;
+    const heard = (pos: number) => playAt + (pos - plan.startPos);
+    const first = phrase(2);
+    const captionAt = async (pos: number) => {
+      await run.renderToHeard(heard(pos));
+      return run.session.checkCue()?.caption;
+    };
+    expect(run.session.phraseCount()).toBeNull();
+    expect(await captionAt(first - 2 * bar + beat)).toBe("Phrase 1 starts in 2 bars");
+    for (const [count, shows] of [[4, "1 bar: 4"], [3, "1 bar: 4 · 3"], [2, "1 bar: 4 · 3 · 2"], [1, "1 bar: 4 · 3 · 2 · 1"]] as const) {
+      expect(await captionAt(first - count * beat + 0.01)).toBe(shows);
+    }
+    expect(await captionAt(first)).toBe("TAP — phrase 1!");
+    tap();
+    // Then 8 bars counted on from it, each phrase; one tap well off the phrase gets a nudge, no position.
+    expect(await captionAt(first + 2 * bar)).toBe("Tap each new phrase (Space)");
+    for (let k = 1; k < 8; k += 1) {
+      if (k === 2) {
+        await run.renderToHeard(heard(first + (k - 1) * 8 * bar + 4 * bar));
+        tap();
+        expect(await captionAt(first + (k - 1) * 8 * bar + 5 * bar)).toBe("Count from the last change");
+        expect(await captionAt(first + (k - 1) * 8 * bar + 6 * bar + beat)).toBe("Tap each new phrase (Space)");
+      }
+      await run.renderToHeard(heard(first + k * 8 * bar));
+      tap();
+    }
+    if (plan.endWhen.kind !== "position") throw new Error("this Check ends at a position");
+    await run.renderToHeard(heard(plan.endWhen.pos) + 0.1);
+    await until(() => run.audioEnded() === 1, "the session's watch to end the Check's audio part");
+    // The questions: ▶ on "Phrase 4" plays that phrase's first 2 bars on A, then stops by itself.
+    const seeks: number[] = [];
+    const stopSeeks = run.engine.on("command", (event) => {
+      if (event.command.control === "seek" && event.command.deck === "A") seeks.push(event.command.value);
+    });
+    expect(run.session.previewPhrase(4)).toBe(true);
+    stopSeeks();
+    expect(seeks).toHaveLength(1);
+    expect(seeks[0]).toBeCloseTo(phrase(5), 9);
+    expect(run.engine.deckState("A").playing).toBe(true);
+    const previewAt = run.playedAt();
+    await run.renderToHeard(previewAt + bar);
+    expect(run.session.previewingPhrase()).toBe(4);
+    for (let at = previewAt + bar; at < previewAt + 3 * bar; at += bar / 2) await run.renderToHeard(at + bar / 2);
+    await until(() => !run.engine.deckState("A").playing, "the preview to stop after 2 bars");
+    expect(run.session.previewingPhrase()).toBeNull();
+    // Previews are not taps, and are not graded.
+    const graded = await run.session.grade({ breakdown: 4, drop: 6 }, ["deck-basics", "beats-and-bars"]);
+    run.session.close();
+    if (!graded.ok) throw new Error(graded.message);
+    expect(graded.outcome.outcome, JSON.stringify(summary(graded.outcome))).toEqual({ kind: "passed" });
+    // Grading is as before: every phrase start matched, the one far tap an allowed extra.
+    expect(summary(graded.outcome)).toContainEqual({ id: "phrases.phrase-taps", status: "met", detail: { matched: 8, extras: 1, targets: 8 } });
+  });
+});
