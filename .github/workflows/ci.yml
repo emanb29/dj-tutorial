@@ -1,14 +1,19 @@
 name: CI
 
-# Pull requests only: every change reaches main through a PR that was rebased and tested first, so
-# a second run on the merge commit would spend Actions minutes re-testing the same tree.
+# Pull requests run every unit and browser test, and only the end-to-end specs their changes can
+# affect (scripts/e2e-spec-map.ts). Pushes to main and manual runs play the whole suite, and the
+# live dev server follows the newest main commit whose push run passed (scripts/follow-green-main.sh).
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
+# A new push to a pull request cancels its running CI. Runs on main are never cancelled midway, so
+# each one can finish green; a run still waiting is replaced by the newer one.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -54,15 +59,56 @@ jobs:
 
       - run: npm test
 
+  # Chooses the end-to-end specs and how many shards play them. Plain Node, no npm ci.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      specs: ${{ steps.plan.outputs.specs }}
+      shards: ${{ steps.plan.outputs.shards }}
+      shard-total: ${{ steps.plan.outputs.shard-total }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Choose the specs
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            selection=$(node scripts/e2e-affected.ts --pr "origin/$BASE_REF")
+          else
+            selection='{"all":true,"because":"a run on main, or by hand, plays the whole suite"}'
+          fi
+          echo "$selection"
+          # Up to three shards; fewer when there are fewer specs, none when there are none.
+          node -e '
+            const selection = JSON.parse(process.argv[1]);
+            const specs = selection.all ? "" : selection.specs.join(" ");
+            const total = selection.all ? 3 : Math.min(3, selection.specs.length);
+            const shards = JSON.stringify(Array.from({ length: total }, (_, i) => i + 1));
+            console.log(`specs=${specs}\nshards=${shards}\nshard-total=${total}`);
+          ' "$selection" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
   # The end-to-end suite plays Lessons in real time, so it is split across parallel shards to keep
-  # each job well under its timeout. Add a shard when one gets near 15 minutes.
+  # each job well under its timeout. Raise the shard cap in `plan` when one gets near 15 minutes.
   e2e:
+    needs: plan
+    if: needs.plan.outputs.shard-total != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v5
 
@@ -73,8 +119,6 @@ jobs:
 
       - run: npm ci
 
-      # Both the Vitest browser project and the end-to-end tests need Chromium. The browser download
-      # is cached per Playwright version; the system libraries still install each run.
       - name: Read the Playwright version
         id: playwright
         run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
@@ -94,7 +138,11 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
+      # SPECS is empty for the whole suite. Unquoted on purpose: one argument per spec.
+      - name: Run the end-to-end specs
+        env:
+          SPECS: ${{ needs.plan.outputs.specs }}
+        run: npm run test:e2e -- $SPECS --shard=${{ matrix.shard }}/${{ needs.plan.outputs.shard-total }}
 
       - name: Upload the Playwright report
         if: failure()
@@ -103,3 +151,21 @@ jobs:
           name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
+
+  # The one status to wait on or require: green when check passed and e2e passed or had no specs.
+  ci-ok:
+    needs: [check, plan, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check every job
+        env:
+          RESULTS: ${{ needs.check.result }} ${{ needs.plan.result }} ${{ needs.e2e.result }}
+          SHARDS: ${{ needs.plan.outputs.shard-total }}
+        run: |
+          read -r check plan e2e <<< "$RESULTS"
+          echo "check=$check plan=$plan e2e=$e2e shards=$SHARDS"
+          [ "$check" = success ] || exit 1
+          [ "$plan" = success ] || exit 1
+          [ "$e2e" = success ] || { [ "$e2e" = skipped ] && [ "$SHARDS" = 0 ]; } || exit 1

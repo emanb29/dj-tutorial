@@ -31,3 +31,9 @@ The API reads `API_HOST` and `API_PORT` (defaults `127.0.0.1`, `5180`). It also 
 ## Dev server and remote access
 
 The owner often develops remotely. Every dev server for this project (the app, or the prototype under `prototypes/`) binds `127.0.0.1:5179` with `strictPort`, and lists `dj.example.com` in Vite's `server.allowedHosts`. A reverse proxy forwards `https://dj.example.com` to it, behind the owner's passkey or password. Only one dev server can hold port 5179 at a time.
+
+## CI and the live site
+
+CI (`.github/workflows/ci.yml`) reports one status to wait on or require: `ci-ok`. On a pull request it runs `check` (typecheck, lint, every unit and browser test) and only the end-to-end specs the diff can affect, chosen by `scripts/e2e-affected.ts` from the rules in `scripts/e2e-spec-map.ts`. A shared path (`src/audio`, `src/app/lesson`, `shared`, `server`, `e2e` helpers, config, …) or any path no rule names runs the whole suite; docs and tests alone run none. A new spec must be named in the map (a unit test fails otherwise). `node scripts/e2e-affected.ts origin/main` shows what a branch would run. Pushes to main and manual runs play the whole suite, sharded.
+
+The owner's live dev server (`dj.example.com`) runs from the main checkout at the project root, and Vite and tsx hot-reload whatever it holds. `scripts/follow-green-main.sh` fast-forwards that checkout to the newest main commit whose CI push run passed, never past it; it refuses when the tree is dirty or off main, and does nothing when already there.
