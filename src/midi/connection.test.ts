@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isControllerPort, MidiConnection, type MidiAccessLike, type MidiInputLike, type MidiMessage, type MidiOutputLike } from "./connection.ts";
+import { isControllerPort, MidiConnection, POSITION_REQUEST, type MidiAccessLike, type MidiInputLike, type MidiMessage, type MidiOutputLike } from "./connection.ts";
 
 class FakeInput extends EventTarget implements MidiInputLike {
   constructor(
@@ -31,6 +31,9 @@ class FakeOutput implements MidiOutputLike {
 class FakeAccess extends EventTarget implements MidiAccessLike {
   readonly inputs = new Map<string, FakeInput>();
   readonly outputs = new Map<string, FakeOutput>();
+  constructor(readonly sysexEnabled = false) {
+    super();
+  }
 
   plug(name: string): { input: FakeInput; output: FakeOutput } {
     const input = new FakeInput(`in-${name}`, name);
@@ -62,6 +65,61 @@ function connection(options: { permission?: PermissionState | null; deny?: boole
   });
   return { midi, access, asked: () => asked };
 }
+
+describe("the position request (SysEx, opt-in)", () => {
+  function withSysex(options: { grant: boolean; sysexPermission?: PermissionState }) {
+    const plain = new FakeAccess(false);
+    const sysex = new FakeAccess(true);
+    let sysexAsked = 0;
+    const midi = new MidiConnection({
+      requestAccess: () => Promise.resolve(plain),
+      permission: () => Promise.resolve("granted"),
+      requestSysexAccess: () => {
+        sysexAsked += 1;
+        return options.grant ? Promise.resolve(sysex) : Promise.reject(new DOMException("blocked", "NotAllowedError"));
+      },
+      sysexPermission: () => Promise.resolve(options.sysexPermission ?? "prompt"),
+    });
+    return { midi, plain, sysex, sysexAsked: () => sysexAsked };
+  }
+
+  it("is never sent without SysEx access", async () => {
+    const { midi, plain } = withSysex({ grant: false });
+    const { output } = plain.plug("DDJ-FLX4");
+    await midi.connect();
+    expect(midi.canRequestPositions).toBe(false);
+    expect(midi.requestPositions()).toBe(false);
+    expect(output.sent).toEqual([]);
+  });
+
+  it("is sent once the Learner allows SysEx; a refusal keeps the plain connection", async () => {
+    const refused = withSysex({ grant: false });
+    refused.plain.plug("DDJ-FLX4");
+    await refused.midi.connect();
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      expect(await refused.midi.enableSysex()).toBe(false);
+    } finally {
+      console.warn = warn;
+    }
+    expect(refused.midi.connected).toBe(true);
+
+    const granted = withSysex({ grant: true });
+    const { output } = granted.sysex.plug("DDJ-FLX4");
+    expect(await granted.midi.enableSysex()).toBe(true);
+    expect(granted.midi.requestPositions()).toBe(true);
+    expect(output.sent).toEqual([[...POSITION_REQUEST]]);
+  });
+
+  it("connects with SysEx by itself on a later visit when the Learner chose it and the browser kept the permission", async () => {
+    const { midi, sysex, sysexAsked } = withSysex({ grant: true, sysexPermission: "granted" });
+    sysex.plug("DDJ-FLX4");
+    await midi.connectIfAllowed({ sysex: true });
+    expect(sysexAsked()).toBe(1);
+    expect(midi.canRequestPositions).toBe(true);
+  });
+});
 
 describe("isControllerPort", () => {
   it("matches the FLX4 and the FLX4-N by name, case-insensitively", () => {

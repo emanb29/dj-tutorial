@@ -10,11 +10,21 @@ import { ControlFrame, type CaptionSide } from "./ControlFrame.tsx";
 
 export interface ControlButtonProps {
   readonly id: ControlId;
+  /** Other control ids this button stands for (ControlFrame `also`). */
+  readonly also?: readonly ControlId[];
+  /** Printed on the panel above the button (BEAT SYNC's "MASTER"). */
+  readonly topLabel?: ReactNode;
+  /** Printed on the panel under the button: what it does with SHIFT ("TEMPO RANGE"). */
+  readonly shiftLabel?: ReactNode;
+  /** Extra classes on the frame. */
+  readonly className?: string;
+  /** Something drawn inside the button after its label (a lamp). */
+  readonly children?: ReactNode;
   readonly label: ReactNode;
   readonly ariaLabel: string;
   readonly lit?: boolean;
   readonly shape?: "round" | "pill" | "pad" | "small";
-  readonly tone?: "play" | "cue" | "plain";
+  readonly tone?: "play" | "cue" | "loop" | "fx" | "plain";
   readonly keyHint?: string | null;
   readonly captionSide?: CaptionSide;
   readonly onPress: (input: CommandInput) => void;
@@ -29,7 +39,23 @@ export function keepFocusWhereItIs(event: MouseEvent): void {
   event.preventDefault();
 }
 
-export function ControlButton({ id, label, ariaLabel, lit: litNow = false, shape = "pill", tone = "plain", keyHint = null, captionSide, onPress, onRelease }: ControlButtonProps) {
+export function ControlButton({
+  id,
+  also,
+  topLabel,
+  shiftLabel,
+  className,
+  children,
+  label,
+  ariaLabel,
+  lit: litNow = false,
+  shape = "pill",
+  tone = "plain",
+  keyHint = null,
+  captionSide,
+  onPress,
+  onRelease,
+}: ControlButtonProps) {
   const { session, concealed } = useController();
   const lit = litNow && !concealed.has(id);
   const input = (event: PointerEvent | MouseEvent, device = session.devices.fromPointer("mouse")): CommandInput => ({
@@ -37,7 +63,14 @@ export function ControlButton({ id, label, ariaLabel, lit: litNow = false, shape
     eventTimeMs: event.timeStamp,
   });
   return (
-    <ControlFrame id={id} className={`button-frame button-${shape}`} keyHint={keyHint} {...(captionSide === undefined ? {} : { captionSide })}>
+    <ControlFrame
+      id={id}
+      {...(also === undefined ? {} : { also })}
+      className={`button-frame button-${shape}${className === undefined ? "" : ` ${className}`}`}
+      keyHint={keyHint}
+      {...(captionSide === undefined ? {} : { captionSide })}
+    >
+      {topLabel === undefined ? null : <span className="top-label">{topLabel}</span>}
       <button
         type="button"
         className={`hw-button tone-${tone}${lit ? " lit" : ""}`}
@@ -62,7 +95,9 @@ export function ControlButton({ id, label, ariaLabel, lit: litNow = false, shape
         }}
       >
         {label}
+        {children}
       </button>
+      {shiftLabel === undefined ? null : <span className="shift-label">{shiftLabel}</span>}
     </ControlFrame>
   );
 }

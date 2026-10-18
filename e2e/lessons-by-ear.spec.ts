@@ -93,8 +93,9 @@ test("nudge-phase: a nudge, the phase meter, then B nudged into line and held, p
   await seedPassed(page, learnerId, FIRST_ELEVEN);
   await openLesson(page, learnerId, "nudge-phase");
 
-  // SYNC stays locked off; the phase meter is still covered until its step.
-  await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-locked", "true");
+  // The phase meter is still covered until its step.
+  // SYNC withheld (BEAT SYNC B stays open for Master Tempo, held).
+  await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-own-locked", "true");
   await expect(caption(page)).toContainText("Two kicks? Turn jog B (← →)");
   await expect(page.locator('[data-control="phase-meter"]')).toHaveAttribute("data-locked", "true");
   await page.keyboard.down("ArrowRight");
@@ -127,10 +128,11 @@ test("tempo-by-ear: BPM and phase meter covered, a guess and a match in practice
   await openLesson(page, learnerId, "tempo-by-ear");
   expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B")?.grid.bpm)).toBe(BPM_B);
 
-  // Covered: no BPM to read, the phase meter held, SYNC locked.
+  // Covered: no BPM to read, the phase meter held.
   await expect(page.locator('[data-control="B.bpm"] .readout-number')).toHaveText("–");
   await expect(page.locator('[data-control="phase-meter"]')).toHaveAttribute("data-locked", "true");
-  await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-locked", "true");
+  // SYNC withheld (BEAT SYNC B stays open for Master Tempo, held).
+  await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-own-locked", "true");
 
   // The hook: one tempo move the right way (a guess), then Ready.
   await expect(caption(page)).toContainText("Faster or slower?");

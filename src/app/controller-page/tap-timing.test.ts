@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isTapPress, offsetFromClicks } from "./TapTest.tsx";
+import { isTapPress, offsetFromClicks } from "./tap-timing.ts";
 
-describe("the tap test", () => {
+describe("the Timing check's taps", () => {
   it("measures each tap from the nearest click, early negative", () => {
     // Clicks at 1.0 s, 1.6 s, 2.2 s (100 BPM).
     expect(offsetFromClicks(1.62, 1, 0.6)).toBeCloseTo(20);

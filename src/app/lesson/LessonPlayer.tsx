@@ -34,6 +34,7 @@ import type { ControllerCaption } from "../controller/context.tsx";
 import { announceTapJudged, useTapOnHardware } from "../controller/tap-feedback.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
 import { currentOutputPlan } from "../audio-output.ts";
+import { anyTimingStored, markTimingCheckOffered, timingCheckOffered, timingCorrectionMs } from "../timing-offset.ts";
 import type { SaveStatus } from "../save-queue.ts";
 import { FeedbackStrip, type TapMark } from "./FeedbackStrip.tsx";
 import { needsHeadphonesCheck } from "./headphones-check.ts";
@@ -134,6 +135,11 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   const { phase, margins } = state;
   const wording = useWording();
   const tapOnHardware = useTapOnHardware();
+  // The first tap Lesson offers the Controller page's Timing check, once per browser (read at mount only).
+  const [timingOffer, setTimingOffer] = useState(() => listed.unlocks.includes("tap") && !timingCheckOffered() && !anyTimingStored());
+  useEffect(() => {
+    if (timingOffer) markTimingCheckOffered();
+  }, [timingOffer]);
   useEffect(() => {
     learnerRef.current = learner;
     phaseRef.current = phase;
@@ -171,7 +177,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         const masterTempo = listed.masterTempo === true || unlocksAfter(passedLessons(learnerRef.current)).has("B.master-tempo");
         const plan = await currentOutputPlan();
         if (cancelled()) return;
-        engine = await createAudioEngine({ masterTempo, output: { plan, headphones: listed.headphones === true } });
+        // The Learner's input latency through this output (the Controller page's Timing check), taken off their inputs.
+        engine = await createAudioEngine({ masterTempo, output: { plan, headphones: listed.headphones === true }, inputCorrectionMs: timingCorrectionMs(plan.kind) });
         const ready = await loadLessonTrack(listed, {
           preference: trackPreference,
           signal: abort.signal,
@@ -421,6 +428,21 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         </button>
         <h1>{definition.title}</h1>
         {audioRunning ? null : <span className="lesson-audio-off">{wording === "touch" ? "Tap to start the sound" : "Click or press a key to start the sound"}</span>}
+        {timingOffer ? (
+          <span className="lesson-timing-offer">
+            <a href="/controller#timing-check">Timing check (20 s)</a> fits tap grading to your setup
+            <button
+              type="button"
+              className="btn btn-quiet"
+              aria-label="Not now"
+              onClick={() => {
+                setTimingOffer(false);
+              }}
+            >
+              ✕
+            </button>
+          </span>
+        ) : null}
         {setup.kind === "ready" ? <TrackCredit track={setup.session.track} /> : null}
       </header>
 

@@ -5,7 +5,9 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ALL_LEDS, allLedsOff, CHECKLIST, describeInput, Flx4Decoder, ledMessages, midiConnection, physicalControlOf, type MidiStatus } from "@midi";
 import { OutputPicker } from "./OutputPicker.tsx";
-import { TapTest } from "./TapTest.tsx";
+import { sysexChosen } from "../midi-sysex.ts";
+import { PositionsCard } from "./PositionsCard.tsx";
+import { TimingCheck } from "./TimingCheck.tsx";
 import "./controller-page.css";
 
 const MONITOR_LINES = 12;
@@ -30,7 +32,9 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
-    void midiConnection().connectIfAllowed();
+    void midiConnection().connectIfAllowed({ sysex: sysexChosen() });
+    // Offered from the first tap Lesson: /controller#timing-check.
+    if (window.location.hash === "#timing-check") document.getElementById("timing-check")?.scrollIntoView({ block: "start" });
   }, []);
 
   useEffect(() => {
@@ -65,6 +69,16 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
       <section aria-label="Sound output" className="hw-card">
         <h2>Where the sound goes</h2>
         <OutputPicker />
+      </section>
+
+      <section aria-label="Timing check" className="hw-card" id="timing-check">
+        <h2>Timing check</h2>
+        <TimingCheck />
+      </section>
+
+      <section aria-label="Positions" className="hw-card">
+        <h2>Where the knobs are</h2>
+        <PositionsCard connected={status.kind === "connected"} />
       </section>
 
       <section aria-label="Controls checklist" className="hw-card">
@@ -104,11 +118,6 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
             ))}
           </ol>
         )}
-      </section>
-
-      <section aria-label="Tap test" className="hw-card">
-        <h2>Tap timing</h2>
-        <TapTest />
       </section>
 
       <section aria-label="LED test" className="hw-card">

@@ -17,7 +17,7 @@ import { HardwareBridge } from "./hardware.ts";
 import { isMacPlatform } from "./input-device.ts";
 import { globalKeyAllowed, keyHintFor, type FocusedElement } from "./keymap.ts";
 import { KeyLegend } from "./KeyLegend.tsx";
-import { BeatFx, Mixer } from "./Mixer.tsx";
+import { Mixer } from "./Mixer.tsx";
 import { ControllerSession, type ControllerEngine } from "./session.ts";
 import { useTapOnHardware } from "./tap-feedback.ts";
 import { inputWording, useWording } from "./wording.ts";
@@ -31,7 +31,7 @@ export interface ControllerProps {
   readonly captions?: readonly ControllerCaption[];
   /**
    * Unlocked controls to hold locked and unlit for now, without the unlock reward when they come back
-   * (tempo-fader's listening clips: MASTER TEMPO would give the answer away).
+   * (tempo-fader's listening clips: a lit Master Tempo would give the answer away).
    */
   readonly concealed?: ReadonlySet<ControlId>;
   /** Whether the key legend starts open. The Learner can toggle it with "?" or its button. */
@@ -120,16 +120,20 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
           <DeckReadout deck="A" />
           <div className="display-centre">
             <PhaseStrip />
-            <ControlButton
-              id="tap"
-              label="TAP"
-              ariaLabel="Tap the beat"
-              shape="small"
-              keyHint={keyHintFor("tap")}
-              onPress={(input) => {
-                session.tap(input);
-              }}
-            />
+            {/* The FLX4 has no TAP button: SHIFT + BEAT ▶ is TAP (the Beat FX column), and with keys Space
+                taps. On a touchscreen, where SHIFT and BEAT ▶ at once are awkward, a TAP button stands in. */}
+            {wording !== "touch" ? null : (
+              <ControlButton
+                id="tap"
+                label="TAP"
+                ariaLabel="Tap the beat"
+                shape="small"
+                keyHint={keyHintFor("tap")}
+                onPress={(input) => {
+                  session.tap(input);
+                }}
+              />
+            )}
             <button
               type="button"
               className="legend-toggle"
@@ -141,7 +145,6 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
               Keys <kbd>?</kbd>
             </button>
           </div>
-          <BeatFx />
           <DeckReadout deck="B" />
         </header>
         <div className="controller-body">

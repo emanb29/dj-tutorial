@@ -172,3 +172,25 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Sync from controller: each mapped fader and knob, ticked once its position is known. */
+.hw-positions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0 var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.hw-positions li[data-known="true"] {
+  color: var(--play);
+}
+
+.timing-tap {
+  min-width: 120px;
+  min-height: 56px;
+  touch-action: none;
+}

@@ -17,6 +17,7 @@ import { createMeter, loadMeterProcessor, type BusMeterFrame } from "./meter.ts"
 import { startMasterRecording, type MasterRecording } from "./master-recording.ts";
 import { Mixer, type EqBand, type MixerState } from "./mixer.ts";
 import { MasterOnlyMonitor, type MonitorOutput } from "./monitor.ts";
+import { boundedCorrectionMs, correctedInputTime } from "./input-latency.ts";
 import { audioContextClock, renderTimeClock, type OutputClock } from "./output-clock.ts";
 import { createOutputRouting } from "./output-routing.ts";
 import type { OutputPlan } from "./output.ts";
@@ -45,6 +46,11 @@ export interface AudioEngineOptions {
    * AudioContext (so the change lands in a block not yet rendered) and 0 for an OfflineAudioContext.
    */
   readonly lookaheadSec: number;
+  /**
+   * The Learner's measured input latency in ms (input-latency.ts; positive = their taps land late),
+   * taken off every input's event time before it is mapped to heard time. Held to ±150 ms. Default 0.
+   */
+  readonly inputCorrectionMs: number;
 }
 
 /**
@@ -126,7 +132,9 @@ export async function createAudioEngine(options: Partial<AudioEngineOptions> = {
     const quanta = (2 * RENDER_QUANTUM) / context.sampleRate;
     const lookaheadSec = options.lookaheadSec ?? (context instanceof AudioContext ? context.baseLatency + quanta : 0);
     const stretchLeadSec = Math.max(lookaheadSec, stretch.latencySec + quanta);
-    return new AudioEngine(context, monitor, clock, stretch, { lookaheadSec, stretchLeadSec }, routing?.plan ?? null);
+    const engine = new AudioEngine(context, monitor, clock, stretch, { lookaheadSec, stretchLeadSec }, routing?.plan ?? null);
+    engine.setInputCorrection(options.inputCorrectionMs ?? 0);
+    return engine;
   } catch (error) {
     // Do not leak a context this function created.
     if (options.context === undefined && context instanceof AudioContext) await context.close();
@@ -196,6 +204,7 @@ export class AudioEngine {
   private headphoneLevel = 0.5;
   private follower: DeckId | null = null;
   private closed = false;
+  private inputCorrectionMs = 0;
 
   constructor(
     readonly context: AudioContext | OfflineAudioContext,
@@ -282,9 +291,22 @@ export class AudioEngine {
     return result.ok ? OK : result;
   }
 
+  /**
+   * The Learner's input latency (ms, positive = late), taken off each input's event time before it is
+   * mapped to heard time: the one place it is applied, so every Check and live feedback sees it.
+   */
+  setInputCorrection(correctionMs: number): void {
+    this.inputCorrectionMs = boundedCorrectionMs(correctionMs);
+  }
+
+  get inputCorrection(): number {
+    return this.inputCorrectionMs;
+  }
+
   /** Applies a command and reports it on the `command` event, accepted or not. */
   command(command: EngineCommand, input: CommandInput): Result {
-    const heard = this.clock.heardTime(input.eventTimeMs);
+    // An input's own time, less the Learner's measured latency; the engine's own changes have no event time.
+    const heard = this.clock.heardTime(input.eventTimeMs === undefined ? undefined : correctedInputTime(input.eventTimeMs, this.inputCorrectionMs));
     const heardCtx = heard.ok ? heard.ctx : null;
     const appliedCtx = this.appliedTimeFor(command);
     const loopedBefore = "deck" in command ? this.decks[command.deck].loop() !== null : false;

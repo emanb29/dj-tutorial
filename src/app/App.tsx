@@ -8,6 +8,7 @@ import { HealthIndicator } from "./HealthIndicator.tsx";
 import { loadLearner, requestCurriculum, saveLearner } from "./lesson/api-client.ts";
 import { LessonList } from "./lesson/LessonList.tsx";
 import type { TrackPreference } from "./lesson/track-loader.ts";
+import { sysexChosen } from "./midi-sysex.ts";
 import { SaveQueue, type SaveStatus } from "./save-queue.ts";
 
 // The dev playground and the Lesson player load the audio engine and the controller: separate chunks.
@@ -89,7 +90,7 @@ export function App() {
 
   // A controller allowed on an earlier visit connects by itself; the first time, the Controller page asks.
   useEffect(() => {
-    void midiConnection().connectIfAllowed();
+    void midiConnection().connectIfAllowed({ sysex: sysexChosen() });
   }, []);
 
   useEffect(() => {

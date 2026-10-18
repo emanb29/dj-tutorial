@@ -416,12 +416,6 @@ export class ControllerSession {
     this.send({ control, deck, value: !on }, { ...input, gestureEnd: true });
   }
 
-  /** The MASTER TEMPO button: SHIFT + it cycles the tempo range (6, 10, 16%), as on the DDJ-FLX4. */
-  masterTempoButton(deck: DeckId, input: CommandInput): void {
-    if (this.current.shiftHeld[deck]) this.cycleTempoRange(deck, input);
-    else this.toggle(deck, "master-tempo", input);
-  }
-
   cycleTempoRange(deck: DeckId, input: CommandInput): void {
     if (!this.isUnlocked(deckControl(deck, "tempo-range"))) return;
     const index = TEMPO_RANGES.indexOf(this.current.decks[deck].tempoRangePercent);
@@ -518,6 +512,30 @@ export class ControllerSession {
     const index = BEAT_FX_CHANNELS.indexOf(this.current.mixer.beatFx.channel);
     const next = BEAT_FX_CHANNELS[(index + 1) % BEAT_FX_CHANNELS.length] ?? "master";
     this.send({ control: "beat-fx-channel", value: next }, { ...input, gestureEnd: true });
+  }
+
+  /**
+   * The on-screen BEAT ◀ / ▶, as on the FLX4: SHIFT + BEAT ▶ is TAP (printed under it). While the
+   * Beat FX beat is still locked and TAP is open, either button taps the beat, as the hardware bridge
+   * does. Otherwise it steps the Beat FX beat.
+   */
+  beatButton(step: -1 | 1, input: CommandInput): void {
+    const shift = this.current.shiftHeld.A || this.current.shiftHeld.B;
+    if (shift && step > 0) {
+      // TAP: the Lesson's tap and a tap of the echo's tempo, as the hardware's SHIFT + BEAT ▶ is both.
+      this.tap(input);
+      this.beatFxTap(input);
+      return;
+    }
+    if (shift) {
+      this.beatFxAuto(input);
+      return;
+    }
+    if (!this.isUnlocked("beat-fx-beat") && this.isUnlocked("tap")) {
+      this.tap(input);
+      return;
+    }
+    this.beatFxBeat(step, input);
   }
 
   /** BEAT ◀ (shorter) or ▶ (longer); stops at the ends. */

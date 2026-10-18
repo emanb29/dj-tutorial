@@ -65,7 +65,7 @@ const tempoFader: LessonDefinition = {
   trackProblems: tooShort,
   hook: [
     { caption: "Slide TEMPO B", control: "B.tempo", trigger: { kind: "touch", control: "B.tempo" }, named: "TEMPO: faster or slower. The BPM shows it.", reveals: ["B.bpm"] },
-    { caption: "Press MASTER TEMPO B", control: "B.master-tempo", trigger: { kind: "touch", control: "B.master-tempo" }, named: "MASTER TEMPO on: new speed, same pitch." },
+    { caption: "Hold BEAT SYNC B: Master Tempo", control: "B.master-tempo", trigger: { kind: "touch", control: "B.master-tempo" }, named: "Master Tempo on: new speed, same pitch." },
     { caption: "Tap ±6% on B: the range", control: "B.tempo-range", trigger: { kind: "touch", control: "B.tempo-range" }, named: "Range: ±6% is fine, ±16% is wide." },
   ],
   practice: { caption: "Set B to the BPM, then R", rep: "tempo-set", window: 3, needed: 2 },

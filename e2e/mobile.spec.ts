@@ -116,7 +116,8 @@ const PHONE_REGIONS = [
   ".display-centre",
   "section.deck-A",
   ".channel-A",
-  ".mixer-centre",
+  ".mixer-left",
+  ".master-group",
   ".beat-fx",
   ".control.crossfader",
   ".deck-readout.deck-B",
@@ -433,7 +434,7 @@ test.describe("faders on a phone (412×915, touch)", () => {
   }
 });
 
-// Laptop widths around 1280: every control and region keeps to its own space (MASTER TEMPO once
+// Laptop widths around 1280: every control and region keeps to its own space (a button once
 // spilled into the hot cue pads at 1280×800).
 for (const [width, height] of [
   [1180, 800],
@@ -470,9 +471,17 @@ test.describe("Lessons 8–11 on a phone (412×915, touch)", () => {
     await expectFingerSized(page, page.locator("section.deck-B").getByRole("slider", { name: "TEMPO" }));
     await expect(page.locator('[data-control="B.bpm"]')).toBeInViewport();
     await command(page, { control: "tempo", deck: "B", value: 0.1 });
-    await expect(caption(page)).toContainText("Press MASTER TEMPO B");
-    await expectFingerSized(page, page.getByRole("button", { name: "Deck B master tempo" }));
-    await page.getByRole("button", { name: "Deck B master tempo" }).tap();
+    await expect(caption(page)).toContainText("Hold BEAT SYNC B: Master Tempo");
+    const syncB = page.getByRole("button", { name: /Deck B beat sync/ });
+    await expectFingerSized(page, syncB);
+    // A finger held on BEAT SYNC: Master Tempo, as on the FLX4.
+    await syncB.scrollIntoViewIfNeeded();
+    const box = await settledBox(page, syncB);
+    const finger = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const touchscreen = await page.context().newCDPSession(page);
+    await touchscreen.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [finger] });
+    await expect(page.getByTestId("master-tempo-lamp-B")).toHaveAttribute("data-on", "true");
+    await touchscreen.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expectFingerSized(page, page.getByRole("button", { name: /Deck B tempo range/ }));
     await page.getByRole("button", { name: /Deck B tempo range/ }).tap();
 

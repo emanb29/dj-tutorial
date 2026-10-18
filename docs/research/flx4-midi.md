@@ -125,17 +125,34 @@ controller keeps its own pad mode and sends the mode's notes.
 - **Master Tempo.** The FLX4 has **no MASTER TEMPO button and no message for it**. SHIFT + BEAT
   SYNC changes the tempo range (Mixxx maps `9n 60` to "change tempo range" [X2]). The app maps
   BEAT SYNC **long press** (`9n 5C`) to MASTER TEMPO, and shows Master Tempo on BEAT SYNC's SHIFT-layer
-  LED (`9n 60`), which the unit shows while SHIFT is held **(unverified)**. The virtual controller's
-  separate MASTER TEMPO button does not exist on the hardware.
+  LED (`9n 60`), which the unit shows while SHIFT is held **(unverified)**. The virtual controller
+  has no MASTER TEMPO button either: holding the on-screen BEAT SYNC for 800 ms toggles Master Tempo
+  (a small lamp on the button shows it), SHIFT + BEAT SYNC cycles the range.
 - **TAP.** No TAP button, but the panel prints **TAP** under BEAT ▷ as its SHIFT function (and AUTO
   under BEAT ◁); rekordbox's hardware diagram lists SHIFT + BEAT ▷ as "BPM tap mode on" and SHIFT +
   channel CUE as "Tap BPM" [cdn.rekordbox.com DDJ-FLX4_Hardware_Diagram_en.pdf]. The app's TAP is
   SHIFT + BEAT ▷ (`94 6B`) and the BROWSE press, always; plus any performance pad while the pads are
   locked and plain BEAT ◁ / ▷ while Beat FX is locked (src/app/controller/hardware.ts).
-- **Position query / keep-alive.** Mixxx sends a reverse-engineered SysEx (`F0 00 40 05 00 00 04 05
-  00 50 02 F7`) every 200 ms that "seems to double as a keep alive" and makes the unit report its
-  control positions [X1]. It is not official and needs SysEx permission, so the app does not send it:
-  soft takeover copes with unknown positions instead.
+- **Positions on connect.** AlphaTheta's list (Ver 1.0, all five pages) has **no status request, no
+  "send all controls" message and no SysEx at all**; its only notes (*1–*4) are about MIDI assign
+  notation, vinyl mode, BEAT SYNC sending on release and the FX ON/OFF LED. Nothing says the unit
+  reports positions on USB connect or port open. So officially, the FLX4 cannot tell the app where its
+  faders and knobs are until each one moves.
+  Cross-check only: Mixxx sends a reverse-engineered SysEx (`F0 00 40 05 00 00 04 05 00 50 02 F7`,
+  "reverse engineered with Wireshark") on start, commented "query the controller for current control
+  positions on startup", and every 200 ms as a keep-alive [X1]. Unofficial and **unverified here**.
+  What the app does:
+  - Every fader and knob message is remembered for the tab (`src/midi/positions.ts`); when a
+    controller appears on screen (a Lesson, the playground), each known control shows its dashed
+    pickup mark at once, and a locked control that moves shows its mark too. Soft takeover stays.
+  - The Controller page's **Sync from controller** lists the mapped faders and knobs and ticks each as
+    it reports ("wiggle each knob"), and says in one line that the FLX4 cannot report positions until
+    they move.
+  - Opt-in, after the page explains it: **Ask the FLX4 for its positions** requests
+    `requestMIDIAccess({ sysex: true })` (a second Chrome prompt) and remembers the choice. Then the
+    bridge sends the request once on connect, and fader/knob messages in the next 600 ms set unlocked
+    controls outright (no pickup); locked ones only show their marks. Refused or unsupported: nothing
+    changes. Whether the unit answers needs the real device.
 
 ## USB audio
 

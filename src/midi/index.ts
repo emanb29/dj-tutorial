@@ -3,7 +3,9 @@
 // for faders and knobs, and the jog wheel's ticks as jog gestures. The controller session
 // (src/app/controller) turns decoded input into engine commands, the same path as the screen.
 
-export { isControllerPort, MidiConnection, midiConnection } from "./connection.ts";
+export { isControllerPort, MidiConnection, midiConnection, POSITION_REQUEST } from "./connection.ts";
+export { HardwarePositions, hardwarePositions, trackPositions } from "./positions.ts";
+export type { KnownPosition } from "./positions.ts";
 export type { MidiAccessLike, MidiConnectionOptions, MidiInputLike, MidiMessage, MidiOutputLike, MidiStatus } from "./connection.ts";
 export { Flx4Decoder, FOURTEEN_BIT_MAX, physicalControlOf } from "./decoder.ts";
 export type { ContinuousName, DeckButton, Flx4Input, PadMode, PadModeButton, SharedButton } from "./decoder.ts";

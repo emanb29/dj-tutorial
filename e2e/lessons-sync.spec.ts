@@ -24,12 +24,16 @@ test("tempo-fader: three BPMs set and confirmed with Ready, then both Master Tem
   await seedPassed(page, learnerId, ["deck-basics"]);
   await openLesson(page, learnerId, "tempo-fader");
 
-  // The hook: TEMPO B, then MASTER TEMPO B, then the range. B plays from the start.
+  // The hook: TEMPO B, then Master Tempo B (BEAT SYNC held, as on the FLX4), then the range. B plays from the start.
   await expect(caption(page)).toContainText("Slide TEMPO B");
   await expect(page.locator('[data-control="B.bpm"]')).toHaveAttribute("data-locked", "false");
   await command(page, { control: "tempo", deck: "B", value: 0.2 });
-  await expect(caption(page)).toContainText("Press MASTER TEMPO B");
-  await page.getByRole("button", { name: "Deck B master tempo" }).click();
+  await expect(caption(page)).toContainText("Hold BEAT SYNC B: Master Tempo");
+  const syncB = page.getByRole("button", { name: /Deck B beat sync/ });
+  await syncB.hover();
+  await page.mouse.down();
+  await expect(page.getByTestId("master-tempo-lamp-B")).toHaveAttribute("data-on", "true");
+  await page.mouse.up();
   await expect(caption(page)).toContainText("Tap ±6% on B");
   await page.getByRole("button", { name: /Deck B tempo range/ }).click();
   await expect(caption(page)).toContainText("Set B to 126.0 BPM, then R");
@@ -51,10 +55,9 @@ test("tempo-fader: three BPMs set and confirmed with Ready, then both Master Tem
     await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").playing)).toBe(true);
     const on = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.clip?.()?.masterTempo);
     expect(on).not.toBeUndefined();
-    // The controller must not give the answer away: MASTER TEMPO B is unlit and locked while a clip plays.
-    const masterTempoB = page.locator('[data-control="B.master-tempo"]');
-    await expect(masterTempoB.locator("button")).toHaveAttribute("aria-pressed", "false");
-    await expect(masterTempoB).toHaveAttribute("data-locked", "true");
+    // The controller must not give the answer away: BEAT SYNC B (Master Tempo when held) is unlit and locked while a clip plays.
+    await expect(page.getByTestId("master-tempo-lamp-B")).toHaveAttribute("data-on", "false");
+    await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-locked", "true");
     await question.getByRole("button", { name: on === true ? "On" : "Off" }).click();
   }
 

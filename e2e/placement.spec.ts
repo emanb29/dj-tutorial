@@ -98,7 +98,8 @@ test.describe("Placement on a laptop (1440×900, keyboard)", () => {
     // blend-by-ear: the music is already playing, one caption line, the controller in full view.
     await taskPlaying(page, "blend-by-ear");
     await expect(caption(page)).toContainText("Match by ear");
-    await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-locked", "true");
+    // SYNC withheld (BEAT SYNC B stays open for Master Tempo, held).
+    await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-own-locked", "true");
     await expect(page.locator('[data-control="B.tempo"]')).toHaveAttribute("data-locked", "false");
     await page.waitForTimeout(600);
     await page.screenshot({ path: `${SHOTS}/desktop-2-task.png` });

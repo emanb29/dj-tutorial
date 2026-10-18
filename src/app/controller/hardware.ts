@@ -20,9 +20,15 @@
 //   CH2 = deck B, CH1&CH2 = MASTER, the one place both channels go through). FX SELECT stays on ECHO, the
 //   only effect in v1; 4 BEAT/EXIT's SHIFT layer (RELOOP) and the pad modes other than HOT CUE are out
 //   of v1: they are refused, so the screen shows the control is not there yet.
+// - Positions: AlphaTheta's list has no way to ask where the faders and knobs are. A fader or knob that
+//   has moved in this tab (src/midi/positions.ts) shows its dashed pickup mark as soon as a controller
+//   appears on screen; a locked one moved shows the mark too. When the Learner allowed SysEx, the bridge
+//   sends the unofficial position request on connect, and what the unit answers within
+//   POSITION_SYNC_MS sets the unlocked controls outright (no pickup): the screen starts where the
+//   hardware is.
 
 import type { BeatFxChannel, DeckId, EngineEvents } from "@audio";
-import { allLedsOff, Flx4Decoder, JogDriver, ledMessages, levelMeterMessage, SoftTakeover, type ContinuousName, type Flx4Input, type LedId, type MidiMessage } from "@midi";
+import { allLedsOff, Flx4Decoder, hardwarePositions, JogDriver, ledMessages, levelMeterMessage, SoftTakeover, type ContinuousName, type Flx4Input, type KnownPosition, type LedId, type MidiMessage } from "@midi";
 import { deckControl, type ControlId } from "./control-ids.ts";
 import { onTapJudged, publishTapOnHardware } from "./tap-feedback.ts";
 import { meterFraction } from "./displays.tsx";
@@ -35,7 +41,12 @@ export interface HardwarePort {
   send(messages: readonly (readonly number[])[]): boolean;
   subscribe(listener: () => void): () => void;
   readonly connected: boolean;
+  /** Sends the unofficial position request (SysEx); false when not allowed. */
+  requestPositions?(): boolean;
 }
+
+/** How long after the position request the unit's answers set the controls outright. */
+export const POSITION_SYNC_MS = 600;
 
 /**
  * The hardware jog: one revolution searches 1.8 s, as a record at 33⅓ rpm does, so 720 ticks land
@@ -92,6 +103,12 @@ const SHARED_CONTINUOUS: Partial<Record<ContinuousName, "crossfader" | "master-l
 /** The Beat FX CH SELECT lever's positions, as the app's channels. */
 const FX_LEVER: Readonly<Record<"1" | "2" | "1&2", BeatFxChannel>> = { "1": "A", "2": "B", "1&2": "master" };
 
+/** Every fader and knob the app maps, as the decoder would report it (for positions known before a move). */
+const CONTINUOUS_INPUTS: readonly Extract<Flx4Input, { kind: "continuous" }>[] = [
+  ...DECKS.flatMap((deck) => (Object.keys(DECK_CONTINUOUS) as ContinuousName[]).map((control) => ({ kind: "continuous" as const, control, deck, raw: 0, value: 0 }))),
+  ...(Object.keys(SHARED_CONTINUOUS) as ContinuousName[]).map((control) => ({ kind: "continuous" as const, control, deck: null, raw: 0, value: 0 })),
+];
+
 /** The app control a hardware fader or knob drives, or null (MIC LEVEL). */
 export function continuousTarget(input: Extract<Flx4Input, { kind: "continuous" }>): ContinuousControlId | null {
   if (input.deck !== null) {
@@ -134,6 +151,10 @@ export interface HardwareBridgeOptions {
   readonly tapJudged?: (listener: (onBeat: boolean) => void) => () => void;
   /** Where the hardware's TAP control is named for captions (null: none). Defaults to the shared one. */
   readonly publishTap?: (name: string | null) => void;
+  /** Where the faders and knobs were last seen (physicalControlOf ids). Defaults to the shared record. */
+  readonly positions?: { get(id: string): KnownPosition | null };
+  /** The performance.now() clock. */
+  readonly now?: () => number;
 }
 
 const browserSchedule: Schedule = (run, delayMs) => {
@@ -169,6 +190,10 @@ export class HardwareBridge {
   /** The pad the last tap came from, to blink when that tap is judged on the beat. */
   private tapPad: LedId | null = null;
   private readonly blinking = new Set<LedId>();
+  private readonly positions: { get(id: string): KnownPosition | null };
+  private readonly now: () => number;
+  /** Until this time (performance.now() ms) the unit's answers to the position request set controls outright. */
+  private syncUntilMs = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly session: ControllerSession,
@@ -180,6 +205,8 @@ export class HardwareBridge {
     this.lessonKey = options.lessonKey ?? pressLessonKey;
     this.tapJudged = options.tapJudged ?? onTapJudged;
     this.publishTap = options.publishTap ?? publishTapOnHardware;
+    this.positions = options.positions ?? hardwarePositions();
+    this.now = options.now ?? (() => performance.now());
     const jog = (deck: DeckId) =>
       new JogDriver({
         begin: () => this.session.beginJog(deck, "midi", HARDWARE_JOG),
@@ -359,8 +386,22 @@ export class HardwareBridge {
   private continuous(input: Extract<Flx4Input, { kind: "continuous" }>, timeMs: number): void {
     const id = continuousTarget(input);
     if (id === null) return;
-    if (!this.unlockedOrRefuse(id)) return;
+    const syncing = timeMs <= this.syncUntilMs;
     this.moved.add(id);
+    if (!this.session.isUnlocked(id)) {
+      // Locked: nothing changes, but the screen shows where the hardware is (and, when touched, "not yet").
+      if (!syncing) this.session.refuse(id);
+      this.takeover.observe(id, input.value);
+      this.showPickup(id);
+      return;
+    }
+    if (syncing) {
+      // The unit's answer to the position request: the screen starts where the hardware is.
+      this.takeover.move(id, input.value, input.value);
+      this.session.hardwareValue(id, this.appValue(id, input.value), timeMs);
+      this.session.setPickup(id, null);
+      return;
+    }
     const spec = continuousSpec(id);
     const move = this.takeover.move(id, input.value, this.normalized(id));
     if (move.kind === "send") {
@@ -420,6 +461,8 @@ export class HardwareBridge {
       this.sentMeters.clear();
       this.port.send(allLedsOff());
       this.refreshLeds();
+      this.seedKnownPositions();
+      if (this.port.requestPositions?.() === true) this.syncUntilMs = this.now() + POSITION_SYNC_MS;
     }
     if (!connected && this.wasConnected) this.letGo();
     this.wasConnected = connected;
@@ -441,13 +484,28 @@ export class HardwareBridge {
     this.moved.clear();
   }
 
+  /** The dashed mark where the hardware is, until it has picked up the value (none once caught). */
+  private showPickup(id: ContinuousControlId): void {
+    const status = this.takeover.status(id, this.normalized(id));
+    const spec = continuousSpec(id);
+    this.session.setPickup(id, status.caught || status.hardware === null ? null : spec.min + status.hardware * (spec.max - spec.min));
+  }
+
+  /** Faders and knobs already seen in this tab: their pickup marks show before they move again. */
+  private seedKnownPositions(): void {
+    for (const input of CONTINUOUS_INPUTS) {
+      const id = continuousTarget(input);
+      const known = this.positions.get(input.deck === null ? input.control : `${input.deck}.${input.control}`);
+      if (id === null || known === null) continue;
+      this.takeover.observe(id, known.value);
+      this.moved.add(id);
+      this.showPickup(id);
+    }
+  }
+
   private sessionChanged(): void {
     // The value moved by something else (the screen, a Lesson): the hardware may have to pick it up again.
-    for (const id of this.moved) {
-      const status = this.takeover.status(id, this.normalized(id));
-      const spec = continuousSpec(id);
-      this.session.setPickup(id, status.caught || status.hardware === null ? null : spec.min + status.hardware * (spec.max - spec.min));
-    }
+    for (const id of this.moved) this.showPickup(id);
     const unlockedNow = new Set(LEDS.filter((led) => this.ledUnlocked(led)));
     for (const led of unlockedNow) if (!this.unlockedLeds.has(led)) this.flash(led);
     this.unlockedLeds = unlockedNow;

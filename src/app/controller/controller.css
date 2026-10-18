@@ -178,7 +178,7 @@
 
 .controller-display {
   display: grid;
-  grid-template-columns: 1fr auto auto 1fr;
+  grid-template-columns: 1fr auto 1fr;
   gap: 12px;
   align-items: stretch;
 }
@@ -343,119 +343,6 @@
   border-color: var(--accent);
 }
 
-/* ---- body ----------------------------------------------------------------------------------- */
-
-.controller-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: stretch;
-}
-
-.deck,
-.mixer {
-  border: 1px solid var(--panel-edge);
-  border-radius: 14px;
-  background: var(--panel);
-  padding: 12px;
-}
-
-.deck {
-  display: flex;
-  gap: 12px;
-}
-
-.deck-B {
-  flex-direction: row-reverse;
-}
-
-.deck-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-/* pads */
-
-.pads {
-  width: 100%;
-  max-width: 340px;
-}
-
-.pad-mode {
-  align-self: flex-start;
-  padding: 2px 8px;
-  border-radius: 4px;
-  color: #1b1c1f;
-  background: var(--pad);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.pad-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  width: 100%;
-}
-
-.pad {
-  position: relative;
-  height: clamp(30px, 5vh, 48px);
-  border: 1px solid #44464d;
-  border-radius: 6px;
-  color: var(--ink-dim);
-  background: #2c2e33;
-  font: 700 12px var(--font-sans);
-  cursor: pointer;
-  touch-action: none;
-}
-
-.pad.set {
-  color: #1b1c1f;
-  background: var(--pad);
-  border-color: var(--pad);
-}
-
-.pad.erasing {
-  background: repeating-linear-gradient(45deg, var(--pad) 0 6px, #2c2e33 6px 12px);
-}
-
-.pad:active {
-  transform: translateY(1px);
-  filter: brightness(1.3);
-}
-
-.pad-key {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-}
-
-/* loop buttons: LOOP IN, LOOP OUT, 4 BEAT/EXIT, in a row above the pads */
-
-.loop-row {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-  max-width: 340px;
-}
-
-.loop-row > .control {
-  flex: 1;
-  min-width: 0;
-}
-
-.loop-row .hw-button {
-  width: 100%;
-  min-width: 0;
-  padding-inline: 4px;
-  font-size: 11px;
-}
-
 /* jog */
 
 .jog-surface {
@@ -511,26 +398,6 @@
   font-size: 16px;
   font-weight: 800;
   pointer-events: none;
-}
-
-/* transport */
-
-.transport {
-  display: grid;
-  grid-template-columns: auto auto;
-  grid-template-rows: auto auto;
-  gap: 8px 14px;
-  align-items: center;
-  align-self: flex-start;
-}
-
-.deck-B .transport {
-  align-self: flex-end;
-}
-
-.transport > :first-child {
-  grid-column: 1 / -1;
-  justify-self: start;
 }
 
 .hw-button {
@@ -606,46 +473,6 @@
 
 .headphone-icon {
   vertical-align: -1px;
-}
-
-/* tempo column */
-
-.tempo-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 92px;
-}
-
-/* The column's buttons keep to its width (MASTER TEMPO wraps onto two lines) instead of spilling
-   into the hot cue pads beside it. */
-.tempo-column .hw-button {
-  width: 100%;
-  min-width: 0;
-  padding-inline: 4px;
-  white-space: normal;
-}
-
-.range-readout {
-  min-width: 64px;
-  padding: 3px 8px;
-  border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  color: var(--ink);
-  background: #101114;
-  font: 700 12px var(--font-mono);
-  cursor: pointer;
-}
-
-.tempo-fader {
-  flex: 1;
-}
-
-.tempo-fader .fader-hit {
-  flex: 1;
-  height: auto;
-  min-height: var(--fader-length);
 }
 
 /* faders */
@@ -819,55 +646,439 @@
   outline: 2px solid var(--accent);
 }
 
-/* mixer */
+/* ---- body: the DDJ-FLX4's panel ------------------------------------------------------------- */
 
-.mixer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.mixer-channels {
+.controller-body {
   display: grid;
-  grid-template-columns: auto auto auto;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
 }
 
-.channel {
+.deck,
+.mixer {
+  border: 1px solid var(--panel-edge);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+/* Printed on the panel: a name above a button, and its SHIFT meaning under it (boxed, as on the FLX4). */
+.top-label,
+.shift-label,
+.transport-label {
+  color: var(--ink-dim);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.shift-label {
+  padding: 0 3px;
+  border: 1px solid #50535a;
+  border-radius: 2px;
+}
+
+.button-frame,
+.placeholder {
+  gap: 3px;
+}
+
+/* A part of the FLX4 the app does not use yet: drawn in place, dimmed and inert. */
+.placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
+  opacity: 0.22;
+  filter: grayscale(1);
+  pointer-events: none;
 }
 
-.fader-and-meter {
+.placeholder .hw-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.placeholder.button-small .hw-button {
+  min-width: 44px;
+  min-height: 26px;
+  padding: 3px 8px;
+}
+
+.placeholder.button-round .hw-button {
+  width: 40px;
+  height: 40px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 7px;
+  white-space: normal;
+  text-align: center;
+}
+
+.hw-button {
+  position: relative;
+}
+
+/* ---- deck ----------------------------------------------------------------------------------- */
+
+/* Both decks the same way round, as on the hardware: the top row across, then the jog wheel and the
+   pads, with the TEMPO fader at the far right. */
+.deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "top top"
+    "main tempo";
+  grid-template-rows: auto 1fr;
+  gap: 8px 10px;
+}
+
+.deck-top {
+  grid-area: top;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.loop-row {
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  margin-top: 6px;
 }
 
-.channel-B .fader-and-meter {
-  flex-direction: row-reverse;
+.loop-row .hw-button,
+.sync-button .hw-button {
+  min-width: 40px;
+  min-height: 30px;
+  padding: 4px 5px;
+  font-size: 10px;
 }
 
-.mixer-centre {
+.tone-loop {
+  border-color: var(--cue);
+  color: var(--cue);
+}
+
+.tone-loop.lit {
+  border-color: var(--cue);
+  color: #2a1700;
+  background: var(--cue);
+}
+
+.cue-loop-call {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 2px;
+}
+
+.cue-loop-call > .top-label {
+  opacity: 0.45;
+}
+
+.cue-loop-call-buttons {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.placeholder.arrow .hw-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.loop-word {
+  padding-bottom: 20px;
+  color: var(--ink-dim);
+  font-size: 8px;
+  font-weight: 700;
+  opacity: 0.45;
+}
+
+.sync-button .hw-button {
+  padding-inline: 8px;
+}
+
+/* Master Tempo (BEAT SYNC held): a small lamp, since the FLX4 has no button of its own for it. */
+.master-tempo-lamp {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4a4c53;
+}
+
+.master-tempo-lamp[data-on="true"] {
+  background: var(--play);
+  box-shadow: 0 0 6px var(--play);
+}
+
+.hw-button.lit .master-tempo-lamp[data-on="false"] {
+  background: color-mix(in srgb, var(--accent-ink) 35%, transparent);
+}
+
+.deck-main {
+  grid-area: main;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "shift jog"
+    "transport pads";
+  grid-template-rows: 1fr auto;
+  gap: 8px 12px;
+  align-items: end;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+/* The jog wheel keeps to the room beside CUE and PLAY (a narrow laptop window shrinks it). */
+.deck-main .jog-surface {
+  width: min(var(--jog), calc(100cqi - 76px));
+  height: min(var(--jog), calc(100cqi - 76px));
+}
+
+.deck-shift {
+  grid-area: shift;
+  justify-self: start;
+}
+
+.deck-main > .jog {
+  grid-area: jog;
+  justify-self: center;
+  align-self: center;
+}
+
+.transport {
+  grid-area: transport;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.transport-label {
+  margin-top: -2px;
+}
+
+/* pads: the four pad-mode buttons over 8 pads (HOT CUE is the only mode the app has) */
+
+.pads {
+  grid-area: pads;
+  align-items: stretch;
+  width: 100%;
+  max-width: 340px;
+  justify-self: center;
+}
+
+.pad-modes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pad-mode-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pad-mode,
+.placeholder.button-pad-mode .hw-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 2px;
+  border: 1px solid #55585f;
+  border-radius: 3px;
+  color: var(--ink-dim);
+  background: #2c2e33;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.pad-mode.lit {
+  border-color: var(--pad);
+  color: #1b1c1f;
+  background: var(--pad);
+}
+
+.placeholder.button-pad-mode {
+  min-width: 0;
+}
+
+.pad-modes .shift-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 7.5px;
+}
+
+.pad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 100%;
+}
+
+.pad {
+  position: relative;
+  height: clamp(30px, 5vh, 48px);
+  border: 1px solid #44464d;
+  border-radius: 6px;
+  color: var(--ink-dim);
+  background: #2c2e33;
+  font: 700 12px var(--font-sans);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pad.set {
+  color: #1b1c1f;
+  background: var(--pad);
+  border-color: var(--pad);
+}
+
+.pad.erasing {
+  background: repeating-linear-gradient(45deg, var(--pad) 0 6px, #2c2e33 6px 12px);
+}
+
+.pad:active {
+  transform: translateY(1px);
+  filter: brightness(1.3);
+}
+
+.pad-key {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+}
+
+/* the TEMPO fader, beside the pads and the lower half of the jog wheel, with the range above it */
+
+.tempo-column {
+  grid-area: tempo;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 56px;
+  padding-top: calc(var(--jog) * 0.3);
+}
+
+.range-readout {
+  min-width: 52px;
+  padding: 3px 6px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  color: var(--ink);
+  background: #101114;
+  font: 700 11px var(--font-mono);
+  cursor: pointer;
+}
+
+.tempo-fader {
+  flex: 1;
+}
+
+.tempo-fader .fader-hit {
+  flex: 1;
+  height: auto;
+  min-height: var(--fader-length);
+}
+
+/* ---- mixer ---------------------------------------------------------------------------------- */
+
+.mixer {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "left load load right"
+    "left ch-a ch-b right"
+    "left xf xf right";
+  gap: 4px 10px;
+}
+
+.mixer-left,
+.mixer-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mixer-left {
+  grid-area: left;
+  justify-content: space-between;
   gap: 8px;
-  padding: 0 4px;
-  border-inline: 1px solid var(--panel-edge);
-  padding-inline: 12px;
+  padding: 18px 10px 4px 0;
+  border-right: 1px solid var(--panel-edge);
+}
+
+.mixer-right {
+  grid-area: right;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--panel-edge);
+}
+
+.mixer-load {
+  grid-area: load;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-inline: 8px;
+}
+
+.mixer-load .load .hw-button {
+  min-width: 40px;
+  min-height: 18px;
+  padding: 1px 6px;
+  font-size: 8px;
+}
+
+.mixer-load .browse .knob-hit,
+.mixer-load .browse .knob-cap {
+  width: 22px;
+  height: 22px;
+}
+
+.mixer-load .browse {
+  flex-direction: row;
+  gap: 4px;
+}
+
+.mixer-load .browse .control-label {
+  font-size: 8px;
+}
+
+.placeholder.smart .hw-button {
+  border-color: var(--cue);
 }
 
 .headphones-group {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  margin-top: auto;
+  gap: 4px;
 }
 
 .group-label {
@@ -878,47 +1089,174 @@
 
 /* Where the sound goes (split cue, the FLX4, or two devices): never a surprise. */
 .output-line {
-  max-width: 120px;
+  max-width: 80px;
   color: var(--ink-dim);
-  font-size: 10px;
+  font-size: 9.5px;
   letter-spacing: 0;
   line-height: 1.25;
   text-align: center;
 }
 
+/* A channel: the knobs in a column, the level meter on the inner side (between the channels, as on
+   the FLX4), then headphone CUE and the channel fader. */
+.channel {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 0 4px;
+}
+
+.channel-A {
+  grid-area: ch-a;
+  grid-template-columns: auto 12px;
+}
+
+.channel-B {
+  grid-area: ch-b;
+  grid-template-columns: 12px auto;
+}
+
+.channel > * {
+  grid-column: 1;
+}
+
+.channel-B > * {
+  grid-column: 2;
+}
+
+.channel > [data-control$=".trim"] {
+  grid-row: 1;
+}
+
+.channel > [data-control$=".eq-high"] {
+  grid-row: 2;
+}
+
+.channel > [data-control$=".eq-mid"] {
+  grid-row: 3;
+}
+
+.channel > [data-control$=".eq-low"] {
+  grid-row: 4;
+}
+
+.channel > [data-control$=".filter"] {
+  grid-row: 5;
+}
+
+.channel > [data-control$=".headphone-cue"] {
+  grid-row: 6;
+  margin-top: 2px;
+}
+
+.channel > [data-control$=".channel-fader"] {
+  grid-row: 7;
+}
+
+.channel-A > .channel-meter {
+  grid-column: 2;
+  grid-row: 2 / span 3;
+}
+
+.channel-B > .channel-meter {
+  grid-column: 1;
+  grid-row: 2 / span 3;
+}
+
+.channel-meter .control-label {
+  display: none;
+}
+
+.channel .button-small .hw-button {
+  min-width: 52px;
+  min-height: 26px;
+  padding: 3px 6px;
+}
+
 .crossfader {
+  grid-area: xf;
   width: 100%;
 }
 
 .crossfader .fader-hit {
-  width: min(320px, 100%);
+  width: min(240px, 100%);
+  height: 40px;
 }
 
-/* Beat FX: one compact row in the display row, over the mixer (on a phone, a panel of its own). */
-
-.beat-fx {
+.master-group {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px;
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  background: var(--panel);
 }
 
-.beat-fx .control-label {
+.master-group .meter-body {
+  width: 8px;
+  height: calc(var(--knob-hit) + 10px);
+}
+
+.master-group .control-label {
+  white-space: nowrap;
   font-size: 9px;
 }
 
-.fx-select {
+.master-group .meter .control-label {
+  display: none;
+}
+
+.master-cue .hw-button {
+  min-width: 40px;
+}
+
+/* Beat FX, down the right column as on the FLX4. */
+
+.beat-fx {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 6px;
+}
+
+.beat-fx-title {
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.beat-fx .control-label {
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.fx-lever .hw-button {
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 4px;
+}
+
+.lever {
+  display: flex;
+  gap: 3px;
+}
+
+.lever-position {
+  padding: 1px 3px;
+  border-radius: 2px;
+  color: var(--ink-dim);
+  font-size: 9px;
+}
+
+.lever-position[data-on="true"] {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.fx-select {
+  gap: 1px;
 }
 
 .fx-name {
   color: var(--accent);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -929,23 +1267,48 @@
 }
 
 .fx-beat {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-}
-
-.fx-beat .hw-button {
-  min-width: 34px;
-  padding-inline: 6px;
+  gap: 2px;
 }
 
 .fx-beat-value {
-  min-width: 30px;
-  font-weight: 700;
-  text-align: center;
+  color: var(--ink);
+  font-size: 10px;
 }
 
+.fx-beat-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.fx-beat-step-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.fx-beat .hw-button {
+  min-width: 30px;
+  min-height: 24px;
+  padding: 2px 6px;
+}
+
+.beat-fx .button-round .hw-button {
+  width: 40px;
+  height: 40px;
+  font-size: 8px;
+}
+
+.tone-fx {
+  border-color: #f2c94c;
+  color: #f2c94c;
+}
+
+.tone-fx.lit {
+  border-color: #f2c94c;
+  color: #1b1c1f;
+  background: #f2c94c;
+}
 /* meters */
 
 .meter-body {
@@ -966,11 +1329,6 @@
 
 .meter-unlit {
   opacity: 0.16;
-}
-
-.mixer-centre .meter-body {
-  width: 14px;
-  height: calc(var(--fader-length) * 0.75);
 }
 
 /* key legend */
@@ -1037,7 +1395,10 @@
     --knob-hit: max(44px, clamp(36px, 5.4vh, 54px));
   }
   .hw-button,
-  .button-small .hw-button {
+  .button-small .hw-button,
+  .loop-row .hw-button,
+  .sync-button .hw-button,
+  .channel .button-small .hw-button {
     min-height: 44px;
   }
   .pad {
@@ -1047,30 +1408,76 @@
     /* A finger-sized target: the tempo-fader Lesson asks for it. */
     min-height: 44px;
   }
-  .fx-beat .hw-button {
+  .fx-beat .hw-button,
+  .fx-lever .hw-button {
     min-width: 44px;
     min-height: 44px;
   }
-  .beat-fx .knob-small .knob-hit {
+  .beat-fx .knob-small .knob-hit,
+  .beat-fx .button-round .hw-button {
     width: 44px;
     height: 44px;
   }
+  .loop-row .hw-button,
+  .sync-button .hw-button {
+    min-width: 44px;
+  }
+  .crossfader .fader-hit {
+    height: 48px;
+  }
 }
 
-/* Mid-width (a phone on its side, a small laptop window): the same three columns, tightened so the
-   jog wheels, pads and tempo columns fit the decks instead of spilling under the mixer. */
+/* A deck narrower than the desktop's (a small laptop window, a phone): the pads go under the jog
+   wheel at full width, with SHIFT, CUE and PLAY in a row under them, so the pads stay finger-sized. */
+.deck {
+  container: deck / inline-size;
+}
+
+@container deck (max-width: 320px) {
+  .deck-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "jog"
+      "shift"
+      "pads"
+      "transport";
+    align-items: center;
+  }
+  .deck-main > .jog {
+    justify-self: center;
+  }
+  .deck-main .jog-surface {
+    width: min(var(--jog), 100cqi);
+    height: min(var(--jog), 100cqi);
+  }
+  .pads {
+    max-width: none;
+  }
+  .transport {
+    flex-direction: row;
+    justify-content: center;
+    gap: 12px;
+  }
+  .transport-label {
+    display: none;
+  }
+  .deck-shift {
+    justify-self: start;
+  }
+  .deck-top .cue-loop-call {
+    display: none;
+  }
+  .tempo-column {
+    width: 52px;
+  }
+}
+
+/* Mid-width (a phone on its side, a small laptop window): the same three columns, tightened. The
+   mixer drops its placeholders so the decks keep their room. */
 @media (min-width: 880px) and (max-width: 1179px) {
   .controller {
     --fader-length: clamp(100px, 17vh, 160px);
-  }
-  /* Beat FX on a line of its own under the readouts: four columns would squeeze them. */
-  .controller-display {
-    grid-template-columns: 1fr auto 1fr;
-  }
-  .beat-fx {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    justify-self: center;
   }
   .controller-body {
     gap: 8px;
@@ -1079,28 +1486,19 @@
   .mixer {
     padding: 8px;
   }
-  .deck {
-    gap: 8px;
+  .mixer {
+    gap: 4px 6px;
   }
-  .tempo-column {
-    width: 64px;
+  .mixer-left > .placeholder,
+  .mixer-load {
+    display: none;
   }
-  .deck-main {
-    container-type: inline-size;
-    min-width: 0;
+  .mixer-left {
+    justify-content: center;
+    padding-right: 6px;
   }
-  .jog-surface {
-    width: min(var(--jog), 100cqi);
-    height: min(var(--jog), 100cqi);
-  }
-  .pads {
-    max-width: none;
-  }
-  .mixer-channels {
-    gap: 8px;
-  }
-  .mixer-centre {
-    padding-inline: 8px;
+  .mixer-right {
+    padding-left: 6px;
   }
   .display-centre .phase-body {
     width: 110px;
@@ -1124,11 +1522,11 @@
   }
 }
 
-/* Narrow (a phone upright): the FLX4 cut in half and stacked. The left half (deck A beside its
-   mixer channel) on top, the mixer's centre and the crossfader in the middle, the right half
-   (channel B beside deck B) below. Deck A's PLAY and channel fader sit side by side, as on the
-   hardware. The display row, body and mixer stop being boxes (display: contents) so their parts
-   can take places in one grid. */
+/* Narrow (a phone upright): the FLX4 cut in half and stacked. It needn't mirror the hardware: the left
+   half (deck A beside its mixer channel) on top, the headphone and master knobs, Beat FX and the
+   crossfader in the middle, the right half (channel B beside deck B) below. Placeholders are left out.
+   The display row, body and mixer stop being boxes (display: contents) so their parts can take places
+   in one grid. */
 @media (max-width: 879px) {
   .controller {
     --knob-hit: 44px;
@@ -1142,7 +1540,7 @@
       "readout-a readout-a readout-a"
       "display-centre display-centre display-centre"
       "deck-a deck-a channel-a"
-      "mixer-centre mixer-centre mixer-centre"
+      "mixer-left mixer-left master"
       "beat-fx beat-fx beat-fx"
       "crossfader crossfader crossfader"
       "readout-b readout-b readout-b"
@@ -1155,8 +1553,16 @@
   .controller-display,
   .controller-body,
   .mixer,
-  .mixer-channels {
+  .mixer-right {
     display: contents;
+  }
+
+  .placeholder,
+  .mixer-load,
+  .cue-loop-call,
+  .shift-label,
+  .top-label {
+    display: none;
   }
 
   .controller-display > .deck-readout.deck-A {
@@ -1181,15 +1587,18 @@
   .channel-B {
     grid-area: channel-b;
   }
-  .mixer-centre {
-    grid-area: mixer-centre;
+  .mixer-left {
+    grid-area: mixer-left;
+  }
+  .master-group {
+    grid-area: master;
   }
   .crossfader {
     grid-area: crossfader;
   }
   .beat-fx {
     grid-area: beat-fx;
-    flex-wrap: wrap;
+    flex-flow: row wrap;
     justify-content: center;
     gap: 6px 10px;
   }
@@ -1219,7 +1628,8 @@
 
   /* Each half's parts are panels of their own now that the mixer box is gone. */
   .channel,
-  .mixer-centre,
+  .mixer-left,
+  .master-group,
   .beat-fx,
   .crossfader {
     border: 1px solid var(--panel-edge);
@@ -1227,30 +1637,26 @@
     background: var(--panel);
   }
   .channel {
-    justify-content: space-between;
+    align-content: space-between;
     padding: 8px 6px;
   }
-  .mixer-centre {
+  .mixer-left {
     flex-direction: row;
-    flex-wrap: wrap;
     justify-content: center;
-    align-items: center;
-    gap: 8px 20px;
     padding: 8px 12px;
-  }
-  .mixer-centre .meter-body {
-    height: 64px;
   }
   .headphones-group {
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: center;
     gap: 2px 12px;
-    margin-top: 0;
   }
-  .headphones-group .group-label {
-    flex-basis: 100%;
-    text-align: center;
+  .master-group {
+    justify-content: center;
+    padding: 8px;
+  }
+  .master-group .meter-body {
+    height: 64px;
   }
   .crossfader {
     padding: 8px 12px 6px;
@@ -1258,50 +1664,45 @@
   .beat-fx {
     padding: 8px 12px;
   }
+  .beat-fx-title {
+    margin-top: 0;
+  }
   .crossfader .fader-hit {
     width: 100%;
   }
 
   .deck {
-    gap: 8px;
+    gap: 6px;
     padding: 8px;
   }
-  .tempo-column {
-    width: 60px;
+  .deck-top {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
-  .tempo-column .hw-button {
-    width: 60px;
-    min-width: 0;
-    padding-inline: 4px;
-    font-size: 10px;
-    white-space: normal;
+  .loop-row .hw-button,
+  .sync-button .hw-button {
+    padding-inline: 6px;
+  }
+  .pad-grid {
+    gap: 3px;
+  }
+  .tempo-column {
+    width: 44px;
   }
   .range-readout {
-    width: 60px;
+    width: 52px;
     min-width: 0;
     padding-inline: 4px;
-  }
-  .deck-main {
-    container-type: inline-size;
-    min-width: 0;
-    justify-content: flex-start;
-    gap: 10px;
-  }
-  .pads {
-    max-width: none;
-  }
-  .jog-surface {
-    width: min(var(--jog), 100cqi);
-    height: min(var(--jog), 100cqi);
   }
   .button-round .hw-button {
     width: 56px;
     height: 56px;
   }
-  .transport,
-  .deck-B .transport {
-    gap: 8px 12px;
-    align-self: center;
+  .tempo-column {
+    padding-top: 0;
+  }
+  .pad-modes {
+    display: flex;
   }
 }
 
@@ -1390,3 +1791,4 @@
     animation: none;
   }
 }
+

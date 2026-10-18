@@ -244,6 +244,24 @@ describe("loops and Beat FX", () => {
     ]);
   });
 
+  it("the on-screen BEAT ▶ with SHIFT taps the beat (and the Beat FX tempo), as printed on the FLX4", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine);
+    controller.beatButton(1, { device: "mouse" });
+    controller.setShift("B", true);
+    controller.beatButton(1, { device: "mouse" });
+    controller.beatButton(-1, { device: "mouse" });
+    expect(sent.map((entry) => entry.command)).toEqual([{ control: "beat-fx-beats", value: 2 }, { control: "tap" }]);
+  });
+
+  it("while Beat FX is locked and TAP is open, either on-screen BEAT button taps the beat", () => {
+    const { engine, sent } = fakeEngine();
+    const { session: controller } = session(engine, new Set<ControlId>(["tap"]));
+    controller.beatButton(-1, { device: "touch" });
+    controller.beatButton(1, { device: "touch" });
+    expect(sent.map((entry) => entry.command)).toEqual([{ control: "tap" }, { control: "tap" }]);
+  });
+
   it("leaves loop and Beat FX keys to the browser while their controls are locked", () => {
     const { engine, sent } = fakeEngine();
     const { session: controller } = session(engine, new Set<ControlId>(["A.play"]));

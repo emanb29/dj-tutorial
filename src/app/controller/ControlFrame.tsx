@@ -10,6 +10,12 @@ export type CaptionSide = "above" | "below" | "left" | "right";
 
 interface ControlFrameProps {
   readonly id: ControlId;
+  /**
+   * Other control ids this part stands for (the FLX4 puts several on one button: BEAT SYNC is also
+   * MASTER TEMPO when held and TEMPO RANGE with SHIFT). The part is unlocked when any of them is, and
+   * shows their pulse and caption.
+   */
+  readonly also?: readonly ControlId[];
   readonly label?: string;
   readonly className?: string;
   /** Key cap shown while the key legend is open. */
@@ -19,12 +25,16 @@ interface ControlFrameProps {
 }
 
 const UNLOCK_CLASS = "just-unlocked";
+const NONE: readonly ControlId[] = [];
 
-export function ControlFrame({ id, label, className, keyHint = null, captionSide = "below", children }: ControlFrameProps) {
+export function ControlFrame({ id, also = NONE, label, className, keyHint = null, captionSide = "below", children }: ControlFrameProps) {
   const { unlocks, concealed, pulse, captions, legendOpen } = useController();
-  const locked = !unlocks.has(id);
+  const ids = also.length === 0 ? [id] : [id, ...also];
+  const locked = ids.every((each) => !unlocks.has(each));
   // Concealed for now: drawn and held as locked, but coming back is no unlock to reward.
-  const held = locked || concealed.has(id);
+  const held = ids.every((each) => !unlocks.has(each) || concealed.has(each));
+  // A part standing for several controls (BEAT SYNC: also Master Tempo) can be open while its own is not.
+  const ownHeld = !unlocks.has(id) || concealed.has(id);
   const element = useRef<HTMLDivElement>(null);
   const wasLocked = useRef(locked);
 
@@ -46,7 +56,7 @@ export function ControlFrame({ id, label, className, keyHint = null, captionSide
 
   // On a phone the controller is taller than the screen: bring the control to touch next into view.
   // "nearest" leaves a control that is already on screen where it is, so a desktop never scrolls.
-  const pulsing = pulse === id && !held;
+  const pulsing = pulse !== null && ids.includes(pulse) && !held;
   useEffect(() => {
     if (!pulsing) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -54,11 +64,11 @@ export function ControlFrame({ id, label, className, keyHint = null, captionSide
   }, [pulsing]);
 
   // A locked control touched on the hardware controller: a brief "not yet" on its screen twin.
-  const notYet = useSessionValue((snapshot) => snapshot.notYet === id);
-  const caption = captions.get(id);
+  const notYet = useSessionValue((snapshot) => snapshot.notYet !== null && ids.includes(snapshot.notYet));
+  const caption = ids.map((each) => captions.get(each)).find((text) => text !== undefined);
   const classes = ["control", className, held ? "locked" : null, pulsing ? "pulse" : null].filter(Boolean).join(" ");
   return (
-    <div ref={element} className={classes} data-control={id} data-locked={held} inert={held} aria-disabled={held || undefined}>
+    <div ref={element} className={classes} data-control={id} data-locked={held} {...(also.length === 0 ? {} : { "data-own-locked": ownHeld })} inert={held} aria-disabled={held || undefined}>
       {children}
       {label === undefined ? null : <span className="control-label">{label}</span>}
       {legendOpen && keyHint !== null && !held ? (

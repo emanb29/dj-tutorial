@@ -12,9 +12,18 @@ interface FakeFlx4 {
   readonly sent: number[][];
 }
 
+/** The Timing check's engine, as far as the test reads it (src/app/controller-page/TimingCheck.tsx). */
+interface TimingCheckHandle {
+  readonly engine: {
+    heardTime(): { ok: true; ctx: number } | { ok: false };
+    playheadAt(deck: "A", ctx: number): { positionSec: number } | null;
+  };
+}
+
 declare global {
   interface Window {
     __flx4?: FakeFlx4;
+    learnToDjTimingCheck?: TimingCheckHandle;
   }
 }
 
@@ -238,6 +247,31 @@ test("a hardware fader away from the screen's value shows a pickup mark and does
   await expect(slider).toHaveAttribute("aria-valuenow", before ?? "0");
 });
 
+test("Sync from controller ticks each fader as it reports, and a Lesson opened afterwards shows where it is at once", async ({ page }) => {
+  await fakeMidi(page, { controller: true });
+  const learnerId = learner("positions");
+  await openLesson(page, learnerId, "deck-basics");
+  await page.getByRole("button", { name: /Lessons/ }).click();
+  await page.getByRole("link", { name: "Controller" }).click();
+  const card = page.getByRole("region", { name: "Positions" });
+  await expect(card.getByTestId("positions-limit")).toContainText("can't say where its knobs sit until they move");
+  await card.getByRole("button", { name: "Sync from controller" }).click();
+  await expect(card.getByTestId("positions-count")).toHaveText(/^0 of \d+$/);
+  // Deck A's channel fader near the top, deck B's TRIM a little right of centre.
+  await midi(page, ...fader(0, 0.9), [0xb1, 0x04, 0x48], [0xb1, 0x24, 0x00]);
+  await expect(card.locator('[data-control="A.channel-fader"]')).toHaveAttribute("data-known", "true");
+  await expect(card.locator('[data-control="B.trim"]')).toHaveAttribute("data-known", "true");
+  await expect(card.getByTestId("positions-count")).toHaveText(/^2 of \d+$/);
+  // No SysEx unless the Learner asks for it.
+  expect(await page.evaluate(() => window.__flx4?.sent.some((bytes) => bytes[0] === 0xf0))).toBe(false);
+
+  // Back to the Lesson, in the same tab: the fader's mark is there before it moves again.
+  await page.getByRole("button", { name: /Lessons/ }).click();
+  await page.locator('li[data-lesson="deck-basics"]').getByRole("button").click();
+  await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "hook");
+  await expect(page.getByTestId("pickup-A.channel-fader")).toBeAttached();
+});
+
 test("the Lesson screen says where the sound goes", async ({ page }) => {
   await fakeMidi(page, { controller: true });
   await openLesson(page, learner("output-line"), "deck-basics");
@@ -269,14 +303,53 @@ test("the Controller page connects, ticks off moved controls, and decodes them i
   expect(last?.[2]).toBe(0);
 });
 
-test("the Controller page's tap test shows how early or late a BEAT ▶ press landed", async ({ page }) => {
+test("the Timing check: TAP (SHIFT + BEAT ▶) along a click track stores the offset for this output, and Reset forgets it", async ({ page }) => {
+  test.setTimeout(60_000);
   await fakeMidi(page, { controller: true });
   await page.goto("/controller");
-  await expect(page.getByTestId("midi-status")).toContainText("Connected: DDJ-FLX4");
-  await page.getByRole("button", { name: "Start the tap test" }).click();
-  await page.waitForTimeout(1200);
-  await midi(page, [0x94, 0x4b, 0x7f], [0x94, 0x4b, 0x00]);
-  await expect(page.getByTestId("tap-offset")).toHaveText(/^Last tap [+-]?\d+ ms · typical [+-]?\d+ ms over 1 tap$/);
+  const check = page.getByRole("region", { name: "Timing check" });
+  await expect(check.getByTestId("timing-stored")).toContainText("not measured yet");
+  await check.getByRole("button", { name: "Start the timing check" }).click();
+  await expect(check.getByTestId("timing-progress")).toContainText("Listen to 4 clicks");
+  // Steady taps 30 ms after each counted click (100 BPM, the first click at 0.5 s, 4 to listen), timed on
+  // the click track as heard: headless Chromium's audio clock drifts from the page's clock.
+  await page.evaluate(async () => {
+    const engine = window.learnToDjTimingCheck?.engine;
+    if (engine === undefined) throw new Error("the Timing check's clicks are not playing");
+    const heardPosition = () => {
+      const heard = engine.heardTime();
+      return heard.ok ? (engine.playheadAt("A", heard.ctx)?.positionSec ?? 0) : 0;
+    };
+    const deadline = performance.now() + 30_000;
+    for (let click = 4; click < 22; click++) {
+      const target = 0.5 + click * 0.6 + 0.03;
+      // The check stops its clicks once it has 16 taps.
+      if (window.learnToDjTimingCheck === undefined) return;
+      while (heardPosition() < target) {
+        if (performance.now() > deadline) throw new Error(`the clicks stalled at ${String(heardPosition())} s, waiting for ${String(target)} s (heard: ${JSON.stringify(engine.heardTime())})`);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+      window.__flx4?.send([0x94, 0x6b, 0x7f]);
+      window.__flx4?.send([0x94, 0x6b, 0x00]);
+    }
+  });
+  await expect(check.getByTestId("timing-result")).toContainText(/Your taps land .* through this computer's output\. Saved/, { timeout: 10_000 });
+  await expect(check.getByTestId("timing-stored")).toContainText("grading allows for it");
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem("learn-to-dj.timing-offset") ?? "{}") as Record<string, { offsetMs: number }>);
+  expect(Math.abs(stored["split-cue"]?.offsetMs ?? Number.NaN)).toBeLessThanOrEqual(150);
+
+  await check.getByRole("button", { name: "Reset" }).click();
+  await expect(check.getByTestId("timing-stored")).toContainText("not measured yet");
+});
+
+test("the first tap Lesson offers the Timing check once", async ({ page }) => {
+  const learnerId = learner("timing-offer");
+  await seedPassed(page, learnerId, ["deck-basics"]);
+  await openLesson(page, learnerId, "beats-and-bars");
+  await expect(page.getByRole("link", { name: "Timing check (20 s)" })).toHaveAttribute("href", "/controller#timing-check");
+  await page.reload();
+  await expect(page.locator("main.lesson")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Timing check (20 s)" })).toHaveCount(0);
 });
 
 test("the Controller page works without a controller and says what to plug in", async ({ page }) => {

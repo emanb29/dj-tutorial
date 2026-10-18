@@ -66,6 +66,8 @@ export { PLAYHEAD_SEGMENT_LIMIT, PlayheadTracker } from "./playhead.ts";
 export { phaseAlignedPosition, syncTempo } from "./sync.ts";
 export { TEMPO_RANGES, tempoFaderForRate, tempoRate } from "./tempo.ts";
 export type { TempoRangePercent } from "./tempo.ts";
+export { boundedCorrectionMs, correctedInputTime, MAX_INPUT_CORRECTION_MS, measureTimingOffset, TIMING_CHECK_MIN_KEPT, TIMING_CHECK_TAPS } from "./input-latency.ts";
+export type { TimingMeasurement } from "./input-latency.ts";
 export { audioContextClock, heardContextTime, renderTimeClock } from "./output-clock.ts";
 export type { OutputClock, OutputTimestamp } from "./output-clock.ts";
 

@@ -43,6 +43,14 @@ export class SoftTakeover {
     return { caught: this.stillCaught(state, appValue) || Math.abs(state.hardware - appValue) <= PICKUP_TOLERANCE, hardware: state.hardware };
   }
 
+  /**
+   * Where the hardware is, without driving the value: a locked control moved, or a position known from
+   * before this takeover started. The hardware has to pick the value up as usual.
+   */
+  observe(control: string, hardware: number): void {
+    this.controls.set(control, { hardware, sent: null });
+  }
+
   reset(): void {
     this.controls.clear();
   }

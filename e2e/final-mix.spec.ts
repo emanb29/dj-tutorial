@@ -88,9 +88,10 @@ test("final-mix: a three-track set with a cut and a blend, by ear, passes, and t
   await expect(page.getByTestId("graded-line")).toContainText("Graded: 3 tracks, 16 bars each · one genre · tempos within 2% · a blend and a cut");
   await expect(page.getByTestId("graded-line")).toContainText("no drift");
   await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B") != null);
-  // The exam covers the BPM displays and the phase meter, and SYNC is locked.
+  // The exam covers the BPM displays and the phase meter.
   await expect(page.locator('[data-control="A.bpm"] .readout-number')).toBeHidden();
-  await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-locked", "true");
+  // SYNC withheld (BEAT SYNC B stays open for Master Tempo, held).
+  await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-own-locked", "true");
   await cueAt(page, "A", bar9(123));
   await cueAt(page, "B", bar9(124));
   await page.getByRole("button", { name: "Start the set" }).click();

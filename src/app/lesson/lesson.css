@@ -39,6 +39,20 @@
   font-weight: 600;
 }
 
+/* The first tap Lesson's one-time offer of the Controller page's Timing check. */
+.lesson-timing-offer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.lesson-timing-offer a {
+  color: var(--accent);
+  font-weight: 650;
+}
+
 .lesson-credit {
   overflow: hidden;
   max-width: 40%;

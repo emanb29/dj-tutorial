@@ -4,6 +4,12 @@
 // prompt, so it happens only on the Learner's click; once granted, later visits connect by themselves.
 
 import { midiEventTime } from "./event-time.ts";
+/**
+ * The position request Mixxx sends the FLX4 on start (docs/research/flx4-midi.md, "Positions on
+ * connect"): reverse-engineered, not in AlphaTheta's list, and SysEx, so it needs the Learner's SysEx
+ * permission. The unit is said to answer with every fader and knob position. Unverified on our side.
+ */
+export const POSITION_REQUEST: readonly number[] = [0xf0, 0x00, 0x40, 0x05, 0x00, 0x00, 0x04, 0x05, 0x00, 0x50, 0x02, 0xf7];
 
 /** A port name the app treats as a DDJ-FLX4 (including the DDJ-FLX4-N). */
 export function isControllerPort(name: string | null | undefined): boolean {
@@ -33,6 +39,8 @@ export interface MidiMessage {
 export interface MidiAccessLike extends EventTarget {
   readonly inputs: ReadonlyMap<string, MidiInputLike>;
   readonly outputs: ReadonlyMap<string, MidiOutputLike>;
+  /** True when the access was granted with SysEx (MIDIAccess.sysexEnabled). */
+  readonly sysexEnabled?: boolean;
 }
 export interface MidiInputLike extends EventTarget {
   readonly id: string;
@@ -51,6 +59,10 @@ export interface MidiConnectionOptions {
   readonly permission: () => Promise<PermissionState | null>;
   /** The performance.now() clock. */
   readonly now?: () => number;
+  /** navigator.requestMIDIAccess({ sysex: true }): a second prompt. Absent where there is no Web MIDI. */
+  readonly requestSysexAccess?: () => Promise<MidiAccessLike>;
+  /** The "midi" permission with SysEx, or null when the browser cannot say. */
+  readonly sysexPermission?: () => Promise<PermissionState | null>;
 }
 
 type Listener = () => void;
@@ -134,9 +146,43 @@ export class MidiConnection {
   }
 
   /** Connects without a prompt when access was granted before; otherwise stays as it is. */
-  async connectIfAllowed(): Promise<void> {
+  async connectIfAllowed(options: { readonly sysex?: boolean } = {}): Promise<void> {
     if (this.options.requestAccess === null || this.access !== null) return;
+    if (options.sysex === true && (await this.options.sysexPermission?.()) === "granted") {
+      if (await this.enableSysex()) return;
+    }
     if ((await this.options.permission()) === "granted") await this.connect();
+  }
+
+  /** Whether the controller can be asked for its positions (SysEx granted and an output to send to). */
+  get canRequestPositions(): boolean {
+    return this.access?.sysexEnabled === true && this.output !== null;
+  }
+
+  /**
+   * Asks for MIDI access with SysEx (Chrome's prompt; call it from a click), so the app can send the
+   * position request. On refusal the plain connection stays as it was.
+   */
+  async enableSysex(): Promise<boolean> {
+    const request = this.options.requestSysexAccess;
+    if (request === undefined) return false;
+    let access: MidiAccessLike;
+    try {
+      access = await request();
+    } catch (error) {
+      console.warn("[midi] SysEx access was not granted; positions are learnt as controls move", error);
+      return false;
+    }
+    this.access?.removeEventListener("statechange", this.onStateChange);
+    this.access = access;
+    access.addEventListener("statechange", this.onStateChange);
+    this.attachPorts();
+    return access.sysexEnabled === true;
+  }
+
+  /** Sends the position request; false when SysEx is not allowed or there is no controller. */
+  requestPositions(): boolean {
+    return this.canRequestPositions && this.send([POSITION_REQUEST]);
   }
 
   private attachPorts(): void {
@@ -172,6 +218,14 @@ function browserOptions(): MidiConnectionOptions {
   const supported = typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function" && window.isSecureContext;
   return {
     requestAccess: supported ? () => navigator.requestMIDIAccess() : null,
+    ...(supported ? { requestSysexAccess: () => navigator.requestMIDIAccess({ sysex: true }) } : {}),
+    sysexPermission: async () => {
+      try {
+        return (await navigator.permissions.query({ name: "midi", sysex: true } as PermissionDescriptor)).state;
+      } catch {
+        return null;
+      }
+    },
     permission: async () => {
       try {
         return (await navigator.permissions.query({ name: "midi" })).state;

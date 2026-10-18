@@ -46,6 +46,15 @@ describe("soft takeover (pickup)", () => {
     expect(takeover.move("A.trim", 0.9, 0.5)).toEqual({ kind: "send", value: 0.9 });
   });
 
+  it("observes where the hardware is without catching the value: it still has to pick it up", () => {
+    const takeover = new SoftTakeover();
+    takeover.observe("A.trim", 0.8);
+    expect(takeover.status("A.trim", 0.2)).toEqual({ caught: false, hardware: 0.8 });
+    expect(takeover.move("A.trim", 0.7, 0.2)).toEqual({ kind: "waiting", hardware: 0.7 });
+    // Passing through the value between two messages picks it up.
+    expect(takeover.move("A.trim", 0.1, 0.2)).toEqual({ kind: "send", value: 0.1 });
+  });
+
   it("forgets everything on reset (a new controller, or a reconnect)", () => {
     const takeover = new SoftTakeover();
     takeover.move("A.trim", 0.5, 0.5);

@@ -9,6 +9,7 @@ import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { withHeadphonesChecked, type LearnerRecord } from "@shared/learner.ts";
 import { currentOutputPlan } from "../audio-output.ts";
+import { timingCorrectionMs } from "../timing-offset.ts";
 import { Controller } from "../controller/Controller.tsx";
 import { useTapOnHardware } from "../controller/tap-feedback.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
@@ -61,7 +62,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
       try {
         const plan = await currentOutputPlan();
         if (cancelled()) return;
-        engine = await createAudioEngine({ masterTempo: false, output: { plan, headphones: definition.headphones === true } });
+        engine = await createAudioEngine({ masterTempo: false, output: { plan, headphones: definition.headphones === true }, inputCorrectionMs: timingCorrectionMs(plan.kind) });
         const ready = await loadTrack(engine.context.sampleRate);
         if (cancelled()) return;
         const channels = Array.from({ length: ready.audio.numberOfChannels }, (_, channel) => ready.audio.getChannelData(channel));
