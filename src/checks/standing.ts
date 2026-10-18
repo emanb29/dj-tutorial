@@ -64,9 +64,9 @@ const NO_CLIP_GRACE_BARS = 1;
 /** A bar when no deck has a grid, as at 120 BPM. */
 const FALLBACK_BAR_S = 2;
 /**
- * Lessons whose set-up starts in the red on purpose (gain-staging: deck A hot). A meter is judged only
- * once the Learner has moved a control and brought it out of the red: the Lesson's own criteria grade
- * the clip they were handed.
+ * Lessons whose set-up starts in the red on purpose (gain-staging: deck A hot). Setting a trim by ear
+ * overshoots, so a deck's meter is judged only from its last Ready (R), the Learner's lock-in, and the
+ * master from the first Ready: the Lesson's own criteria grade the 8 bars after each.
  */
 const STARTS_IN_THE_RED: ReadonlySet<LessonId> = new Set(["gain-staging"]);
 /** Controls that change what a channel meter (pre-fader) reads, or whether the channel reaches the master. */
@@ -89,8 +89,8 @@ function audioStart(context: CheckContext): CtxTime | null {
  * When no-clip starts judging a meter (the master, or one deck's channel): the set-up's own level is not
  * the Learner's doing. From their first move on it (that channel's level controls; any channel's, or the
  * crossfader, for the master), or a bar after the audio starts, whichever is earlier; strict from then
- * on. In a Lesson that starts in the red on purpose, from the first frame out of the red after their
- * first move instead. Null: never.
+ * on. In a Lesson that starts in the red on purpose, from the Ready presses instead (see
+ * STARTS_IN_THE_RED). Null: never.
  */
 export function noClipJudgedFrom(context: CheckContext, deck?: DeckId): CtxTime | null {
   const { attempt, window } = context;
@@ -104,9 +104,9 @@ export function noClipJudgedFrom(context: CheckContext, deck?: DeckId): CtxTime 
       event.ctx < window.to,
   )?.ctx;
   if (STARTS_IN_THE_RED.has(context.lessonId)) {
-    if (firstMove === undefined) return null;
-    const frames = deck === undefined ? attempt.meters.master : attempt.meters[deck];
-    return framesIn(frames, { from: firstMove, to: window.to }).find((frame) => frame.samplePeakDb <= CLIP_DBFS)?.ctx ?? null;
+    if (deck !== undefined) return controlEvents(attempt.events, "ready", deck, window).at(-1)?.ctx ?? null;
+    const firstReadies = DECKS.flatMap((each) => controlEvents(attempt.events, "ready", each, window).slice(0, 1).map((ready) => ready.ctx));
+    return firstReadies.length === 0 ? null : Math.min(...firstReadies);
   }
   const start = audioStart(context);
   if (start === null) return firstMove ?? null;

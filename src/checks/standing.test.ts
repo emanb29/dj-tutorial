@@ -215,23 +215,50 @@ describe("standing.no-clip judges only what the Learner is responsible for", () 
     expect(noClipJudgedFrom(context([event(0.7, "crossfader", 0.6)]))).toBeCloseTo(0.7);
   });
 
-  it("in gain-staging, judges a meter only once the Learner has brought it out of the deliberate red", () => {
-    const hotUntil = 6;
-    const gainAttempt = attempt({
-      decks: { A: { trackId: "track-a", playhead: { segments: playing(0) } }, B: { trackId: "track-a", playhead: { segments: playing(0) } } },
-      events: [event(4, "trim", 0.8, "A"), event(5, "trim", 0.6, "A")],
-      meters: {
-        master: frames(0, 20, (t) => (t < hotUntil ? { peak: 1, momentary: -10 } : MUSIC)),
-        A: frames(0, 20, (t) => (t < hotUntil ? { peak: 3, momentary: -8 } : MUSIC)),
-        B: frames(0, 20, () => ({ peak: -15, momentary: -26 })),
-      },
+  it("in gain-staging, judges each meter only from its Ready (R): setting the trim may overshoot", () => {
+    const gainAttempt = (events: Attempt["events"]) =>
+      attempt({
+        decks: { A: { trackId: "track-a", playhead: { segments: playing(0) } }, B: { trackId: "track-a", playhead: { segments: playing(0) } } },
+        events,
+        meters: {
+          // Hot at the start, and an overshoot back into the red at 7 s while the trim is still being set.
+          master: frames(0, 20, (t) => (t < 6 || (t >= 7 && t < 7.5) ? { peak: 1, momentary: -10 } : MUSIC)),
+          A: frames(0, 20, (t) => (t < 6 || (t >= 7 && t < 7.5) ? { peak: 3, momentary: -8 } : MUSIC)),
+          // B overshoots too while its trim goes up.
+          B: frames(0, 20, (t) => (t >= 10 && t < 10.5 ? { peak: 2, momentary: -9 } : { peak: -15, momentary: -26 })),
+        },
+      });
+    const context = (events: Attempt["events"]) => ({
+      spec: spec({ lessonId: "gain-staging", decks: ["A", "B"] }, { from: 0, to: 20 }),
+      attempt: gainAttempt(events),
+      window: { from: 0, to: 20 },
+      lessonId: "gain-staging" as const,
     });
-    const context = { spec: spec({ lessonId: "gain-staging", decks: ["A", "B"] }, { from: 0, to: 20 }), attempt: gainAttempt, window: { from: 0, to: 20 }, lessonId: "gain-staging" as const };
-    // Hot for 6 s, turned down from 4 s: judged from the first frame out of the red, not a bar in.
-    expect(noClipJudgedFrom(context, "A")).toBeCloseTo(hotUntil);
-    expect(noClipJudgedFrom(context)).toBeCloseTo(hotUntil);
-    // B's trim never moved: its set-up level is not judged.
-    expect(noClipJudgedFrom(context, "B")).toBeNull();
+    const locked = context([event(4, "trim", 0.8, "A"), event(5, "trim", 0.6, "A"), event(8, "ready", 1, "A"), event(9, "trim", 0.7, "B"), event(12, "ready", 1, "B")]);
+    expect(noClipJudgedFrom(locked, "A")).toBeCloseTo(8);
+    expect(noClipJudgedFrom(locked, "B")).toBeCloseTo(12);
+    // The master carries A from the start (B's fader is down): judged from the first Ready.
+    expect(noClipJudgedFrom(locked)).toBeCloseTo(8);
+    // A Ready pressed again moves the lock-in to the last one.
+    expect(noClipJudgedFrom(context([event(8, "ready", 1, "A"), event(11, "ready", 1, "A")]), "A")).toBeCloseTo(11);
+    // No Ready yet: nothing is locked in, so nothing is judged.
+    expect(noClipJudgedFrom(context([event(4, "trim", 0.8, "A")]), "A")).toBeNull();
+  });
+
+  it("does not fail a gain-staging retake for red before the Ready presses", () => {
+    const run = graded(runCheck(
+      spec({ lessonId: "gain-staging", decks: ["A", "B"] }, { from: 0, to: 20 }, { mode: "cold", passedLessons: ["deck-basics", "gain-staging"] }),
+      attempt({
+        decks: { A: { trackId: "track-a", playhead: { segments: playing(0) } }, B: { trackId: "track-a", playhead: { segments: playing(0) } } },
+        events: [event(4, "trim", 0.8, "A"), event(8, "ready", 1, "A"), event(9, "trim", 0.7, "B"), event(12, "ready", 1, "B")],
+        meters: {
+          master: frames(0, 20, (t) => (t < 7.5 ? { peak: 1, momentary: -10 } : MUSIC)),
+          A: frames(0, 20, (t) => (t < 7.5 ? { peak: 3, momentary: -8 } : MUSIC)),
+          B: frames(0, 20, (t) => (t >= 10 && t < 10.5 ? { peak: 2, momentary: -9 } : { peak: -15, momentary: -26 })),
+        },
+      }),
+    ));
+    expect(byId(run, "standing.no-clip")).toMatchObject({ status: "met" });
   });
 });
 
