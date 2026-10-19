@@ -214,6 +214,44 @@ for (const [orientation, width, height] of [
   });
 }
 
+test.describe("a flick on a phone (412×915, touch)", () => {
+  test.use(phone(412, 915));
+
+  // A finger that flicks a fader (lifts off while still moving) and taps a button straight after: the
+  // tap must land. Chromium makes a fling of a moving lift-off even where the page cannot scroll, and a
+  // tap during a fling only stops it, unless the control keeps its touches (ISS-103).
+  test("a tap straight after flicking a fader still presses the button", async ({ page }) => {
+    await openLesson(page, "deck-basics", { touch: true });
+    const caption = page.getByRole("status", { name: "Lesson caption" });
+    await page.getByRole("button", { name: "Deck A play/pause" }).tap();
+    await expect(caption).toContainText("Push the fader up");
+    const fader = page.getByRole("slider", { name: "CH A" });
+    const touchscreen = await page.context().newCDPSession(page);
+    /** One stroke along the fader, as fast as the touches can be sent, lifting off mid-move. */
+    const flick = async (direction: "up" | "down") => {
+      await fader.scrollIntoViewIfNeeded();
+      const box = await settledBox(page, fader);
+      const x = box.x + box.width / 2;
+      const [fromY, toY] = direction === "up" ? [box.y + box.height - 4, box.y + 4] : [box.y + 4, box.y + box.height - 4];
+      await touchscreen.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: fromY }] });
+      for (let step = 1; step <= 8; step += 1) await touchscreen.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: fromY + ((toY - fromY) * step) / 8 }] });
+      await touchscreen.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect(fader).toHaveAttribute("aria-valuenow", direction === "up" ? "1" : "0");
+    };
+    await flick("up");
+    await flick("down");
+    await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
+    // Three times: flick the fader, tap "Start the Check" at once, and back to practice (P, from the test).
+    for (let round = 1; round <= 3; round += 1) {
+      await flick(round % 2 === 1 ? "up" : "down");
+      await page.getByRole("button", { name: "Start the Check" }).tap();
+      await expect(page.locator("main.lesson"), `round ${String(round)}: the tap after the flick`).toHaveAttribute("data-phase", "check");
+      await page.keyboard.press("KeyP");
+      await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
+    }
+  });
+});
+
 test.describe("Lesson 2 on a phone", () => {
   test.use(phone(412, 915));
 

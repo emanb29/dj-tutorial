@@ -7,6 +7,7 @@ import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type PointerEve
 import type { InputDevice } from "@audio";
 import { keepFocusWhereItIs } from "./ControlButton.tsx";
 import { useController, useSessionValue } from "./context.tsx";
+import { useHoldTouchesToControl } from "./no-fling.ts";
 import { faderTravelPx, isTempoFader, SIDEWAYS_FINE_PX, type ContinuousControlId } from "./gestures.ts";
 import type { DragGesture } from "./session.ts";
 
@@ -31,6 +32,8 @@ export function useContinuousControl(id: ContinuousControlId, axis: DragAxis, tr
   const drag = useRef<ActiveDrag | null>(null);
   // The device of the last pointer press, so a double-click reset is recorded with it.
   const lastPointerDevice = useRef<InputDevice | null>(null);
+
+  useHoldTouchesToControl(target);
 
   // Wheel needs a non-passive listener so a scroll over a control moves it instead of the page.
   useEffect(() => {

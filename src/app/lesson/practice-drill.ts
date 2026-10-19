@@ -84,6 +84,7 @@ export class DrillRunner {
   /** The round's clock starts again now: it waited for the Learner to match the controller. */
   restartRound(): void {
     this.state = { ...this.state, roundStartMs: performance.now(), heldFromMs: null, gapBpm: null };
+    this.tick();
   }
 
   /** Stops showing anything (practice is over). */
@@ -94,10 +95,16 @@ export class DrillRunner {
 
   private apply(step: DrillStep): void {
     this.state = step.state;
+    let started = false;
     for (const action of step.actions) {
-      if (action.kind === "start-round") this.hooks.startRound(action.round);
-      else this.hooks.observe(action.observation);
+      if (action.kind === "start-round") {
+        this.hooks.startRound(action.round);
+        started = true;
+      } else this.hooks.observe(action.observation);
     }
+    // The decks as the new round set them, read at once: a tempo move before the next tick is judged
+    // against them (the drill knows no gap until it has read one, and would let that move go by).
+    if (started) this.tick();
     const status: DrillStatus = { line: this.state.line, reveal: drillReveals(this.state) };
     if (status.line === this.shown.line && status.reveal === this.shown.reveal) return;
     this.shown = status;

@@ -10,6 +10,9 @@
 // kept at once, later moves within the interval are held and only the newest is kept, and a gesture's
 // last event (CommandInput.gestureEnd) and the held move at stop are always recorded. Refused moves and
 // the engine's own are coalesced the same way, each on their own so they never displace accepted moves.
+// Jog bends are never coalesced: the playhead model keeps every rate change, and the Checks divide the
+// bend back out of that rate (src/checks/phase.ts `tempoBpmAt`), so a dropped bend reads as a tempo
+// jump for as long as it lasted (ISS-103). The controller already sends at most one a frame.
 //
 // Capacity: an attempt is never lost to its size. Its control-event budget comes from its expected
 // duration (start({ expectedDurationSec })) or `capacity`. Past NEAR_CAPACITY_FRACTION of it the recorder
@@ -141,6 +144,8 @@ const METERED_BUSES = 4;
 
 /** Discrete events kept past the ceiling, at least: a press a second for almost three hours. */
 const DISCRETE_RESERVE_MIN = 10_000;
+/** Continuous controls recorded at every move: the bend is divided out of the recorded rate. */
+const NEVER_COALESCED: ReadonlySet<Control> = new Set(["jog-bend"]);
 const DEFAULT_OPTIONS: RecorderOptions = {
   capacity: DEFAULT_RECORDER_CAPACITY,
   coalesceHz: 30,
@@ -531,6 +536,7 @@ export class AttemptRecorder {
     const lastKept = recording.lastKeptCtx.get(key);
     const coalesce =
       CONTINUOUS_CONTROLS.has(event.command.control) &&
+      !NEVER_COALESCED.has(event.command.control) &&
       !event.gestureEnd &&
       lastKept !== undefined &&
       time - lastKept < 1 / this.coalesceHz(recording);

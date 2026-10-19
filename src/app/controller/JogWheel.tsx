@@ -12,6 +12,7 @@ import { ControlFrame, type CaptionSide } from "./ControlFrame.tsx";
 import { useFrame } from "./frame-loop.ts";
 import { wheelTravelPx } from "./gestures.ts";
 import { keyHintFor } from "./keymap.ts";
+import { useHoldTouchesToControl } from "./no-fling.ts";
 import type { JogGesture } from "./session.ts";
 
 const REVOLUTIONS_PER_SEC = 100 / 3 / 60;
@@ -53,6 +54,8 @@ export function JogWheel({ deck, captionSide }: { readonly deck: DeckId; readonl
     const degrees = (reading.positionSec * REVOLUTIONS_PER_SEC * 360) % 360;
     platter.current.style.transform = `rotate(${degrees.toFixed(1)}deg)`;
   });
+
+  useHoldTouchesToControl(surface);
 
   // Scroll over the platter: one jog gesture per burst of wheel events.
   useEffect(() => {

@@ -260,6 +260,30 @@ describe("AttemptRecorder", () => {
     expect(fader.map((event) => event.ctx)).toEqual([...fader.map((event) => event.ctx)].sort((a, b) => a - b));
   });
 
+  it("records every jog bend, as the playhead model does, so the Checks can take the bend out of the rate", async () => {
+    const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock });
+    expect(engine.command({ control: "play", deck: "A" }, KEYBOARD)).toEqual({ ok: true });
+    const recorder = new AttemptRecorder(engine, { wallClock });
+    recorder.start();
+    // A held nudge key let go, then a fine nudge 10 ms later and let go (ISS-103: the fine bend went
+    // missing while the deck's rate showed it), then a finger round the platter at 60 Hz.
+    const bends: (readonly [number, number, boolean])[] = [
+      [5_000, 0.04, false],
+      [5_050, 0, true],
+      [5_060, 0.01, false],
+      [5_090, 0, true],
+      ...Array.from({ length: 8 }, (_, step) => [5_200 + step * 16, 0.01 + step * 0.006, false] as const),
+      [5_330, 0, true],
+    ];
+    for (const [eventTimeMs, value, gestureEnd] of bends) {
+      expect(engine.command({ control: "jog-bend", deck: "A", value }, { device: "keyboard", eventTimeMs, gestureEnd })).toEqual({ ok: true });
+    }
+    const attempt = await stopped(recorder);
+    const recorded = attempt.events.filter((event) => event.control === "jogBend");
+
+    expect(recorded.map((event) => event.value)).toEqual(bends.map(([, value]) => expect.closeTo(value, 12) as number));
+  });
+
   it("coalesces refused moves too, without letting them hide the accepted ones", async () => {
     const { engine } = await engineWithTrack({ seconds: 0.1, clock: shiftedClock });
     const recorder = new AttemptRecorder(engine, { wallClock });
