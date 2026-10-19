@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CheckLineRequestSchema, CurriculumRequestSchema } from "@shared/coach-contract.ts";
+import { COACH_CRITERIA_MAX, CheckLineRequestSchema, CurriculumRequestSchema } from "@shared/coach-contract.ts";
+import { deterministicLine } from "@shared/coach-deterministic.ts";
 import type { CheckResult, CriterionResult } from "@shared/check-result.ts";
 import type { RetentionChange } from "@checks";
 import { emptySkillProfile, type CriterionRecord, type SkillProfile } from "@shared/skill-profile.ts";
@@ -70,6 +71,54 @@ describe("toCoachSummary", () => {
   it("builds a request the server accepts", () => {
     const request = checkLineRequest(result, { requestId: "6f1c1f0e-8a8b-4c39-9d43-1f2a3b4c5d6e", lessonTitle: "Play a track out loud", attemptToday: 2, recentLines: ["x"], facts: NO_FACTS, missionTags: [] });
     expect(CheckLineRequestSchema.safeParse(request).success).toBe(true);
+  });
+
+  // ISS-136: a criterion not met with nothing measured ("not within 32 bars") was dropped, so the
+  // line's "One thing to fix" named the passed no-clip criterion instead.
+  it("keeps a criterion not met with nothing measured, so the line names what failed", () => {
+    const tempoMatch: CriterionResult = {
+      id: "tempo-by-ear.tempo-match",
+      severity: "fail",
+      status: "notMet",
+      measured: null,
+      unit: "bars",
+      threshold: { op: "<=", value: 32, unit: "bars" },
+      margin: null,
+      evidence: [],
+    };
+    const noClip: CriterionResult = {
+      id: "standing.no-clip",
+      severity: "fail",
+      status: "met",
+      measured: -7.59,
+      unit: "dBFS",
+      threshold: { op: "<", value: -0.1, unit: "dBFS" },
+      margin: 7.49,
+      evidence: [],
+    };
+    const tempoResult: CheckResult = {
+      ...result,
+      lessonId: "tempo-by-ear",
+      outcome: { kind: "failed", failedCriteria: ["tempo-by-ear.tempo-match"] },
+      criteria: [tempoMatch, noClip],
+    };
+    expect(toCoachSummary(tempoResult).criteria.map((criterion) => [criterion.id, criterion.status])).toEqual([
+      ["tempo-by-ear.tempo-match", "notMet"],
+      ["standing.no-clip", "met"],
+    ]);
+    for (const attemptToday of [1, 2, 3]) {
+      const request = checkLineRequest(tempoResult, { requestId: "6f1c1f0e-8a8b-4c39-9d43-1f2a3b4c5d6e", lessonTitle: "Match tempo by ear", attemptToday, recentLines: [], facts: NO_FACTS, missionTags: [] });
+      expect(CheckLineRequestSchema.safeParse(request).success).toBe(true);
+      const line = deterministicLine(request);
+      expect(line).toContain("tempo match");
+      expect(line).not.toContain("staying out of the red");
+    }
+  });
+
+  it("keeps every criterion not met when there are more criteria than the Coach takes", () => {
+    const passes = Array.from({ length: COACH_CRITERIA_MAX }, () => beatTaps);
+    const crowded: CheckResult = { ...result, criteria: [...passes, fadeOut] };
+    expect(toCoachSummary(crowded).criteria.map((criterion) => criterion.status)).toContain("notMet");
   });
 });
 

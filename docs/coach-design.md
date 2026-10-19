@@ -187,8 +187,9 @@ interface CoachCheckSummary {
   bands?: FinalMixBands;
   criteria: ReadonlyArray<{
     id: CriterionId; severity: Severity; status: "met" | "notMet";
-    measured: number; unit: Unit; threshold: Threshold | null; margin: number | null;
-  }>;                                      // ≤ 12, notApplicable dropped
+    measured: number | null;               // null: a miss with nothing measured
+    unit: Unit; threshold: Threshold | null; margin: number | null;
+  }>;                                      // ≤ 12, notMet first, notApplicable dropped
   metrics: Readonly<Record<string, number>>;
 }
 

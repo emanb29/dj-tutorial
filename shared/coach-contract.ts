@@ -21,7 +21,8 @@ export const CoachCriterionSchema = z.strictObject({
   id: CriterionIdSchema,
   severity: SeveritySchema,
   status: z.enum(["met", "notMet"]),
-  measured: z.number(),
+  /** Null when the Check had nothing to measure (e.g. never matched within the window): still a miss. */
+  measured: z.number().nullable(),
   unit: UnitSchema,
   threshold: ThresholdSchema.nullable(),
   margin: z.number().nullable(),

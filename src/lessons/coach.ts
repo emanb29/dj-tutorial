@@ -32,10 +32,13 @@ function coachThreshold(threshold: Threshold | null): CoachThreshold | null {
   return { op: threshold.op === "<" ? "<=" : threshold.op, value: typeof value === "number" ? value : [value[0], value[1]], unit: coachUnit(threshold.unit) };
 }
 
-/** The reduced result for the Coach: measured criteria only, in the contract's units. */
+/**
+ * The reduced result for the Coach, in the contract's units: every criterion that applied, misses
+ * with nothing measured included, and misses first so the contract's cap never drops one.
+ */
 export function toCoachSummary(result: CheckResult): CoachCheckSummary {
-  const criteria = result.criteria.flatMap((criterion): CoachCriterion[] =>
-    criterion.status === "notApplicable" || criterion.measured === null
+  const applied = result.criteria.flatMap((criterion): CoachCriterion[] =>
+    criterion.status === "notApplicable"
       ? []
       : [
           {
@@ -49,6 +52,7 @@ export function toCoachSummary(result: CheckResult): CoachCheckSummary {
           },
         ],
   );
+  const criteria = [...applied.filter((criterion) => criterion.status === "notMet"), ...applied.filter((criterion) => criterion.status === "met")];
   return {
     lessonId: result.lessonId,
     mode: result.mode,
