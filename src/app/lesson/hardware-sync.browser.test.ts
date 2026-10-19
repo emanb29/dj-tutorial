@@ -1,0 +1,322 @@
+// A connected DDJ-FLX4 against the Lessons' set-ups (hardware-sync.ts): a real engine rendered offline
+// (never the speakers), and a fake controller whose faders and knobs are where the test says. While it
+// is connected, a set-up takes neutral values from the hardware, waits for the Learner to match the
+// deliberate ones (or Skip), and never sets a fader or knob in software anywhere the hardware is known
+// not to be.
+import { afterEach, describe, expect, it } from "vitest";
+import type { CommandEvent } from "@audio";
+import { checkDecksFor, lessonDefinition, practiceDecksFor, SYNTHETIC_PARTNER, setUpTrim } from "@lessons";
+import { HardwarePositions, trackPositions, type MidiMessage } from "@midi";
+import { ALL_CONTROL_IDS } from "../controller/control-ids.ts";
+import type { ContinuousControlId } from "../controller/gestures.ts";
+import { HardwareBridge, hardwareAppValue } from "../controller/hardware.ts";
+import { ControllerSession } from "../controller/session.ts";
+import { liveHardwareView, type HardwareView } from "./hardware-sync.ts";
+import { lessonHarness, pairTrack, synthetic, until, type LessonHarness } from "./lesson-test-support.ts";
+
+const SAMPLE_RATE = 48_000;
+
+/** The FLX4 as a set-up sees it: where each fader and knob is (app values), and moves to make. */
+class FakeController implements HardwareView {
+  connected = true;
+  private readonly places = new Map<ContinuousControlId, number>();
+  private readonly listeners = new Set<() => void>();
+
+  constructor(places: Partial<Record<ContinuousControlId, number>>) {
+    for (const [control, value] of Object.entries(places)) this.places.set(control as ContinuousControlId, value);
+  }
+
+  position(control: ContinuousControlId): number | null {
+    return this.places.get(control) ?? null;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /** The Learner moves a control (it is then known). */
+  move(control: ContinuousControlId, value: number): void {
+    this.places.set(control, value);
+    for (const listener of this.listeners) listener();
+  }
+
+  unplug(): void {
+    this.connected = false;
+    this.places.clear();
+    for (const listener of this.listeners) listener();
+  }
+}
+
+const CONTINUOUS = new Set(["channel-fader", "trim", "eq-high", "eq-mid", "eq-low", "filter", "tempo", "crossfader", "master-level", "cue-mix", "headphone-level", "beat-fx-depth"]);
+
+/** Every fader and knob the session set (it sends as the keyboard; the test sends nothing), with the hardware's place then. */
+function watchSets(run: LessonHarness, controller: FakeController): { control: ContinuousControlId; value: number; hardware: number | null }[] {
+  const sets: { control: ContinuousControlId; value: number; hardware: number | null }[] = [];
+  run.engine.on("command", (event: CommandEvent) => {
+    const { command } = event;
+    const value = "value" in command ? command.value : null;
+    if (event.device !== "keyboard" || event.rejected !== null || !CONTINUOUS.has(command.control) || typeof value !== "number") return;
+    const control = ("deck" in command ? `${command.deck}.${command.control}` : command.control) as ContinuousControlId;
+    sets.push({ control, value, hardware: controller.position(control) });
+  });
+  return sets;
+}
+
+let current: LessonHarness | null = null;
+afterEach(async () => {
+  await current?.close();
+  current = null;
+});
+
+async function harness(lessonId: Parameters<typeof lessonHarness>[0]["lessonId"], controller: HardwareView): Promise<LessonHarness> {
+  current = await lessonHarness({
+    sampleRate: SAMPLE_RATE,
+    lessonId,
+    track: pairTrack(),
+    renderSec: 60,
+    partnerAudio: (context) => synthetic(context, SYNTHETIC_PARTNER),
+    hardware: controller,
+  });
+  return current;
+}
+
+describe("a set-up with the FLX4 connected", () => {
+  it("takes neutral values from the hardware and starts at once when the deliberate ones already match", { timeout: 30_000 }, async () => {
+    // Lesson 2 (Find the beat and the one): fader A up; TRIM is the usual set-up level (neutral).
+    const controller = new FakeController({ "A.channel-fader": 1, "A.trim": 0.3, "master-level": -0.25, "headphone-level": 0.8 });
+    const run = await harness("beats-and-bars", controller);
+    const sets = watchSets(run, controller);
+    run.session.preparePractice();
+    await until(() => run.engine.deckState("A").playing, "practice to play");
+    expect(run.session.setUpPending()).toBeNull();
+    const { channels, masterLevel, headphoneLevel } = run.engine.mixerState();
+    expect(channels.A.trim).toBeCloseTo(0.3, 9);
+    expect(masterLevel).toBeCloseTo(-0.25, 9);
+    expect(headphoneLevel).toBeCloseTo(0.8, 9);
+    expect(sets.filter((set) => set.hardware !== null && Math.abs(set.value - set.hardware) > 1e-9)).toEqual([]);
+  });
+
+  it("waits for Lesson 4 (Set the level)'s hot TRIM A and quiet TRIM B, ticking each off, then starts; never ahead of the hardware", { timeout: 30_000 }, async () => {
+    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0, "A.trim": 0, "B.trim": 0 });
+    const run = await harness("gain-staging", controller);
+    const sets = watchSets(run, controller);
+    const planned = practiceDecksFor(lessonDefinition("gain-staging"), run.track);
+    run.session.preparePractice();
+    await until(() => run.session.setUpPending() !== null, "the match step");
+    const lines = () => run.session.setUpPending()?.items.map((item) => [item.label, item.state]);
+    expect(lines()).toEqual([
+      ["Fader A", "matched"],
+      ["TRIM A", "move"],
+      ["Fader B", "matched"],
+      ["TRIM B", "move"],
+    ]);
+    // Nothing plays, and R is not a practice rep, until the controller matches.
+    expect(run.engine.deckState("A").playing).toBe(false);
+    run.session.ready();
+    expect(run.observed.filter((observation) => observation.kind === "ready")).toEqual([]);
+
+    controller.move("A.trim", planned.A.trim ?? 0);
+    expect(lines()).toEqual([
+      ["Fader A", "matched"],
+      ["TRIM A", "matched"],
+      ["Fader B", "matched"],
+      ["TRIM B", "move"],
+    ]);
+    expect(run.engine.deckState("A").playing).toBe(false);
+    // Close enough: within the tolerance, and the screen takes the hardware's value, not the plan's.
+    const nearB = (planned.B?.trim ?? 0) + 0.03;
+    controller.move("B.trim", nearB);
+    expect(run.session.setUpPending()).toBeNull();
+    await until(() => run.engine.deckState("A").playing, "practice to play");
+    expect(run.engine.mixerState().channels.B.trim).toBeCloseTo(nearB, 9);
+    expect(sets.filter((set) => set.hardware !== null && Math.abs(set.value - set.hardware) > 1e-9)).toEqual([]);
+  });
+
+  it("asks to wiggle a control it has not seen, and Skip goes on with the planned value", { timeout: 30_000 }, async () => {
+    const controller = new FakeController({});
+    const run = await harness("deck-basics", controller);
+    run.session.preparePractice();
+    await until(() => run.session.setUpPending() !== null, "the match step");
+    expect(run.session.setUpPending()?.items.map((item) => [item.label, item.state])).toEqual([["Fader A", "unknown"]]);
+    run.session.skipSetUp();
+    expect(run.session.setUpPending()).toBeNull();
+    // Lesson 1's practice starts with fader A down, TRIM at the set-up level (no position known).
+    await until(() => run.engine.mixerState().channels.A["channel-fader"] === 0, "the planned fader");
+    expect(run.engine.mixerState().channels.A.trim).toBeCloseTo(setUpTrim(run.track), 9);
+    // Skipped once: later set-ups in this Lesson do not ask again.
+    run.session.preparePractice();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(run.session.setUpPending()).toBeNull();
+  });
+
+  it("starts the Check on R only once matched, and a retry with the controller unchanged has nothing to match", { timeout: 30_000 }, async () => {
+    // Lesson 7 (Your first transition: the cut): fader A up, fader B down before the cut. Its Check
+    // opens with its own set-up step ("Set up: … — then R"): the items tick off in that step.
+    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
+    const run = await harness("cut-on-phrase", controller);
+    const sets = watchSets(run, controller);
+    run.session.startCheck();
+    await until(() => run.session.setUpPending() !== null, "the set-up step");
+    expect(run.session.setUpPending()?.caption).toMatch(/^Set up: /);
+    expect(run.session.setUpPending()?.items.find((item) => item.label === "Fader B")).toMatchObject({ state: "move", to: "all the way down", hint: "↓" });
+    // Fader B stays where the hardware has it until the Learner moves it.
+    expect(run.engine.mixerState().channels.B["channel-fader"]).toBeCloseTo(0.6, 6);
+    // R does nothing while an item is still to match; A loops its first phrase meanwhile.
+    run.session.ready();
+    expect(run.session.setUpPending()).not.toBeNull();
+    await until(() => run.engine.deckState("A").playing, "A to loop its first phrase");
+    // The Learner pulls fader B down: the hardware bridge sends it, as from the FLX4.
+    controller.move("B.channel-fader", 0);
+    run.engine.command({ control: "channel-fader", deck: "B", value: 0 }, { device: "midi" });
+    await until(() => run.session.setUpPending()?.items.every((item) => item.state === "matched") === true, "Fader B to tick");
+    // All matched: the step still waits for R.
+    expect(run.session.setUpPending()).not.toBeNull();
+    run.session.ready();
+    expect(run.session.setUpPending()).toBeNull();
+    await until(() => run.session.runningPlan() !== null && run.engine.deckState("A").playing, "the Check to start");
+    const plan = run.session.runningPlan();
+    if (plan === null) throw new Error("the Check is running");
+    expect(checkDecksFor(plan).B?.fader).toBe(0);
+    expect(run.engine.mixerState().channels.B["channel-fader"]).toBe(0);
+
+    run.session.startCheck();
+    await until(() => run.session.setUpPending() !== null, "the retry's set-up step");
+    expect(run.session.setUpPending()?.items.every((item) => item.state === "matched")).toBe(true);
+    run.session.ready();
+    expect(run.session.setUpPending()).toBeNull();
+    await until(() => run.session.runningPlan() !== null && run.engine.deckState("A").playing, "the retry to start");
+    expect(sets.filter((set) => set.hardware !== null && Math.abs(set.value - set.hardware) > 1e-9)).toEqual([]);
+  });
+
+  it("practice's set-up step loops A and keeps observing the Learner while the items tick, then waits for R", { timeout: 30_000 }, async () => {
+    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
+    const run = await harness("cut-on-phrase", controller);
+    run.session.preparePractice("practice");
+    await until(() => run.session.setUpPending() !== null && run.engine.deckState("A").playing, "practice's set-up step, A looping");
+    expect(run.session.setUpPending()?.caption).toMatch(/^Set up: /);
+    expect(run.session.setUpPending()?.items.map((item) => item.state)).toContain("move");
+    const seen = run.observed.length;
+    const sent = run.engine.command({ control: "headphone-cue", deck: "B", value: true }, { device: "keyboard" });
+    expect(sent.ok).toBe(true);
+    expect(run.observed.length).toBeGreaterThan(seen);
+    controller.move("B.channel-fader", 0);
+    run.engine.command({ control: "channel-fader", deck: "B", value: 0 }, { device: "midi" });
+    await until(() => run.session.setUpPending()?.items.every((item) => item.state === "matched") === true, "the items to tick");
+    expect(run.session.setUpPending()).not.toBeNull();
+    run.session.ready();
+    expect(run.session.setUpPending()).toBeNull();
+    expect(run.engine.deckState("A").playing).toBe(true);
+  });
+
+  it("skips a captioned set-up step's unmatched items: they are set on screen, and R is not needed", { timeout: 30_000 }, async () => {
+    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
+    const run = await harness("cut-on-phrase", controller);
+    run.session.startCheck();
+    await until(() => run.session.setUpPending() !== null, "the set-up step");
+    run.session.skipSetUp();
+    expect(run.session.setUpPending()).toBeNull();
+    expect(run.engine.mixerState().channels.B["channel-fader"]).toBe(0);
+    await until(() => run.session.runningPlan() !== null && run.engine.deckState("A").playing, "the Check to start");
+  });
+
+  it("goes on as planned when the controller is unplugged mid-step", { timeout: 30_000 }, async () => {
+    const controller = new FakeController({ "A.channel-fader": 0.5 });
+    const run = await harness("beats-and-bars", controller);
+    run.session.preparePractice();
+    await until(() => run.session.setUpPending() !== null, "the match step");
+    controller.unplug();
+    await until(() => run.engine.deckState("A").playing, "practice to play");
+    expect(run.engine.mixerState().channels.A["channel-fader"]).toBe(1);
+  });
+});
+
+/** The FLX4 as MIDI: what the app's connection gives the positions record and the hardware bridge. */
+class MidiPort {
+  readonly connected = true;
+  private readonly listeners = new Set<(message: MidiMessage) => void>();
+  onMessage(listener: (message: MidiMessage) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+  subscribe(): () => void {
+    return () => undefined;
+  }
+  send(): boolean {
+    return true;
+  }
+  /** A 14-bit fader or knob message (MSB, then LSB) at 0…1 of its travel. */
+  continuous(status: number, msbCc: number, value01: number): void {
+    const raw = Math.round(value01 * 16383);
+    for (const data of [[status, msbCc, raw >> 7], [status, msbCc + 0x20, raw & 0x7f]]) {
+      for (const listener of this.listeners) listener({ data: new Uint8Array(data), timeStamp: performance.now() });
+    }
+  }
+}
+
+describe("the FLX4's MIDI against a Lesson set-up", () => {
+  it("adopts the positions its faders and knobs sent, and the hardware drives them on at once (no pickup)", { timeout: 30_000 }, async () => {
+    const port = new MidiPort();
+    const positions = new HardwarePositions();
+    trackPositions(port, positions);
+    // Fader A up (0xB0 0x13), TRIM A at 65% (0xB0 0x04), MASTER LEVEL at 30% (0xB6 0x08).
+    port.continuous(0xb0, 0x13, 1);
+    port.continuous(0xb0, 0x04, 0.65);
+    port.continuous(0xb6, 0x08, 0.3);
+    const run = await harness("beats-and-bars", liveHardwareView(port, positions));
+    const controller = new ControllerSession(run.engine, { unlocks: new Set(ALL_CONTROL_IDS), macPlatform: true, schedule: () => () => undefined });
+    controller.connect();
+    const detach = new HardwareBridge(controller, run.engine, port, { schedule: () => () => undefined, lessonKey: () => undefined, positions }).attach();
+    try {
+      run.session.preparePractice();
+      await until(() => run.engine.deckState("A").playing, "practice to play");
+      expect(run.session.setUpPending()).toBeNull();
+      expect(run.engine.mixerState().channels.A.trim).toBeCloseTo(hardwareAppValue("A.trim", 0.65), 3);
+      expect(run.engine.mixerState().masterLevel).toBeCloseTo(hardwareAppValue("master-level", 0.3), 3);
+      await until(() => Math.abs(controller.valueOf("A.trim") - hardwareAppValue("A.trim", 0.65)) < 1e-3, "the screen to show TRIM A where the hardware is");
+      // A quick turn: the screen and the engine follow it straight away.
+      port.continuous(0xb0, 0x04, 0.8);
+      expect(run.engine.mixerState().channels.A.trim).toBeCloseTo(hardwareAppValue("A.trim", 0.8), 3);
+      expect(controller.snapshot().pickup["A.trim"]).toBeUndefined();
+    } finally {
+      detach();
+    }
+  });
+
+  it("blocks Lesson 4 (Set the level) until TRIM A's MIDI reaches the hot set-up, then plays", { timeout: 30_000 }, async () => {
+    const port = new MidiPort();
+    const positions = new HardwarePositions();
+    trackPositions(port, positions);
+    for (const [status, cc, value] of [[0xb0, 0x13, 1], [0xb1, 0x13, 0], [0xb0, 0x04, 0.5], [0xb1, 0x04, 0.5]] as const) port.continuous(status, cc, value);
+    const run = await harness("gain-staging", liveHardwareView(port, positions));
+    const planned = practiceDecksFor(lessonDefinition("gain-staging"), run.track);
+    run.session.preparePractice();
+    await until(() => run.session.setUpPending() !== null, "the match step");
+    // The knobs' travel is 0…1 for −1…1 on screen.
+    port.continuous(0xb0, 0x04, ((planned.A.trim ?? 0) + 1) / 2);
+    expect(run.session.setUpPending()?.items.filter((item) => item.state !== "matched").map((item) => item.label)).toEqual(["TRIM B"]);
+    port.continuous(0xb1, 0x04, ((planned.B?.trim ?? 0) + 1) / 2);
+    await until(() => run.engine.deckState("A").playing, "practice to play");
+    expect(run.session.setUpPending()).toBeNull();
+  });
+});
+
+describe("a set-up with no controller", () => {
+  it("applies every value as planned, with no match step", { timeout: 30_000 }, async () => {
+    const controller = new FakeController({ "A.channel-fader": 0.2, "A.trim": 0.9 });
+    controller.connected = false;
+    const run = await harness("gain-staging", controller);
+    const planned = practiceDecksFor(lessonDefinition("gain-staging"), run.track);
+    run.session.preparePractice();
+    await until(() => run.engine.deckState("A").playing, "practice to play");
+    expect(run.session.setUpPending()).toBeNull();
+    const { channels } = run.engine.mixerState();
+    expect(channels.A.trim).toBeCloseTo(planned.A.trim ?? Number.NaN, 9);
+    expect(channels.B.trim).toBeCloseTo(planned.B?.trim ?? Number.NaN, 9);
+    expect(channels.A["channel-fader"]).toBe(1);
+  });
+});

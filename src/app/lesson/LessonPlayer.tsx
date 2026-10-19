@@ -47,6 +47,7 @@ import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
 import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
 import { practiceSetUp } from "./practice-set-up.ts";
 import { ResultCard } from "./ResultCard.tsx";
+import { SetUpStep } from "./SetUpStep.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
 import "./lesson.css";
 import "./lesson-extras.css";
@@ -569,6 +570,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             {session !== null && definition.questions.some((question) => question.previews === "phrases") ? <PhrasePreviewBar session={session} /> : null}
           </section>
         ) : null}
+
+        {session === null ? null : <SetUpStep session={session} />}
 
         {headphonesGate && engine !== null && !outputHasOwnCue ? <HeadphonesGate context={engine.context} onPassed={headphonesPassed} /> : null}
 

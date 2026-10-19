@@ -26,6 +26,13 @@ describe("soft takeover (pickup)", () => {
     expect(takeover.move("crossfader", 0.1, 0.5)).toEqual({ kind: "send", value: 0.1 });
   });
 
+  it("keeps a value a set-up took from the hardware, however fast the next move is", () => {
+    const takeover = new SoftTakeover();
+    // Seen at 0.3 before; the Lesson's set-up then put the app's value there (hardware-sync).
+    takeover.observe("A.trim", 0.3);
+    expect(takeover.move("A.trim", 0.6, 0.3 + PICKUP_TOLERANCE / 4)).toEqual({ kind: "send", value: 0.6 });
+  });
+
   it("lets go again when something else (the screen, a Lesson) moves the value away", () => {
     const takeover = new SoftTakeover();
     takeover.move("A.tempo", 0.5, 0.5);

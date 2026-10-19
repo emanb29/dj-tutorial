@@ -31,6 +31,8 @@ export class SoftTakeover {
     const caught =
       (state !== undefined && this.stillCaught(state, appValue)) ||
       Math.abs(hardware - appValue) <= PICKUP_TOLERANCE ||
+      // The hardware was already at the value (a set-up adopted where it is): a quick move keeps it.
+      (previous !== null && Math.abs(previous - appValue) <= PICKUP_TOLERANCE) ||
       (previous !== null && Math.sign(previous - appValue) !== Math.sign(hardware - appValue));
     this.controls.set(control, { hardware, sent: caught ? hardware : null });
     return caught ? { kind: "send", value: hardware } : { kind: "waiting", hardware };

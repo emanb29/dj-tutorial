@@ -42,3 +42,41 @@
   min-width: 96px;
   font-size: var(--text-md);
 }
+
+/* ---- "Match your controller": the FLX4's faders and knobs a set-up needs, ticked off live ---- */
+
+.set-up-step h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+}
+
+.set-up-step ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.set-up-step li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+
+.set-up-step li + li {
+  margin-top: var(--space-2);
+}
+
+.set-up-step li[data-state="matched"] {
+  color: var(--ink-dim);
+}
+
+.set-up-step li[data-state="matched"] .set-up-tick {
+  color: var(--pass);
+}
+
+.set-up-skip {
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+}

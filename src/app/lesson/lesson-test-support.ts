@@ -7,6 +7,7 @@ import { audioContextClock, createAudioEngine, type AudioEngine, type EngineComm
 import { lessonDefinition, synthesizeHouse, SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, syntheticLessonTrack, trackOnDeck, type BuiltLessonId, type CheckPlan, type LessonTrack, type Observation } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
+import { NO_HARDWARE, type HardwareView } from "./hardware-sync.ts";
 import { LessonSession } from "./lesson-session.ts";
 
 export interface LessonHarness {
@@ -119,6 +120,8 @@ export async function lessonHarness(options: {
   readonly partnerAudio?: (context: BaseAudioContext) => AudioBuffer;
   readonly latencySec?: number;
   readonly lookaheadSec?: number;
+  /** The controller the session sees: none by default (a test never has the FLX4). */
+  readonly hardware?: HardwareView;
 }): Promise<LessonHarness> {
   const { track } = options;
   const run = await offlineRun(options);
@@ -149,6 +152,8 @@ export async function lessonHarness(options: {
       },
     },
     options.partnerAudio !== undefined,
+    undefined,
+    options.hardware ?? NO_HARDWARE,
   );
   return {
     ...run,

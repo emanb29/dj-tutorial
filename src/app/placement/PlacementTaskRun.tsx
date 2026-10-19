@@ -17,6 +17,7 @@ import { needsHeadphonesCheck } from "../lesson/headphones-check.ts";
 import { HeadphonesGate } from "../lesson/HeadphonesGate.tsx";
 import type { LessonHandle } from "../lesson/LessonPlayer.tsx";
 import { LessonSession } from "../lesson/lesson-session.ts";
+import { SetUpStep } from "../lesson/SetUpStep.tsx";
 import type { ReadyTrack } from "../lesson/track-loader.ts";
 import { placementKey } from "./placement-keys.ts";
 
@@ -250,6 +251,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
             </div>
           </section>
         ) : null}
+        {setup === null ? null : <SetUpStep session={setup.session} />}
         {phase === "headphones" && setup !== null ? (
           <HeadphonesGate
             context={setup.engine.context}

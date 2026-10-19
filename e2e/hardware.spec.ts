@@ -86,12 +86,55 @@ async function sweepFader(page: Page, from: number, to: number): Promise<void> {
   }
 }
 
+/**
+ * The "Match your controller" step a Lesson set-up shows while the FLX4's faders are not where it
+ * needs them: these moves match it, and then it goes.
+ */
+async function matchController(page: Page, ...moves: number[][]): Promise<void> {
+  const step = page.getByRole("region", { name: "Match your controller" });
+  await expect(step).toBeVisible();
+  await midi(page, ...moves);
+  await expect(step).toBeHidden();
+}
+
+test("a Lesson waits for the controller: an unknown fader says wiggle it, then which way, and the hook starts once it matches", async ({ page }) => {
+  await fakeMidi(page, { controller: true });
+  await openLesson(page, learner("flx4-match"), "deck-basics");
+  const step = page.getByRole("region", { name: "Match your controller" });
+  // Lesson 1's practice starts with fader A down; the app cannot know where the physical one is yet.
+  await expect(step.getByRole("listitem")).toHaveText(["○Fader A: wiggle it"]);
+  // PLAY does nothing for the Lesson while the step shows: the hook waits.
+  await midi(page, [0x90, 0x0b, 0x7f], [0x90, 0x0b, 0x00]);
+  await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("Press X");
+  await midi(page, ...fader(0, 0.6));
+  await expect(step.getByRole("listitem")).toHaveText(["○Fader A: all the way down ↓"]);
+  // The screen's fader is never put where the hardware is not: it is where the hardware is.
+  await midi(page, ...fader(0, 0.3), ...fader(0, 0));
+  await expect(step).toBeHidden();
+  await expect(page.getByRole("slider", { name: "CH A" })).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByTestId("pickup-A.channel-fader")).toHaveCount(0);
+  await midi(page, [0x90, 0x0b, 0x7f], [0x90, 0x0b, 0x00]);
+  await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("That's PLAY");
+});
+
+test("Skip goes on without matching, and the step does not come back for that control", async ({ page }) => {
+  await fakeMidi(page, { controller: true });
+  await openLesson(page, learner("flx4-skip"), "deck-basics");
+  const step = page.getByRole("region", { name: "Match your controller" });
+  await step.getByRole("button", { name: "Skip" }).click();
+  await expect(step).toBeHidden();
+  await midi(page, [0x96, 0x46, 0x7f], [0x96, 0x46, 0x00]);
+  await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "check");
+  await expect(step).toBeHidden();
+});
+
 test("deck-basics passes with only the FLX4: PLAY, LOAD for Enter, and the channel fader", async ({ page }) => {
   await fakeMidi(page, { controller: true });
   const learnerId = learner("flx4");
   await openLesson(page, learnerId, "deck-basics");
   const caption = page.getByRole("status", { name: "Lesson caption" });
   await expect(caption).toContainText("Press X");
+  await matchController(page, ...fader(0, 0));
 
   // PLAY on the hardware starts the hook's deck, and its LED lights.
   await midi(page, [0x90, 0x0b, 0x7f], [0x90, 0x0b, 0x00]);
@@ -175,6 +218,7 @@ for (const { control, stamp } of TAP_RUNS) {
     const learnerId = learner(`flx4-tap-${stamp}`);
     await seedPassed(page, learnerId, ["deck-basics"]);
     await openLesson(page, learnerId, "beats-and-bars");
+    await matchController(page, ...fader(0, 1));
     // On hardware the caption names the borrowed TAP control: the pads, before hot cues.
     await expect(page.getByRole("status", { name: "Lesson caption" })).toContainText("Tap SHIFT + BEAT ▶ (TAP), any pad or Space on every kick");
     await playingPast(page, "hook", 66);
@@ -198,6 +242,7 @@ test("every TAP (pad, BEAT ▶, SHIFT + BEAT ▶, BROWSE, a 0-stamped press, Spa
   const learnerId = learner("flx4-marks");
   await seedPassed(page, learnerId, ["deck-basics"]);
   await openLesson(page, learnerId, "beats-and-bars");
+  await matchController(page, ...fader(0, 1));
   await playingPast(page, "hook", 2);
   const marks = page.getByRole("list", { name: "Your last taps" }).locator("li");
   const tapEach = async () => {

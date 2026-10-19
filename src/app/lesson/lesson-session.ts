@@ -19,7 +19,6 @@ import {
   practiceDecksFor,
   practiceLoopFor,
   practiceRep,
-  setUpTrim,
   sliceTrack,
   tempoPercentApart,
   trackOnDeck,
@@ -51,6 +50,8 @@ import {
 } from "@lessons";
 import type { DeckId, LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
+import { commandFor, type ContinuousControlId } from "../controller/gestures.ts";
+import { CONTINUOUS_CONTROLS, describeTarget, liveHardwareView, matchItems, settledValue, setUpTargets, type HardwareView, type MatchItem, type SetUpTarget } from "./hardware-sync.ts";
 import { DrillRunner, liveReading, type DrillStatus } from "./practice-drill.ts";
 
 /** How often the session looks at the playhead to end the audio part or loop practice. */
@@ -111,6 +112,30 @@ export interface BeatClock {
   readonly beatMs: number;
   /** 1–4. */
   readonly beatInBar: number;
+}
+
+/**
+ * The set-up step showing now: the controller's faders and knobs to match before the decks start
+ * (hardware-sync.ts), and the set-up's own caption ("Set up: … — then R"), if it has one. With no
+ * caption it goes on once every item ticks, or Skip; with one, on R once every item has ticked, or Skip.
+ */
+export interface SetUpPending {
+  /** The set-up step's own line (`CheckPlan.setUp`, `practiceSetUp`); null for none. */
+  readonly caption: string | null;
+  readonly items: readonly MatchItem[];
+}
+
+/**
+ * A set-up waiting: what it sets, and what it does once matched (or skipped). `step` is a set-up step
+ * waiting for R (`CheckPlan.setUp`, `LessonDefinition.practiceSetUp`): deck A loops the phrase from its
+ * start while the Learner sets up, and a Check's recorder and clock start only on R. Without `step`,
+ * the decks are paused until the controller matches.
+ */
+interface PendingSetUp {
+  readonly targets: readonly SetUpTarget[];
+  readonly proceed: () => void;
+  readonly step: { readonly kind: "check"; readonly plan: CheckPlan } | { readonly kind: "practice" } | null;
+  shown: SetUpPending;
 }
 
 interface RunningCheck {
@@ -186,14 +211,6 @@ export class LessonSession {
   private phraseCountState: PhraseCountState = PHRASE_COUNT_START;
   private judgedPhrase: number | null = null;
   /**
-   * A set-up step waiting for R (`CheckPlan.setUp`, `LessonDefinition.practiceSetUp`): deck A loops
-   * the phrase from its start while the Learner sets up. A Check's recorder and clock start only on R.
-   */
-  private pendingSetUp:
-    | { readonly kind: "check"; readonly plan: CheckPlan; readonly caption: string }
-    | { readonly kind: "practice"; readonly decks: DeckSetups; readonly caption: string }
-    | null = null;
-  /**
    * The phrase preview playing now (phrases' questions): the chip it was started from (1-based), where
    * it stops, and when its seek takes effect (before then, the heard playhead is still where A was).
    */
@@ -210,6 +227,14 @@ export class LessonSession {
   /** Bumped by every set-up, so a slow load that finishes late does not set up an old phase. */
   private generation = 0;
   private closed = false;
+  /** The set-up waiting for the Learner (to match the controller, or to press R), if any. */
+  private pendingSetUp: PendingSetUp | null = null;
+  /** Deliberate controls the Learner skipped matching: set in software from then on, for this session. */
+  private readonly skippedControls = new Set<ContinuousControlId>();
+  private readonly setUpListeners = new Set<() => void>();
+  /** While a set-up step's decks are cued: its faders and knobs stay where the hardware has them. */
+  private cueingStep = false;
+  private readonly stopHardware: () => void;
 
   constructor(
     private readonly engine: AudioEngine,
@@ -228,8 +253,13 @@ export class LessonSession {
     hasDeckB: boolean,
     /** How attempts are graded: a Lesson Check, or (Placement) a short-form task. */
     private readonly grading: Grading = LESSON_GRADING,
+    /** The DDJ-FLX4, when connected: set-ups follow its faders and knobs (hardware-sync.ts). */
+    private readonly hardware: HardwareView = liveHardwareView(),
   ) {
     this.recorder = new AttemptRecorder(engine);
+    this.stopHardware = hardware.subscribe(() => {
+      this.hardwareChanged();
+    });
     this.onDeck = { A: track, B: hasDeckB ? trackOnDeck(track, "B") : null };
     this.requestedA = track.trackId;
     const stops = [
@@ -267,7 +297,8 @@ export class LessonSession {
   };
 
   private observe(observation: Observation): void {
-    if (this.settingUp) return;
+    // Matching the controller is not the Lesson yet; a set-up step's moves (CUE B on, …) are the Learner's.
+    if (this.settingUp || (this.pendingSetUp !== null && this.pendingSetUp.step === null)) return;
     this.progress(observation);
     this.countPhraseAction(observation);
     this.listener.observed(observation);
@@ -276,14 +307,9 @@ export class LessonSession {
   /** The practice count fades and comes back on the Lesson's phrase-timed reps (Count phrases' taps are counted in onTap). */
   private countPhraseAction(observation: Observation): void {
     const { definition } = this;
-    if (definition.phraseCount !== true || definition.practice.rep === "phrase-tap" || this.check !== null || this.pendingSetUp?.kind === "check") return;
+    if (definition.phraseCount !== true || definition.practice.rep === "phrase-tap" || this.check !== null || this.pendingSetUp?.step?.kind === "check") return;
     const good = practiceRep(definition.practice, observation);
     if (good !== null) this.phraseCountState = phraseCountStep(this.phraseCountState, { kind: "action", good });
-  }
-
-  /** What the set-up step waiting for R asks for, or null when none is waiting. */
-  setUpPending(): { readonly caption: string } | null {
-    return this.pendingSetUp === null ? null : { caption: this.pendingSetUp.caption };
   }
 
   /** What a running Check counts from the Learner's actions: its step cues, its `did-then` end, a pad set at a stop. */
@@ -362,7 +388,7 @@ export class LessonSession {
       case "tempo-range":
       case "master-tempo":
         this.observe({ kind: "touch", control: `${command.deck}.${command.control}` });
-        if (command.control === "tempo") this.drill?.tempoMoved(command.deck);
+        if (command.control === "tempo" && this.pendingSetUp === null) this.drill?.tempoMoved(command.deck);
         return;
       case "eq-low":
       case "eq-mid":
@@ -474,7 +500,7 @@ export class LessonSession {
   /** The 8-bar count to show now: in the hook and practice of a Lesson with one, while deck A plays. */
   phraseCount(): PhraseCount | null {
     const track = this.onDeck.A;
-    if (this.definition.phraseCount !== true || this.check !== null || this.pendingSetUp?.kind === "check" || track === null || !this.engine.deckState("A").playing) return null;
+    if (this.definition.phraseCount !== true || this.check !== null || this.pendingSetUp?.step?.kind === "check" || track === null || !this.engine.deckState("A").playing) return null;
     const reading = this.engine.playhead("A");
     return reading.ok ? { ...phrasePosition(track.grid, reading.positionSec), shown: this.phraseCountState.shown } : null;
   }
@@ -631,37 +657,195 @@ export class LessonSession {
     this.watch = null;
   }
 
+  /** The faders and knobs these set-ups set, as the decks are now (before SYNC and the range change). */
+  private targetsFor(decks: DeckSetups): SetUpTarget[] {
+    return setUpTargets(decks, this.track, { withB: this.onDeck.B !== null, before: (deck) => this.engine.deckState(deck) });
+  }
+
+  /**
+   * Sets a fader or knob a set-up sets. With the controller connected, where the hardware is when the
+   * target takes it (hardware-sync.ts), so the screen never leaves the hardware behind. The value sent.
+   */
+  private setContinuous(target: SetUpTarget): number {
+    const at = this.hardware.position(target.control);
+    // A set-up step leaves a known control where the hardware is: the Learner matches it during the step.
+    const value = !this.hardware.connected ? target.value : this.cueingStep && at !== null && !this.skippedControls.has(target.control) ? at : settledValue(target, at);
+    const command = commandFor(target.control, value);
+    if (command !== null) this.send(command);
+    if (target.control === "A.eq-low" || target.control === "B.eq-low") this.lowSetTo(target.control === "A.eq-low" ? "A" : "B", value);
+    return value;
+  }
+
+  /** A skipped target, set on screen as planned (and the fader state that goes with it). */
+  private setSkipped(target: SetUpTarget): void {
+    const value = this.setContinuous(target);
+    if (target.control === "A.channel-fader" || target.control === "B.channel-fader") this.faderOpen[target.control === "A.channel-fader" ? "A" : "B"] = value > FADER_DOWN;
+  }
+
+  /** The LOW as a set-up left it, for the eq-basics and bass-swap reps. */
+  private lowSetTo(deck: DeckId, value: number): void {
+    const db = eqKnobToDecibels(value);
+    this.lowCut[deck] = db <= EQ_CUT_DB;
+    this.lowDb[deck] = db;
+    this.swapHalf[deck] = null;
+  }
+
+  /**
+   * With the controller connected, every fader and knob whose hardware position is known goes where
+   * the hardware is, except `except` (the set-up's own targets): whatever the screen was left at (a
+   * listening clip, a Lesson before), it follows the hardware again.
+   */
+  private adoptHardware(except: ReadonlySet<ContinuousControlId> = new Set()): void {
+    if (!this.hardware.connected) return;
+    for (const control of CONTINUOUS_CONTROLS) {
+      const at = this.hardware.position(control);
+      if (at === null || except.has(control)) continue;
+      // A synced deck's tempo is the leader's: its fader refuses to move.
+      if ((control === "A.tempo" || control === "B.tempo") && this.engine.deckState(control === "A.tempo" ? "A" : "B").syncOn) continue;
+      const command = commandFor(control, at);
+      if (command !== null) this.send(command);
+      if (control === "A.eq-low" || control === "B.eq-low") this.lowSetTo(control === "A.eq-low" ? "A" : "B", at);
+      if (control === "A.channel-fader" || control === "B.channel-fader") this.faderOpen[control === "A.channel-fader" ? "A" : "B"] = at > FADER_DOWN;
+    }
+  }
+
+  /**
+   * Runs `proceed` once the controller matches the deliberate `targets`: at once with no controller, or
+   * when it already does. Otherwise the decks pause and the "Match your controller" step shows
+   * (`setUpPending`) until every item ticks, or Skip. A later set-up replaces a waiting one.
+   */
+  private whenMatched(targets: readonly SetUpTarget[], proceed: () => void): void {
+    this.cancelSetUp();
+    if (!this.hardware.connected) {
+      proceed();
+      return;
+    }
+    const items = matchItems(targets, this.hardware, this.skippedControls);
+    if (items.every((item) => item.state === "matched")) {
+      proceed();
+      return;
+    }
+    this.settingUpWith(() => {
+      for (const deck of DECKS) if (this.onDeck[deck] !== null) this.send({ control: "pause", deck });
+    });
+    this.pendingSetUp = { targets, proceed, step: null, shown: { caption: null, items } };
+    this.setUpChanged();
+  }
+
+  /**
+   * A set-up step waiting for R (the decks are cued, A loops its first phrase): `caption` says what to
+   * set up, and the "Match your controller" items tick off meanwhile. R, or Skip, runs `proceed`.
+   */
+  private waitForStep(step: NonNullable<PendingSetUp["step"]>, caption: string, targets: readonly SetUpTarget[], proceed: () => void): void {
+    this.cancelSetUp();
+    const items = this.hardware.connected ? matchItems(targets, this.hardware, this.skippedControls) : [];
+    this.pendingSetUp = { targets, proceed, step, shown: { caption, items } };
+    this.setUpChanged();
+  }
+
+  /** A fader or knob moved, or the controller came or went: tick the items off, and go once all have. */
+  private hardwareChanged(): void {
+    const pending = this.pendingSetUp;
+    if (pending === null) return;
+    if (!this.hardware.connected && pending.step === null) {
+      // No controller to match any more: the set-up goes on as planned.
+      this.releaseSetUp();
+      return;
+    }
+    const items = this.hardware.connected ? matchItems(pending.targets, this.hardware, this.skippedControls) : [];
+    // A set-up step waits for R even once everything matches.
+    if (pending.step === null && items.every((item) => item.state === "matched")) {
+      this.releaseSetUp();
+      return;
+    }
+    if (items.map(matchKey).join() === pending.shown.items.map(matchKey).join()) return;
+    pending.shown = { ...pending.shown, items };
+    this.setUpChanged();
+  }
+
+  private releaseSetUp(): void {
+    const pending = this.pendingSetUp;
+    if (pending === null) return;
+    this.pendingSetUp = null;
+    this.setUpChanged();
+    pending.proceed();
+  }
+
+  private cancelSetUp(): void {
+    if (this.pendingSetUp === null) return;
+    this.pendingSetUp = null;
+    this.setUpChanged();
+  }
+
+  /** The set-up step showing now, or null. */
+  setUpPending(): SetUpPending | null {
+    return this.pendingSetUp?.shown ?? null;
+  }
+
+  /** Skip: the set-up goes on without the items not matched yet; they are set on screen from now on. */
+  skipSetUp(): void {
+    const pending = this.pendingSetUp;
+    if (pending === null) return;
+    for (const item of pending.shown.items) if (item.state !== "matched") for (const control of item.controls) this.skippedControls.add(control);
+    // A set-up step cued its decks with the hardware's values: what was skipped is set on screen now.
+    if (pending.step !== null) {
+      this.settingUpWith(() => {
+        for (const target of pending.targets) if (target.kind === "deliberate" && this.skippedControls.has(target.control)) this.setSkipped(target);
+      });
+    }
+    this.releaseSetUp();
+  }
+
+  /** Called whenever the set-up step appears, changes or goes (for useSyncExternalStore). */
+  subscribeSetUp = (listener: () => void): (() => void) => {
+    this.setUpListeners.add(listener);
+    return () => {
+      this.setUpListeners.delete(listener);
+    };
+  };
+
+  private setUpChanged(): void {
+    for (const listener of this.setUpListeners) listener();
+  }
+
   /** Cues a deck as `setup` says, paused; Play is the caller's (after the recorder starts, in a Check). */
-  private cueDeck(deck: DeckId, setup: DeckSetup): void {
+  private cueDeck(deck: DeckId, setup: DeckSetup, targets: readonly SetUpTarget[]): void {
     this.send({ control: "pause", deck });
     this.send({ control: "seek", deck, value: setup.pos });
-    this.send({ control: "channel-fader", deck, value: setup.fader });
-    this.faderOpen[deck] = setup.fader > FADER_DOWN;
-    this.send({ control: "trim", deck, value: setup.trim ?? setUpTrim(this.track) });
+    for (const target of targets) {
+      if (target.control === `${deck}.channel-fader`) this.faderOpen[deck] = this.setContinuous(target) > FADER_DOWN;
+      if (target.control === `${deck}.trim`) this.setContinuous(target);
+    }
     if (setup.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck, value: setup.headphoneCue });
-    this.setDeckControls(deck, setup);
+    this.setDeckControls(deck, setup, targets);
     if (setup.cuePoint === true && this.engine.deckState(deck).cuePointSec !== setup.pos) {
       this.send({ control: "deck-cue", deck, value: true });
       this.send({ control: "deck-cue", deck, value: false });
     }
   }
 
-  /** SYNC, the tempo range and fader, Master Tempo and the EQs, where the set-up names them. */
-  private setDeckControls(deck: DeckId, setup: Omit<DeckSetup, "pos" | "fader" | "play">): void {
+  /**
+   * SYNC, the tempo range and fader, Master Tempo and the EQs, where the set-up names them. A set-up's
+   * faders and knobs go through `targets` (the controller's positions); a listening clip has none.
+   */
+  private setDeckControls(deck: DeckId, setup: Omit<DeckSetup, "pos" | "fader" | "play">, targets?: readonly SetUpTarget[]): void {
     const state = () => this.engine.deckState(deck);
+    const knob = (part: "tempo" | "eq-low" | "eq-mid" | "eq-high" | "filter", planned: number) => {
+      const target = targets?.find((each) => each.control === `${deck}.${part}`);
+      if (target === undefined) this.send({ control: part, deck, value: planned });
+      else this.setContinuous(target);
+    };
     // SYNC first: a synced deck's tempo fader is the leader's, and refuses to move.
     if (setup.sync !== undefined && setup.sync !== state().syncOn) this.send({ control: "sync", deck, value: setup.sync });
     if (setup.tempoRange !== undefined && setup.tempoRange !== state().tempoRangePercent) this.send({ control: "tempo-range", deck, value: setup.tempoRange });
-    if (setup.tempoPercent !== undefined && !state().syncOn) this.send({ control: "tempo", deck, value: setup.tempoPercent / state().tempoRangePercent });
+    if (setup.tempoPercent !== undefined && !state().syncOn) knob("tempo", setup.tempoPercent / state().tempoRangePercent);
     if (setup.masterTempo !== undefined && setup.masterTempo !== state().masterTempo) this.send({ control: "master-tempo", deck, value: setup.masterTempo });
     if (setup.eqCentred === true) {
-      for (const band of ["eq-low", "eq-mid", "eq-high"] as const) this.send({ control: band, deck, value: 0 });
-      this.lowCut[deck] = false;
-      this.lowDb[deck] = 0;
-      this.swapHalf[deck] = null;
+      for (const band of ["eq-low", "eq-mid", "eq-high"] as const) knob(band, 0);
+      if (targets === undefined) this.lowSetTo(deck, 0);
     }
     if (setup.filterCentred === true) {
-      this.send({ control: "filter", deck, value: 0 });
+      knob("filter", 0);
       if (deck === "A") this.sweep = null;
     }
     setup.hotCues?.forEach((pos, slot) => {
@@ -671,21 +855,35 @@ export class LessonSession {
   }
 
   /** Beat FX as a set-up names it. */
-  private setBeatFx(fx: DeckSetups["beatFx"]): void {
+  private setBeatFx(fx: DeckSetups["beatFx"], targets: readonly SetUpTarget[]): void {
     if (fx === undefined) return;
     if (fx.channel !== undefined) this.send({ control: "beat-fx-channel", value: fx.channel });
     if (fx.beats !== undefined) this.send({ control: "beat-fx-beats", value: fx.beats });
-    if (fx.depth !== undefined) this.send({ control: "beat-fx-depth", value: fx.depth });
+    const depth = targets.find((target) => target.control === "beat-fx-depth");
+    if (depth !== undefined) this.setContinuous(depth);
     if (fx.on !== undefined) this.send({ control: "beat-fx", value: fx.on });
   }
 
-  private cueDecks(decks: DeckSetups): void {
+  /** Cues the decks; `forStep`: a set-up step's, which leaves known faders and knobs to the Learner. */
+  private cueDecks(decks: DeckSetups, forStep = false): void {
     this.blend = START_BLEND;
+    this.cueingStep = forStep;
+    try {
+      this.cueDecksNow(decks);
+    } finally {
+      this.cueingStep = false;
+    }
+  }
+
+  private cueDecksNow(decks: DeckSetups): void {
+    const targets = this.targetsFor(decks);
     this.settingUpWith(() => {
-      this.cueDeck("A", decks.A);
-      if (decks.B !== undefined && this.onDeck.B !== null) this.cueDeck("B", decks.B);
-      if (decks.crossfader !== undefined) this.send({ control: "crossfader", value: decks.crossfader });
-      this.setBeatFx(decks.beatFx);
+      this.adoptHardware(new Set(targets.map((target) => target.control)));
+      this.cueDeck("A", decks.A, targets);
+      if (decks.B !== undefined && this.onDeck.B !== null) this.cueDeck("B", decks.B, targets);
+      const crossfader = targets.find((target) => target.control === "crossfader");
+      if (crossfader !== undefined) this.setContinuous(crossfader);
+      this.setBeatFx(decks.beatFx, targets);
     });
   }
 
@@ -699,11 +897,17 @@ export class LessonSession {
   }
 
   /** Loops back: positions only (knobs and faders stay), or the whole set-up. */
-  private loopBack(decks: DeckSetups, loop: LoopPlan): void {
+  private loopBack(decks: DeckSetups, loop: LoopPlan, cued: () => void, stepFollows = false): void {
     if (loop.reset === "setup") {
       const again = loop.decks ?? decks;
-      this.cueDecks(again);
-      this.playDecks(again);
+      const restart = () => {
+        this.cueDecks(again, stepFollows);
+        this.playDecks(again);
+        cued();
+      };
+      // Practice waits for the controller again, only where it differs; a running Check never waits.
+      if (this.check === null && !stepFollows) this.whenMatched(this.targetsFor(again), restart);
+      else restart();
       return;
     }
     this.settingUpWith(() => {
@@ -712,6 +916,7 @@ export class LessonSession {
         if (setup !== undefined && this.onDeck[deck] !== null) this.send({ control: "seek", deck, value: setup.pos });
       }
     });
+    cued();
   }
 
   /**
@@ -727,11 +932,17 @@ export class LessonSession {
       return heard.ok && heard.ctx >= seekCtx + CUE_SETTLE_SEC;
     };
     this.watch = setInterval(() => {
+      // Waiting for the Learner to match the controller: the decks are paused, nothing counts. A set-up
+      // step's own loop (deck A round its first phrase) goes on.
+      if (this.pendingSetUp !== null && this.pendingSetUp.step === null) return;
       const reading = this.engine.playhead(loop?.deck ?? "A");
       if (loop !== null && reading.ok && reading.positionSec >= loop.atPos && positionsValid() && seekHeard()) {
-        seekCtx = this.engine.context.currentTime;
-        this.loopBack(decks, loop);
-        afterLoop?.();
+        // A set-up loop that waits for R again (`afterLoop`) shows its own set-up step: it never pauses
+        // for the controller first.
+        this.loopBack(decks, loop, () => {
+          seekCtx = this.engine.context.currentTime;
+          afterLoop?.();
+        }, afterLoop !== undefined);
       }
       alsoEvery?.();
     }, WATCH_MS);
@@ -767,20 +978,31 @@ export class LessonSession {
     this.stopPreview();
     this.abandonCheck();
     this.stopClip();
+    this.cancelSetUp();
     const generation = ++this.generation;
     void this.lessonTrackOnA().then((ready) => {
       if (!ready || generation !== this.generation || this.closed) return;
       const decks = practiceDecksFor(this.definition, this.track);
-      this.cueDecks(decks);
-      this.playDecks(decks);
-      const drill = this.startDrill(decks);
-      // Back in practice, the count shows again until the Learner counts by ear.
-      this.phraseCountState = PHRASE_COUNT_START;
-      this.judgedPhrase = null;
-      const waits = stage === "practice" && this.definition.practiceSetUp === true && drill === null;
-      if (waits) this.waitForPracticeSetUp(decks);
-      else this.watchPractice(decks, false);
+      const targets = this.targetsFor(decks);
+      // A practice set-up step (not in the hook, nor with a drill) shows the controller's items itself.
+      const waits = stage === "practice" && this.definition.practiceSetUp === true && this.definition.drill === undefined;
+      if (waits) this.startPractice(decks, targets, true);
+      else
+        this.whenMatched(targets, () => {
+          this.startPractice(decks, targets, false);
+        });
     });
+  }
+
+  private startPractice(decks: DeckSetups, targets: readonly SetUpTarget[], waits: boolean): void {
+    this.cueDecks(decks, waits);
+    this.playDecks(decks);
+    this.startDrill(decks);
+    // Back in practice, the count shows again until the Learner counts by ear.
+    this.phraseCountState = PHRASE_COUNT_START;
+    this.judgedPhrase = null;
+    if (waits) this.waitForPracticeSetUp(decks, targets);
+    else this.watchPractice(decks, false);
   }
 
   /** Practice plays on, looping where the Lesson loops; with `setUpAgain`, each set-up loop waits for R again. */
@@ -794,7 +1016,8 @@ export class LessonSession {
       if (counting) this.followPhraseCount();
     };
     const again = setUpAgain && loop?.reset === "setup" ? () => {
-      this.waitForPracticeSetUp(loop.decks ?? decks);
+      const decksAgain = loop.decks ?? decks;
+      this.waitForPracticeSetUp(decksAgain, this.targetsFor(decksAgain));
     } : undefined;
     this.watchLoop(decks, loop, tick, undefined, again);
   }
@@ -804,9 +1027,18 @@ export class LessonSession {
     return { atPos: pos + BARS_PER_PHRASE * 4 * beatSecOf(this.track), reset: "positions" };
   }
 
-  private waitForPracticeSetUp(decks: DeckSetups): void {
+  /** Practice's set-up step: A loops its first phrase until R, then practice plays on from there. */
+  private waitForPracticeSetUp(decks: DeckSetups, targets: readonly SetUpTarget[]): void {
     this.stopWatching();
-    this.pendingSetUp = { kind: "practice", decks, caption: this.definition.planCheck(this.track).setUp?.caption ?? "Set up, then R" };
+    const caption = this.definition.planCheck(this.track).setUp?.caption ?? "Set up, then R";
+    this.waitForStep({ kind: "practice" }, caption, targets, () => {
+      // R: A from its phrase start, every knob and fader as the Learner set it (no new cue).
+      this.stopWatching();
+      this.settingUpWith(() => {
+        this.send({ control: "seek", deck: "A", value: decks.A.pos });
+      });
+      this.watchPractice(decks, true);
+    });
     this.watchLoop({ A: decks.A }, this.setUpLoop(decks.A.pos));
   }
 
@@ -814,38 +1046,24 @@ export class LessonSession {
   private waitForCheckSetUp(plan: CheckPlan, caption: string): void {
     const planned = checkDecksFor(plan);
     const waiting: DeckSetups = { ...planned, A: { ...planned.A, play: true }, ...(planned.B === undefined ? {} : { B: { ...planned.B, play: false } }) };
-    this.cueDecks(waiting);
+    const targets = this.targetsFor(waiting);
+    this.cueDecks(waiting, true);
     this.playDecks(waiting);
-    this.pendingSetUp = { kind: "check", plan, caption };
-    this.watchLoop({ A: waiting.A }, this.setUpLoop(planned.A.pos));
-  }
-
-  /**
-   * R on a set-up step: the decks go back to their start positions (A from its phrase start), leaving
-   * every knob and fader as the Learner set it. A Check then records, and its clock starts.
-   */
-  private releaseSetUp(): void {
-    const pending = this.pendingSetUp;
-    if (pending === null) return;
-    this.pendingSetUp = null;
-    this.stopWatching();
-    if (pending.kind === "practice") {
+    this.waitForStep({ kind: "check", plan }, caption, targets, () => {
+      // R: the decks back to their start positions (A from its phrase start), every knob and fader as
+      // the Learner set it. The Check then records, and its clock starts.
+      this.stopWatching();
       this.settingUpWith(() => {
-        this.send({ control: "seek", deck: "A", value: pending.decks.A.pos });
+        for (const deck of DECKS) {
+          const setup = deck === "A" ? planned.A : planned.B;
+          if (setup === undefined || this.onDeck[deck] === null) continue;
+          this.send({ control: "pause", deck });
+          this.send({ control: "seek", deck, value: setup.pos });
+        }
       });
-      this.watchPractice(pending.decks, true);
-      return;
-    }
-    const planned = checkDecksFor(pending.plan);
-    this.settingUpWith(() => {
-      for (const deck of DECKS) {
-        const setup = deck === "A" ? planned.A : planned.B;
-        if (setup === undefined || this.onDeck[deck] === null) continue;
-        this.send({ control: "pause", deck });
-        this.send({ control: "seek", deck, value: setup.pos });
-      }
+      this.recordCheck(plan, planned);
     });
-    this.recordCheck(pending.plan, planned);
+    this.watchLoop({ A: waiting.A }, this.setUpLoop(planned.A.pos));
   }
 
   /** A by-ear drill (Lessons 14–16) over the practice set-up, or null for a Lesson without one. */
@@ -878,16 +1096,24 @@ export class LessonSession {
     const trackB = this.onDeck.B;
     const setupB = decks.B;
     if (trackB === null || setupB === undefined) return;
-    this.settingUpWith(() => {
-      this.send({ control: "seek", deck: "A", value: decks.A.pos });
-      this.send({ control: "seek", deck: "B", value: setupB.pos + offsetBeats * beatSecOf(trackB) });
-      const stateB = this.engine.deckState("B");
-      if (!stateB.syncOn) {
-        const bpmA = this.track.grid.bpm * this.engine.deckState("A").tempoRate;
-        const percent = tempoPercentApart(bpmA, trackB.grid.bpm, apartPercent);
-        this.send({ control: "tempo", deck: "B", value: Math.max(-1, Math.min(1, percent / stateB.tempoRangePercent)) });
-      }
+    const stateB = this.engine.deckState("B");
+    const bpmA = this.track.grid.bpm * this.engine.deckState("A").tempoRate;
+    const percent = tempoPercentApart(bpmA, trackB.grid.bpm, apartPercent);
+    const value = Math.max(-1, Math.min(1, percent / stateB.tempoRangePercent));
+    const tempo: SetUpTarget | null = stateB.syncOn ? null : { control: "B.tempo", value, kind: "deliberate", to: describeTarget("B.tempo", value, stateB.tempoRangePercent) };
+    const playing = DECKS.filter((deck) => this.engine.deckState(deck).playing);
+    let waited = false;
+    this.whenMatched(tempo === null ? [] : [tempo], () => {
+      this.settingUpWith(() => {
+        this.send({ control: "seek", deck: "A", value: decks.A.pos });
+        this.send({ control: "seek", deck: "B", value: setupB.pos + offsetBeats * beatSecOf(trackB) });
+        if (tempo !== null) this.setContinuous(tempo);
+        // The round waited for the controller: the decks play on, and its clock starts now.
+        for (const deck of playing) if (waited && !this.engine.deckState(deck).playing) this.send({ control: "play", deck });
+      });
+      if (waited) this.drill?.restartRound();
     });
+    waited = this.pendingSetUp !== null;
   }
 
   /**
@@ -899,6 +1125,7 @@ export class LessonSession {
     this.abandonCheck();
     this.stopDrill();
     this.stopClip();
+    this.cancelSetUp();
     const generation = ++this.generation;
     this.checksStarted += 1;
     const plan = this.definition.planCheck(this.track, this.checksStarted, passedLessons);
@@ -922,13 +1149,18 @@ export class LessonSession {
     if (slice === undefined) return false;
     const track = sliceTrack(this.track, slice, index);
     if (!(await this.loadOnA(track, sliceAudio(this.audio, slice.fromSec, slice.lengthSec)))) return false;
-    const setup = checkDecksFor(plan).A;
-    this.settingUpWith(() => {
-      this.send({ control: "channel-fader", deck: "A", value: setup.fader });
-      this.send({ control: "trim", deck: "A", value: setup.trim ?? setUpTrim(this.track) });
-      if (setup.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck: "A", value: setup.headphoneCue });
-    });
+    this.sliceLevels(plan);
     return true;
+  }
+
+  /** cue-point's slices: A's fader, TRIM and CUE 🎧 as the Check sets them, for each slice loaded. */
+  private sliceLevels(plan: CheckPlan): void {
+    const decks = checkDecksFor(plan);
+    const targets = this.targetsFor({ A: decks.A });
+    this.settingUpWith(() => {
+      for (const target of targets) if (target.control === "A.channel-fader" || target.control === "A.trim") this.setContinuous(target);
+      if (decks.A.headphoneCue !== undefined) this.send({ control: "headphone-cue", deck: "A", value: decks.A.headphoneCue });
+    });
   }
 
   private beginCheck(plan: CheckPlan): void {
@@ -940,7 +1172,15 @@ export class LessonSession {
     // hot-cues: A waits paused at its first stop; it plays from the start once the pads are set.
     const firstStop = plan.stops?.[0];
     const decks: DeckSetups = firstStop === undefined ? planned : { ...planned, A: { ...planned.A, pos: firstStop, play: false } };
+    // Nothing is recorded and no time runs until the controller matches the Check's set-up.
+    this.whenMatched(this.targetsFor(decks), () => {
+      this.beginCheckMatched(plan, decks);
+    });
+  }
+
+  private beginCheckMatched(plan: CheckPlan, decks: DeckSetups): void {
     if (plan.slices === undefined) this.cueDecks(decks);
+    else if (this.hardware.connected) this.sliceLevels(plan);
     this.recordCheck(plan, decks);
   }
 
@@ -1042,8 +1282,11 @@ export class LessonSession {
    * this slice's cue point and moves on; in practice it scores the levels.
    */
   ready(): void {
-    if (this.pendingSetUp !== null) {
-      this.releaseSetUp();
+    const pending = this.pendingSetUp;
+    if (pending !== null) {
+      // A set-up step goes on with R once the controller matches; matching the controller alone is
+      // not a rep or a Ready yet.
+      if (pending.step !== null && pending.shown.items.every((item) => item.state === "matched")) this.releaseSetUp();
       return;
     }
     const check = this.check;
@@ -1119,9 +1362,17 @@ export class LessonSession {
     if (target === undefined || track === null) return;
     const bpm = track.grid.bpm * this.engine.deckState("B").tempoRate;
     this.observe({ kind: "tempo-set", onTarget: Math.abs(bpm - target) <= BPM_TOLERANCE + 1e-9 });
-    this.settingUpWith(() => {
-      if (!this.engine.deckState("B").syncOn) this.send({ control: "tempo", deck: "B", value: 0 });
+    if (this.engine.deckState("B").syncOn) return;
+    const centre: SetUpTarget = { control: "B.tempo", value: 0, kind: "deliberate", to: "centre" };
+    const playing = DECKS.filter((deck) => this.engine.deckState(deck).playing);
+    let waited = false;
+    this.whenMatched([centre], () => {
+      this.settingUpWith(() => {
+        this.setContinuous(centre);
+        for (const deck of playing) if (waited && !this.engine.deckState(deck).playing) this.send({ control: "play", deck });
+      });
     });
+    waited = this.pendingSetUp !== null;
   }
 
   private levelsInZone(): boolean {
@@ -1261,6 +1512,8 @@ export class LessonSession {
     this.stopWatching();
     this.settingUpWith(() => {
       if (this.onDeck.A !== null) this.send({ control: "pause", deck: "A" });
+      // The preview set fader A on screen: back to where the hardware has it.
+      this.adoptHardware();
     });
   }
 
@@ -1282,17 +1535,21 @@ export class LessonSession {
     this.stopWatching();
     this.settingUpWith(() => {
       if (this.onDeck[clip.deck] !== null) this.send({ control: "pause", deck: clip.deck });
+      // The clip moved its fader and tempo on screen: back to where the hardware has them.
+      this.adoptHardware();
     });
   }
 
   /** The plan of the Check running now (it varies by attempt), or null. */
   runningPlan(): CheckPlan | null {
-    return this.check?.plan ?? (this.pendingSetUp?.kind === "check" ? this.pendingSetUp.plan : null);
+    const step = this.pendingSetUp?.step;
+    return this.check?.plan ?? (step?.kind === "check" ? step.plan : null);
   }
 
   /** The live caption for the stretch of the Check the deck is in now. */
   checkCue(): PositionCue | null {
-    if (this.pendingSetUp?.kind === "check") return { fromPos: 0, caption: this.pendingSetUp.caption };
+    const pending = this.pendingSetUp;
+    if (pending?.step?.kind === "check" && pending.shown.caption !== null) return { fromPos: 0, caption: pending.shown.caption };
     const check = this.check;
     if (check === null) return null;
     const step = check.steps > 0 ? check.plan.stepCues?.[check.steps - 1] : undefined;
@@ -1381,7 +1638,7 @@ export class LessonSession {
   /** Leaves a running Check without grading it (restart, leaving the page). */
   abandonCheck(): void {
     this.stopWatching();
-    this.pendingSetUp = null;
+    this.cancelSetUp();
     this.gradedPlan = null;
     const check = this.check;
     if (check === null) return;
@@ -1400,6 +1657,8 @@ export class LessonSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.stopHardware();
+    this.cancelSetUp();
     this.stopDrill();
     this.stopClip();
     this.stopPreview();
@@ -1421,4 +1680,9 @@ function sliceAudio(audio: AudioBuffer, fromSec: number, lengthSec: number): Aud
   const slice = new AudioBuffer({ length, numberOfChannels: audio.numberOfChannels, sampleRate: audio.sampleRate });
   for (let channel = 0; channel < audio.numberOfChannels; channel++) slice.copyToChannel(audio.getChannelData(channel).subarray(from, from + length), channel);
   return slice;
+}
+
+/** What an item shows: it changed when this did. */
+function matchKey(item: MatchItem): string {
+  return `${item.key}:${item.state}:${item.hint ?? ""}`;
 }

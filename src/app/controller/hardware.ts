@@ -111,6 +111,19 @@ export function continuousTarget(input: Extract<Flx4Input, { kind: "continuous" 
   return SHARED_CONTINUOUS[input.control] ?? null;
 }
 
+/** The FLX4 control (physicalControlOf's id, as src/midi/positions.ts keys it) that drives an app control. */
+export function physicalIdOf(id: ContinuousControlId): string {
+  return id === "cue-mix" ? "headphone-mix" : id;
+}
+
+/** The app value for a hardware position (0…1), with the centre click snapped to the centre. */
+export function hardwareAppValue(id: ContinuousControlId, hardware: number): number {
+  const spec = continuousSpec(id);
+  const span = spec.max - spec.min;
+  const value = spec.min + hardware * span;
+  return spec.centreDetent && Math.abs(value - spec.resetValue) < CENTRE_SNAP_FRACTION * span ? spec.resetValue : value;
+}
+
 /** The control each LED shows, for its lock. */
 function ledControl(led: LedId): ControlId | null {
   if (led === "fx-on") return "beat-fx-on";
@@ -393,20 +406,13 @@ export class HardwareBridge {
     const spec = continuousSpec(id);
     const move = this.takeover.move(id, input.value, this.normalized(id));
     if (move.kind === "send") {
-      this.session.hardwareValue(id, this.appValue(id, move.value), timeMs);
+      this.session.hardwareValue(id, hardwareAppValue(id, move.value), timeMs);
       this.session.setPickup(id, null);
     } else {
       this.session.setPickup(id, spec.min + move.hardware * (spec.max - spec.min));
     }
   }
 
-  /** The app value for a hardware position (0…1), with the centre click snapped to the centre. */
-  private appValue(id: ContinuousControlId, hardware: number): number {
-    const spec = continuousSpec(id);
-    const span = spec.max - spec.min;
-    const value = spec.min + hardware * span;
-    return spec.centreDetent && Math.abs(value - spec.resetValue) < CENTRE_SNAP_FRACTION * span ? spec.resetValue : value;
-  }
 
   private normalized(id: ContinuousControlId): number {
     const spec = continuousSpec(id);
@@ -482,7 +488,7 @@ export class HardwareBridge {
   private seedKnownPositions(): void {
     for (const input of CONTINUOUS_INPUTS) {
       const id = continuousTarget(input);
-      const known = this.positions.get(input.deck === null ? input.control : `${input.deck}.${input.control}`);
+      const known = id === null ? null : this.positions.get(physicalIdOf(id));
       if (id === null || known === null) continue;
       this.takeover.observe(id, known.value);
       this.moved.add(id);

@@ -81,6 +81,11 @@ export class DrillRunner {
     this.apply(drillStep(this.drill, this.state, { kind: "ready", reading: this.read() }));
   }
 
+  /** The round's clock starts again now: it waited for the Learner to match the controller. */
+  restartRound(): void {
+    this.state = { ...this.state, roundStartMs: performance.now(), heldFromMs: null, gapBpm: null };
+  }
+
   /** Stops showing anything (practice is over). */
   stop(): void {
     this.shown = NO_DRILL_STATUS;
