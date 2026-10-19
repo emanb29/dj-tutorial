@@ -5,7 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { audioContextClock, createAudioEngine, type AudioEngine, type EngineCommand } from "@audio";
 import {
   blendPositions,
+  cueMissHint,
+  cueRepLine,
+  cueTargetLine,
+  EARLY_HINT,
+  initialLessonState,
+  LATE_HINT,
   lessonDefinition,
+  lessonReducer,
   lessonTrackFromKnownGrid,
   practiceLoopFor,
   SYNTHETIC_HOUSE,
@@ -631,5 +638,69 @@ describe.each([
     expect(graded.outcome.outcome, JSON.stringify(summary(graded.outcome))).toEqual({ kind: "passed" });
     // Grading is as before: every phrase start matched, the one far tap an allowed extra.
     expect(summary(graded.outcome)).toContainEqual({ id: "phrases.phrase-taps", status: "met", detail: { matched: 8, extras: 1, targets: 8 } });
+  });
+});
+
+// Lesson 6 (Set a cue point by ear) practice: cue points set at known offsets from the grid, through the
+// real engine, move the narrowing target (±40, ±30, ±20 ms) and give the line the screen shows.
+describe("cue-point practice at 48 kHz", () => {
+  it("cue points at known offsets move the target ladder and show their line", { timeout: 60_000 }, async () => {
+    const track = syntheticLessonTrack(SYNTHETIC_HOUSE);
+    const audio = (context: BaseAudioContext) => {
+      const samples = synthesizeHouse(SYNTHETIC_HOUSE, context.sampleRate);
+      const buffer = context.createBuffer(1, samples.length, context.sampleRate);
+      buffer.copyToChannel(samples, 0);
+      return buffer;
+    };
+    const observed: Observation[] = [];
+    const run = await harness({ sampleRate: 48_000, lessonId: "cue-point", track, audio, renderSec: 20, observed });
+    const definition = lessonDefinition("cue-point");
+    const reduce = lessonReducer(definition);
+    let state = reduce(reduce(initialLessonState("cue-point"), { type: "track-ready" }), { type: "skip-hook" });
+    const practiceStart = definition.practiceStart(track);
+    const playheadSec = () => {
+      const head = run.engine.playhead("A");
+      return head.ok ? head.positionSec : null;
+    };
+    run.session.preparePractice();
+    await until(() => Math.abs((playheadSec() ?? Number.NaN) - practiceStart) < 0.01, "practice to cue deck A");
+    await run.renderTo(run.now() + 0.05);
+
+    const { grid } = track;
+    const beatSec = 60 / grid.bpm;
+    /** Track seconds of beat `beatOfBar` (1–4) of the 9th bar after the grid's first downbeat, `ms` off it. */
+    const at = (ms: number, beatOfBar = 1) => grid.firstBeat + (grid.downbeatIndex + 32 + beatOfBar - 1) * beatSec + ms / 1000;
+    const press = { device: "keyboard" } as const;
+    /** Sets a cue point there (paused: seek, then CUE), and returns what the screen shows after it. */
+    const cueAt = async (pos: number) => {
+      const before = observed.length;
+      expect(run.engine.command({ control: "seek", deck: "A", value: pos }, press)).toEqual({ ok: true });
+      await run.renderTo(run.now() + 0.02);
+      expect(run.engine.command({ control: "deck-cue", deck: "A", value: true }, press)).toEqual({ ok: true });
+      expect(run.engine.command({ control: "deck-cue", deck: "A", value: false }, press)).toEqual({ ok: true });
+      await run.renderTo(run.now() + 0.02);
+      const cues = observed.slice(before).filter((observation) => observation.kind === "cue-set");
+      expect(cues).toHaveLength(1);
+      state = cues.reduce((reached, observation) => reduce(reached, { type: "observed", observation }), state);
+      const { phase } = state;
+      if (phase.kind !== "practice" || phase.cueLadder?.last == null) throw new Error(`No cue result in the ${phase.kind} phase.`);
+      return { line: cueRepLine(phase.cueLadder.last), target: cueTargetLine(phase.cueLadder), hint: cueMissHint(phase.cueLadder), ready: phase.ready };
+    };
+
+    expect(await cueAt(at(34))).toMatchObject({ line: "Cue: 34 ms late ✓", target: "Target ±40 ms · 1 of 2" });
+    expect(await cueAt(at(-8))).toMatchObject({ line: "Cue: 8 ms early ✓", target: "Target ±30 ms · 0 of 2" });
+    expect(await cueAt(at(34))).toMatchObject({ line: "Cue: 34 ms late", target: "Target ±30 ms · 0 of 2", hint: null });
+    // Two late misses in a row: back up to ±40, and the hint says which way.
+    expect(await cueAt(at(45))).toMatchObject({ line: "Cue: 45 ms late", target: "Target ±40 ms · 0 of 2", hint: LATE_HINT });
+    expect(await cueAt(at(2, 3))).toMatchObject({ line: "Cue: on beat 3, not the 1", hint: null });
+    for (const ms of [10, -10, 5]) await cueAt(at(ms));
+    expect(await cueAt(at(-5))).toMatchObject({ target: "Target ±20 ms · 0 of 2", ready: false });
+    expect(await cueAt(at(-25))).toMatchObject({ line: "Cue: 25 ms early", ready: false });
+    expect(await cueAt(at(-30))).toMatchObject({ hint: EARLY_HINT, target: "Target ±30 ms · 0 of 2" });
+    // Each cue somewhere new: CUE on the cue point itself previews it instead of setting it.
+    for (const ms of [12, 11]) await cueAt(at(ms));
+    expect(await cueAt(at(-15))).toMatchObject({ line: "Cue: 15 ms early ✓", target: "Target ±20 ms · 1 of 2", ready: false });
+    expect(await cueAt(at(19))).toMatchObject({ line: "Cue: 19 ms late ✓", ready: true });
+    run.session.close();
   });
 });

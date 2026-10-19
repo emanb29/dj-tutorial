@@ -58,8 +58,11 @@ export type Observation =
   | { readonly kind: "level"; readonly deck: DeckId; readonly peakDb: number }
   /** The Learner pressed Ready (R); `inZone` = every Ready deck's level sat in the target zone. */
   | { readonly kind: "ready"; readonly inZone: boolean }
-  /** A cue point was set while paused, placed on the deck's grid. */
-  | { readonly kind: "cue-set"; readonly deck: DeckId; readonly offsetMs: number; readonly onDownbeat: boolean }
+  /**
+   * A cue point was set while paused, placed on the deck's grid as the cue-point Check places it
+   * (`cuePlacement`): `offsetMs` signed (positive is late), `beatOfBar` 1 to 4.
+   */
+  | { readonly kind: "cue-set"; readonly deck: DeckId; readonly offsetMs: number; readonly beatOfBar: number; readonly onDownbeat: boolean }
   /** Deck CUE held at the cue point: the preview plays. */
   | { readonly kind: "cue-preview"; readonly deck: DeckId }
   /**
@@ -166,12 +169,23 @@ export interface HookStep {
   readonly reveals?: readonly ControlId[];
 }
 
+/**
+ * How practice decides the Learner is "consistent": most Lessons use a rolling window of reps; the
+ * cue-point Lesson narrows a target instead (`cue-ladder`, see `cue-ladder.ts`).
+ */
+export type PracticeConfig = WindowPracticeConfig | CueLadderPracticeConfig;
+
+/** Each cue point set is a rep on a narrowing target: ±40, ±30, then the Check's ±20 ms. */
+export interface CueLadderPracticeConfig {
+  readonly caption: string;
+  readonly rep: "cue-ladder";
+}
+
 /** Practice reps feed a rolling window; the Learner is "consistent" once enough recent reps were good. */
-export interface PracticeConfig {
+export interface WindowPracticeConfig {
   readonly caption: string;
   /**
-   * What counts as one rep: a fade out, a tap, a Ready press (good when in the zone), a cue point set
-   * (good on a downbeat within 20 ms), a cut (good on A's phrase start within 120 ms), a blend start
+   * What counts as one rep: a fade out, a tap, a Ready press (good when in the zone), a cut (good on A's phrase start within 120 ms), a blend start
    * (B's Play within 1 beat of A's phrase start), a Ready with B on the target BPM, a LOW brought back
    * on a phrase start (within 1 beat), a bass swap (good within 1 beat of A's phrase start), A's fader
    * closed after a high-pass sweep on CFX A (good at 70% or more, on for 8–16 bars), a drill round
@@ -179,7 +193,7 @@ export interface PracticeConfig {
    * rep), a step of the stepped blend (good when made in order), a hot cue triggered on a phrase start
    * (within 120 ms), a loop of 4 or 8 bars from a downbeat, or a cut of A on a downbeat with ECHO on.
    */
-  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cue-set" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out" | "phase-hold" | "tempo-ear" | "blend-step" | "hot-cue-trigger" | "loop" | "echo-cut";
+  readonly rep: "fade" | "beat-tap" | "phrase-tap" | "ready" | "cut" | "blend-start" | "tempo-set" | "eq-return" | "swap" | "filter-out" | "phase-hold" | "tempo-ear" | "blend-step" | "hot-cue-trigger" | "loop" | "echo-cut";
   readonly window: number;
   readonly needed: number;
 }

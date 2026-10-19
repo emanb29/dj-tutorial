@@ -328,7 +328,7 @@ const cuePoint: LessonDefinition = {
     { caption: "Find a kick. Press Z", control: "A.cue", trigger: { kind: "cue-set" }, named: "That's a cue point: Z sets it while paused." },
     { caption: "Hold Z to hear it, let go", control: "A.cue", trigger: { kind: "cue-preview" }, named: "Held CUE plays from the point; let go, it snaps back." },
   ],
-  practice: { caption: "Cue on a 1: X play, X stop, jog, Z. Hold Z to check", rep: "cue-set", window: 3, needed: 2 },
+  practice: { caption: "Cue on a 1: X play, X stop, jog, Z. Hold Z to check", rep: "cue-ladder" },
   checkCaption: "This one counts: three cue points, each on a 1",
   questions: [],
   planCheck: (track) => {

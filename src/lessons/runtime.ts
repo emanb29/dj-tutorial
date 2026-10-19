@@ -4,10 +4,10 @@
 import type { BuiltLessonId } from "./catalogue.ts";
 import type { CheckResult, CriterionId, VoidReason } from "@shared/check-result.ts";
 import type { ReviewTrigger } from "@checks";
-import { CUE_PLACEMENT_TOLERANCE_MS } from "@checks";
 import { GAIN_ZONE_DB } from "./catalogue.ts";
 import { FOCUS_HISTORY_MAX, type LineFacts } from "./coach.ts";
-import type { HookTrigger, LessonDefinition, Observation, PracticeConfig } from "./types.ts";
+import { CUE_LADDER_START, CUE_LADDER_STREAK, stepCueLadder, type CueLadder } from "./cue-ladder.ts";
+import type { HookTrigger, LessonDefinition, Observation, PracticeConfig, WindowPracticeConfig } from "./types.ts";
 
 export type LessonPhase =
   | { readonly kind: "loading" }
@@ -23,6 +23,8 @@ export type LessonPhase =
       /** deck-basics: the fader is up and a fade out would finish a rep. */
       readonly fadeOpen: boolean;
       readonly named: string | null;
+      /** cue-point (Lesson 6): the narrowing target, and the last cue's result. Null in other Lessons. */
+      readonly cueLadder: CueLadder | null;
     }
   | { readonly kind: "check"; readonly attempt: number }
   | { readonly kind: "answering"; readonly answers: Readonly<Record<string, number>> }
@@ -187,18 +189,30 @@ export function triggerStep(trigger: HookTrigger, observation: Observation): 1 |
 
 const triggerCount = (trigger: HookTrigger): number => ("count" in trigger ? trigger.count : 1);
 
-function practicePhase(named: string | null): LessonPhase {
-  return { kind: "practice", reps: [], ready: false, fadeOpen: false, named };
+function practicePhase(definition: LessonDefinition, named: string | null): LessonPhase {
+  const cueLadder = definition.practice.rep === "cue-ladder" ? CUE_LADDER_START : null;
+  return { kind: "practice", reps: [], ready: false, fadeOpen: false, named, cueLadder };
 }
 
-function withRep(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "practice" }>, good: boolean): LessonPhase {
+function withRep(config: WindowPracticeConfig, phase: Extract<LessonPhase, { kind: "practice" }>, good: boolean): LessonPhase {
   const reps = [...phase.reps, good].slice(-config.window);
   return { ...phase, reps, ready: reps.filter(Boolean).length >= config.needed };
 }
 
+/** A cue point set on the narrowing target (Lesson 6): the ladder moves, and is ready once complete. */
+function withCueRep(phase: Extract<LessonPhase, { kind: "practice" }>, observation: Extract<Observation, { kind: "cue-set" }>): LessonPhase {
+  const cueLadder = stepCueLadder(phase.cueLadder ?? CUE_LADDER_START, {
+    signedMs: observation.offsetMs,
+    beatOfBar: observation.beatOfBar,
+    downbeat: observation.onDownbeat,
+  });
+  const reps = [...phase.reps, cueLadder.last?.hit === true].slice(-CUE_LADDER_STREAK);
+  return { ...phase, reps, cueLadder, ready: cueLadder.complete };
+}
+
 /**
  * Whether an observation is a practice rep, and a good one: null when it is not a rep (deck-basics'
- * fade reps need the fade's state, and are not judged here).
+ * fade reps need the fade's state, and cue-point's ladder its target: neither is judged here).
  */
 export function practiceRep(config: PracticeConfig, observation: Observation): boolean | null {
   switch (config.rep) {
@@ -210,8 +224,8 @@ export function practiceRep(config: PracticeConfig, observation: Observation): b
       return observation.kind === "tap" ? observation.onPhraseStart : null;
     case "ready":
       return observation.kind === "ready" ? observation.inZone : null;
-    case "cue-set":
-      return observation.kind === "cue-set" ? observation.onDownbeat && Math.abs(observation.offsetMs) <= CUE_PLACEMENT_TOLERANCE_MS : null;
+    case "cue-ladder":
+      return null;
     case "cut":
       return observation.kind === "cut" ? observation.onPhrase : null;
     case "blend-start":
@@ -251,6 +265,7 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
     if (observation.value <= FADER_DOWN && phase.fadeOpen) return withRep(config, { ...phase, fadeOpen: false }, true);
     return phase;
   }
+  if (config.rep === "cue-ladder") return observation.kind === "cue-set" ? withCueRep(phase, observation) : phase;
   const good = practiceRep(config, observation);
   if (good === null) return phase;
   // A missed step of the stepped blend says why at once, where the last concept was named.
@@ -260,13 +275,13 @@ function practise(config: PracticeConfig, phase: Extract<LessonPhase, { kind: "p
 
 function hook(definition: LessonDefinition, phase: Extract<LessonPhase, { kind: "hook" }>, observation: Observation): LessonPhase {
   const step = definition.hook[phase.step];
-  if (step === undefined) return practicePhase(phase.named);
+  if (step === undefined) return practicePhase(definition, phase.named);
   const moved = triggerStep(step.trigger, observation);
   if (moved === 0) return phase;
   if (moved === "reset") return { ...phase, progress: 0 };
   if (phase.progress + 1 < triggerCount(step.trigger)) return { ...phase, progress: phase.progress + 1 };
   const next = phase.step + 1;
-  return next < definition.hook.length ? { kind: "hook", step: next, progress: 0, named: step.named } : practicePhase(step.named);
+  return next < definition.hook.length ? { kind: "hook", step: next, progress: 0, named: step.named } : practicePhase(definition, step.named);
 }
 
 /** Updates miss streaks and picks at most one tip, never alongside a Review suggestion. */
@@ -306,7 +321,7 @@ export function lessonReducer(definition: LessonDefinition): (state: LessonState
         return next === phase ? state : { ...state, phase: next };
       }
       case "skip-hook":
-        return phase.kind === "hook" ? { ...state, phase: practicePhase(phase.named) } : state;
+        return phase.kind === "hook" ? { ...state, phase: practicePhase(definition, phase.named) } : state;
       case "start-check":
         if (phase.kind === "loading" || phase.kind === "unavailable" || phase.kind === "grading" || phase.kind === "answering") return state;
         return { ...state, started: state.started + 1, phase: { kind: "check", attempt: state.started + 1 } };
@@ -341,7 +356,7 @@ export function lessonReducer(definition: LessonDefinition): (state: LessonState
       case "check-failed":
         return phase.kind === "check" ? { ...state, phase: { kind: "void", reason: "recordingFailed", message: event.message } } : state;
       case "practice-again":
-        return phase.kind === "result" || phase.kind === "void" || phase.kind === "check" ? { ...state, phase: practicePhase(null) } : state;
+        return phase.kind === "result" || phase.kind === "void" || phase.kind === "check" ? { ...state, phase: practicePhase(definition, null) } : state;
       case "review-declined":
         return phase.kind === "result" ? { ...state, phase: { ...phase, review: null } } : state;
     }

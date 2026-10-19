@@ -211,6 +211,27 @@ describe("a set-up with the FLX4 connected", () => {
     expect(run.engine.deckState("A").playing).toBe(true);
   });
 
+  it("Lesson 6 (Set a cue point by ear) practice waits for the controller, then each cue point set is a rep", { timeout: 30_000 }, async () => {
+    // Every fader of the set-up as far from its target as it goes: nothing matches yet.
+    const definition = lessonDefinition("cue-point");
+    const decks = practiceDecksFor(definition, pairTrack());
+    const controller = new FakeController({ "A.channel-fader": decks.A.fader > 0.5 ? 0 : 1, "A.trim": 0 });
+    const run = await harness("cue-point", controller);
+    run.session.preparePractice("practice");
+    await until(() => run.session.setUpPending() !== null, "the match step");
+    expect(run.session.setUpPending()?.caption).toBeNull();
+    controller.move("A.channel-fader", decks.A.fader);
+    run.engine.command({ control: "channel-fader", deck: "A", value: decks.A.fader }, { device: "midi" });
+    await until(() => run.session.setUpPending() === null, "the controller to match");
+    await until(() => Math.abs((run.engine.playheadAt("A", run.now())?.positionSec ?? Number.NaN) - decks.A.pos) < 0.5, "practice to cue deck A");
+    run.engine.command({ control: "pause", deck: "A" }, { device: "keyboard" });
+    await run.renderTo(run.now() + 0.05);
+    run.engine.command({ control: "deck-cue", deck: "A", value: true }, { device: "keyboard" });
+    run.engine.command({ control: "deck-cue", deck: "A", value: false }, { device: "keyboard" });
+    await run.renderTo(run.now() + 0.05);
+    expect(run.observed.filter((observation) => observation.kind === "cue-set")).toHaveLength(1);
+  });
+
   it("skips a captioned set-up step's unmatched items: they are set on screen, and R is not needed", { timeout: 30_000 }, async () => {
     const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
     const run = await harness("cut-on-phrase", controller);

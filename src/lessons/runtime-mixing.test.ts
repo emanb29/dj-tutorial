@@ -64,24 +64,40 @@ describe("cue-point", () => {
     const state = run(definition, [
       ready,
       seen({ kind: "touch", control: "A.jog" }),
-      seen({ kind: "cue-set", deck: "A", offsetMs: 80, onDownbeat: false }),
+      seen({ kind: "cue-set", deck: "A", offsetMs: 80, beatOfBar: 2, onDownbeat: false }),
       seen({ kind: "cue-preview", deck: "A" }),
     ]);
     expect(state.phase).toMatchObject({ kind: "practice", named: "Held CUE plays from the point; let go, it snaps back." });
   });
 
-  it("counts a cue point as good only on a downbeat within 20 ms", () => {
+  const cue = (offsetMs: number, beatOfBar = 1): Observation => ({ kind: "cue-set", deck: "A", offsetMs, beatOfBar, onDownbeat: beatOfBar === 1 });
+
+  it("practice starts on the ±40 ms rung", () => {
     const practising = run(definition, [ready, { type: "skip-hook" }]);
-    const state = run(
-      definition,
-      [
-        seen({ kind: "cue-set", deck: "A", offsetMs: 12, onDownbeat: true }),
-        seen({ kind: "cue-set", deck: "A", offsetMs: 25, onDownbeat: true }),
-        seen({ kind: "cue-set", deck: "A", offsetMs: 3, onDownbeat: false }),
-      ],
-      practising,
-    );
-    expect(state.phase).toMatchObject({ kind: "practice", reps: [true, false, false], ready: false });
+    expect(practising.phase).toMatchObject({ kind: "practice", cueLadder: { rung: 0, hits: 0 }, ready: false });
+  });
+
+  it("narrows ±40, ±30, ±20 on two hits in a row each, then is ready", () => {
+    const practising = run(definition, [ready, { type: "skip-hook" }]);
+    const atThirty = run(definition, [seen(cue(35)), seen(cue(-38))], practising);
+    expect(atThirty.phase).toMatchObject({ cueLadder: { rung: 1, hits: 0 }, ready: false });
+    const atTwenty = run(definition, [seen(cue(25)), seen(cue(-28))], atThirty);
+    expect(atTwenty.phase).toMatchObject({ cueLadder: { rung: 2 }, ready: false });
+    const done = run(definition, [seen(cue(12)), seen(cue(-20))], atTwenty);
+    expect(done.phase).toMatchObject({ kind: "practice", ready: true, cueLadder: { complete: true } });
+  });
+
+  it("two good cue points move one rung down, not into the Check", () => {
+    const practising = run(definition, [ready, { type: "skip-hook" }]);
+    const state = run(definition, [seen(cue(3)), seen(cue(4))], practising);
+    expect(state.phase).toMatchObject({ ready: false, cueLadder: { rung: 1 } });
+  });
+
+  it("a cue on beat 3 is a miss however close, and other Lessons have no ladder", () => {
+    const practising = run(definition, [ready, { type: "skip-hook" }]);
+    expect(run(definition, [seen(cue(2, 3))], practising).phase).toMatchObject({ reps: [false], cueLadder: { misses: 1 } });
+    const fade = run(lessonDefinition("deck-basics"), [ready, { type: "skip-hook" }]);
+    expect(fade.phase).toMatchObject({ kind: "practice", cueLadder: null });
   });
 });
 

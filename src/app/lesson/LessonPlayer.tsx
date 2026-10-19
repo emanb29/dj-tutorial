@@ -6,6 +6,9 @@ import { createAudioEngine, describeError, outputLine, type AudioEngine } from "
 import { applyCheckResult, CUE_PLACEMENT_TOLERANCE_MS } from "@checks";
 import {
   COVERED_DISPLAYS,
+  cueMissHint,
+  cueRepLine,
+  cueTargetLine,
   initialLessonState,
   gradedLine,
   lessonDefinition,
@@ -487,6 +490,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   const unlocks = useMemo(() => lessonUnlocks(definition, before, hookStep), [before, hookStep, definition]);
   const step = hookStep === null ? undefined : definition.hook[hookStep];
   const captions = useMemo<readonly ControllerCaption[]>(() => (step === undefined ? NO_CAPTIONS : [{ control: step.control, text: step.caption }]), [step]);
+  // Lesson 6 practice: after two misses the same way, which way to fix it.
+  const cueHint = phase.kind === "practice" && phase.cueLadder !== null ? cueMissHint(phase.cueLadder) : null;
 
   return (
     <main className="lesson" data-phase={phase.kind} data-input={wording}>
@@ -539,7 +544,16 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
         </p>
         {wording === "touch" ? <TouchGo phase={phase} dispatch={dispatch} /> : null}
         {wording === "touch" && session !== null ? <TouchReady phase={phase} session={session} definition={definition} /> : null}
-        {session === null ? null : <FeedbackStrip session={session} taps={taps} showBeat={phase.kind !== "check"} practice={phase.kind === "practice" ? phase : null} line={inPractice ? drill.line : null} />}
+        {session === null ? null : (
+          <FeedbackStrip
+            session={session}
+            taps={taps}
+            showBeat={phase.kind !== "check"}
+            practice={phase.kind === "practice" ? phase : null}
+            line={inPractice ? (drill.line ?? cueLadderLine(phase)) : null}
+            hint={cueHint === null ? null : inputWording(cueHint, wording, tapOnHardware)}
+          />
+        )}
       </div>
 
       <div className="lesson-board">
@@ -669,6 +683,12 @@ function TrackCredit({ track }: { readonly track: LessonTrack }) {
   );
 }
 
+/** Lesson 6 practice: the last cue point's offset ("Cue: 34 ms late"), or null before the first. */
+function cueLadderLine(phase: LessonPhase): string | null {
+  if (phase.kind !== "practice" || phase.cueLadder?.last == null) return null;
+  return cueRepLine(phase.cueLadder.last);
+}
+
 interface CaptionProps {
   readonly phase: LessonPhase;
   readonly definition: ReturnType<typeof lessonDefinition>;
@@ -703,6 +723,11 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
           {phase.named === null ? null : <span className="lesson-named">{phase.named}</span>}
           <span className="lesson-do">
             {phase.ready ? "Ready? This one counts." : say(practiceCaption)}
+            {phase.ready || phase.cueLadder === null ? null : (
+              <span className="lesson-target" data-testid="cue-target">
+                {cueTargetLine(phase.cueLadder)}
+              </span>
+            )}
             <span className="lesson-hint">
               <kbd>Enter</kbd> {phase.ready ? "to go" : "for the Check"}
             </span>

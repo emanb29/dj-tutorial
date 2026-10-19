@@ -122,6 +122,16 @@
   letter-spacing: 0;
 }
 
+/* Lesson 6 practice's target, after the caption: "Target ±30 ms · 1 of 2". */
+.lesson-target {
+  margin-left: var(--space-3);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 /* A checkpoint in a long Check ("halfway"): a tick pops in, the music keeps playing. */
 /* "Graded: …" under the caption: every criterion the Check can fail on, standing ones too. */
 .lesson-graded {
@@ -261,6 +271,11 @@
   font-size: 15px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+/* After a miss: which way to fix it, quieter than the result. */
+.drill-hint {
+  font-weight: 500;
 }
 
 /* ---- the board: controller, with questions and results floating over it ----------------- */

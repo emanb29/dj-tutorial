@@ -124,6 +124,45 @@ test("cue-point: the jog searches a paused deck, and three cue points on a 1 pas
   await expect(card.getByRole("list", { name: "Each cue" }).getByRole("listitem")).toHaveText(["Cue 1: 4 ms late ✓", "Cue 2: 4 ms late ✓", "Cue 3: 4 ms late ✓"]);
 });
 
+test("cue-point practice: each cue point shows its offset, the target narrows, and a hint follows two late misses", async ({ page }) => {
+  test.setTimeout(90_000);
+  const learnerId = learner("cueladder");
+  await seedPassed(page, learnerId, ["deck-basics", "beats-and-bars", "headphone-cue"], { headphones: true });
+  await openLesson(page, learnerId, "cue-point");
+  // The hook from the test: search, set a cue point, hold CUE on it to preview, let go.
+  await expect(caption(page)).toContainText("Turn the jog wheel");
+  await command(page, { control: "jog-search", deck: "A", value: 0.1 });
+  for (let press = 0; press < 2; press += 1) {
+    await command(page, { control: "deck-cue", deck: "A", value: true });
+    await command(page, { control: "deck-cue", deck: "A", value: false });
+  }
+  await expect(caption(page)).toContainText("Target ±40 ms · 0 of 2", { timeout: 5000 });
+
+  /** Paused deck A to `ms` off the 1 of the grid's 9th bar, then CUE: a cue point there. */
+  const cueAt = async (ms: number) => {
+    const pos = await page.evaluate((offsetMs) => {
+      const grid = (window as LessonWindow).learnToDjLesson?.deckTrack("A")?.grid;
+      if (grid === undefined) throw new Error("No track on deck A.");
+      return grid.firstBeat + (grid.downbeatIndex + 32) * (60 / grid.bpm) + offsetMs / 1000;
+    }, ms);
+    await command(page, { control: "seek", deck: "A", value: pos });
+    await command(page, { control: "deck-cue", deck: "A", value: true });
+    await command(page, { control: "deck-cue", deck: "A", value: false });
+  };
+  const feedback = page.getByRole("status", { name: "Practice feedback" });
+  await cueAt(34);
+  await expect(feedback).toHaveText("Cue: 34 ms late ✓");
+  await expect(caption(page)).toContainText("Target ±40 ms · 1 of 2");
+  await cueAt(-8);
+  await expect(feedback).toHaveText("Cue: 8 ms early ✓");
+  await expect(caption(page)).toContainText("Target ±30 ms · 0 of 2");
+  await cueAt(34);
+  await cueAt(45);
+  await expect(feedback).toHaveText("Cue: 45 ms late");
+  await expect(caption(page)).toContainText("Target ±40 ms · 0 of 2");
+  await expect(page.getByLabel("Practice hint")).toHaveText("Late? Scrub slower over the last few ticks; stop just before the thump.");
+});
+
 test("cut-on-phrase: CUE B, fader B up, then PLAY B and cut A on the phrase start, passes", async ({ page }) => {
   test.setTimeout(90_000);
   const learnerId = learner("cut");

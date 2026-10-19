@@ -86,7 +86,7 @@ describe("the hook", () => {
       seen({ kind: "fader", deck: "A", value: 1 }),
       seen({ kind: "fader", deck: "A", value: 0 }),
     ]);
-    expect(state.phase).toEqual({ kind: "practice", reps: [], ready: false, fadeOpen: false, named: "Fade out. That's a deck." });
+    expect(state.phase).toEqual({ kind: "practice", reps: [], ready: false, fadeOpen: false, named: "Fade out. That's a deck.", cueLadder: null });
   });
 
   it("counts on-beat taps, and for downbeats starts over on a tap that is not the 1", () => {

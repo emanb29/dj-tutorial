@@ -20,9 +20,11 @@ interface FeedbackStripProps {
   readonly practice: Extract<LessonPhase, { kind: "practice" }> | null;
   /** A by-ear drill's line ("Two kicks? Nudge B"), during the hook and practice. */
   readonly line?: string | null;
+  /** One more line after a miss, on how to fix it (Lesson 6: "Late? Scrub slower …"). */
+  readonly hint?: string | null;
 }
 
-export function FeedbackStrip({ session, taps, showBeat, practice, line = null }: FeedbackStripProps) {
+export function FeedbackStrip({ session, taps, showBeat, practice, line = null, hint = null }: FeedbackStripProps) {
   const pulse = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -67,6 +69,11 @@ export function FeedbackStrip({ session, taps, showBeat, practice, line = null }
       {line === null ? null : (
         <span className="drill-line" role="status" aria-label="Practice feedback">
           {line}
+        </span>
+      )}
+      {hint === null ? null : (
+        <span className="drill-line drill-hint" aria-label="Practice hint">
+          {hint}
         </span>
       )}
       {practice === null ? null : (

@@ -5,7 +5,7 @@
 // The audio part of a Check ends (and the recorder stops) before any questions are asked, so the
 // grading window and the end reason never include the time spent answering.
 import { AttemptRecorder, eqKnobToDecibels, type AudioEngine, type CommandEvent, type EngineCommand, type RecordedAttempt, type Result } from "@audio";
-import { CLASH_LOW_DB, runCheck } from "@checks";
+import { CLASH_LOW_DB, cuePlacement, runCheck } from "@checks";
 import {
   blendPose,
   checkDecksFor,
@@ -611,11 +611,9 @@ export class LessonSession {
   private onCuePoint(deck: DeckId, pos: number): void {
     const track = this.onDeck[deck];
     if (track === null || this.settingUp) return;
-    const tap = classifyTap(track.grid, [], pos);
-    const beat = 60 / track.grid.bpm;
-    const nearest = Math.round((pos - track.grid.firstBeat) / beat);
-    const onDownbeat = (((nearest - track.grid.downbeatIndex) % 4) + 4) % 4 === 0;
-    this.observe({ kind: "cue-set", deck, offsetMs: tap.offsetMs, onDownbeat });
+    // The Check's own measurement: a cue point is a deck position, so no output latency applies.
+    const placement = cuePlacement(track.grid, pos);
+    this.observe({ kind: "cue-set", deck, offsetMs: placement.signedMs, beatOfBar: placement.beatOfBar, onDownbeat: placement.downbeat });
     if (this.check !== null && deck === "A") this.check.sliceCued = true;
   }
 

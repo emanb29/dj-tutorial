@@ -1,9 +1,31 @@
 // Lesson 6, `cue-point`: set a cue point on a downbeat by ear (check-design §4).
+import type { BeatGrid } from "@shared/attempt.ts";
 import type { CriterionResult } from "@shared/check-result.ts";
 import type { CheckContext, LessonCheck, TaskOf } from "../context.ts";
 import { judgeAll } from "../criterion.ts";
 import { trackBeat } from "../timeline.ts";
 import { CUE_PLACEMENT_TOLERANCE_MS } from "../tolerance.ts";
+
+/** Where a cue point sits on its track's grid: the one measurement the Check and practice share. */
+export interface CuePlacement {
+  /** Signed ms to the nearest beat: positive is late, after the beat. */
+  readonly signedMs: number;
+  /** The beat of the bar (1 to 4) the cue is nearest. */
+  readonly beatOfBar: number;
+  readonly downbeat: boolean;
+}
+
+/**
+ * A cue point at track position `pos` against its grid. The cue point is a deck position, not a heard
+ * time, so no output latency applies to it.
+ */
+export function cuePlacement(grid: BeatGrid, pos: number): CuePlacement {
+  const beat = trackBeat(grid, pos);
+  const nearest = Math.round(beat);
+  const signedMs = ((beat - nearest) * 60_000) / grid.bpm;
+  const beatOfBar = ((((nearest - grid.downbeatIndex) % 4) + 4) % 4) + 1;
+  return { signedMs, beatOfBar, downbeat: beatOfBar === 1 };
+}
 
 /**
  * `cue-point.cue-on-downbeat`: for each track, the last cue set on it is within ±20 ms of its
@@ -18,11 +40,8 @@ export function cueOnDownbeat(context: CheckContext, trackIds: readonly string[]
     const cue = context.attempt.cuePoints.filter((candidate) => candidate.trackId === trackId).at(-1);
     const grid = context.attempt.grids[trackId];
     if (cue === undefined || grid === undefined) return null;
-    const beat = trackBeat(grid, cue.pos);
-    const nearest = Math.round(beat);
-    const signedMs = ((beat - nearest) * 60_000) / grid.bpm;
-    const beatOfBar = ((((nearest - grid.downbeatIndex) % 4) + 4) % 4) + 1;
-    return { offsetMs: Math.abs(signedMs), signedMs, beatOfBar, downbeat: beatOfBar === 1 };
+    const placement = cuePlacement(grid, cue.pos);
+    return { ...placement, offsetMs: Math.abs(placement.signedMs) };
   });
   const perCue = Object.fromEntries(
     placements.flatMap((placement, index) =>
