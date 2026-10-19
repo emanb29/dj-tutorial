@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createAudioEngine } from "./engine.ts";
-import { ControllerCueMonitor, TwoDeviceMonitor, type HeadphoneSink } from "./device-monitors.ts";
+import { ControllerCueMonitor, routeToControllerPhones, TwoDeviceMonitor, type HeadphoneSink } from "./device-monitors.ts";
 import { channelRmsDb, onsetSec, SAMPLE_RATE } from "./offline-test-support.ts";
 import { CONTEXT_HOP_SEC } from "./output.ts";
 
@@ -118,6 +118,57 @@ describe("TwoDeviceMonitor (speakers and headphones)", () => {
     monitor.attach({ context, master: new GainNode(context), cue: new GainNode(context) });
     monitor.detach();
     expect(headphones.closed).toBe(true);
+  });
+});
+
+describe("speakers on this computer, headphones on the FLX4 (TwoDeviceMonitor into routeToControllerPhones)", () => {
+  /** Channels `from` and `from + 1` of a render, as a stereo buffer: what crossed to the second device. */
+  function stereoOf(rendered: AudioBuffer, from: number): AudioBuffer {
+    const pair = new AudioBuffer({ length: rendered.length, numberOfChannels: 2, sampleRate: SAMPLE_RATE });
+    pair.copyToChannel(rendered.getChannelData(from), 0);
+    pair.copyToChannel(rendered.getChannelData(from + 1), 1);
+    return pair;
+  }
+
+  it("puts a stereo headphone signal on the FLX4's 3/4 and silence on its MASTER OUT (1/2)", async () => {
+    const flx4 = new OfflineAudioContext(4, SAMPLE_RATE, SAMPLE_RATE);
+    const tone = new OscillatorNode(flx4, { frequency: 660 });
+    const level = new GainNode(flx4, { gain: 0.25, channelCount: 2, channelCountMode: "explicit" });
+    tone.connect(level);
+    routeToControllerPhones(level, flx4);
+    tone.start();
+    const rendered = await flx4.startRendering();
+    expect(channelRmsDb(rendered, 0, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    expect(channelRmsDb(rendered, 1, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    expect(channelRmsDb(rendered, 2, 0.1, 0.9)).toBeGreaterThan(-20);
+    expect(channelRmsDb(rendered, 3, 0.1, 0.9)).toBeGreaterThan(-20);
+  });
+
+  it("gives the master context the master only, and the FLX4's context the cue on 3/4 only", async () => {
+    // The engine's context: channels 0/1 are the computer's speakers; 2/3 catch what the stream carries
+    // to the FLX4 (fakeHeadphones), which a second render then plays into the FLX4's own context.
+    const engine = new OfflineAudioContext(4, SAMPLE_RATE, SAMPLE_RATE);
+    engine.destination.channelCount = 4;
+    engine.destination.channelInterpretation = "discrete";
+    const monitor = new TwoDeviceMonitor(fakeHeadphones(engine, 0), 0, () => 0);
+    monitor.attach(buses(engine));
+    monitor.setCueMix(0);
+    const speakers = await engine.startRendering();
+    // The master (left tone) on the speakers; the cue (right tone) never reaches them.
+    expect(channelRmsDb(speakers, 0, 0.1, 0.9)).toBeGreaterThan(-20);
+    expect(channelRmsDb(speakers, 1, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+
+    const flx4 = new OfflineAudioContext(4, SAMPLE_RATE, SAMPLE_RATE);
+    const stream = new AudioBufferSourceNode(flx4, { buffer: stereoOf(speakers, 2) });
+    routeToControllerPhones(stream, flx4);
+    stream.start();
+    const phones = await flx4.startRendering();
+    // Nothing on the FLX4's MASTER OUT.
+    expect(channelRmsDb(phones, 0, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    expect(channelRmsDb(phones, 1, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    // The cue (right) in the headphones' right ear; no master (left) in them at MIXING 0.
+    expect(channelRmsDb(phones, 2, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    expect(channelRmsDb(phones, 3, 0.1, 0.9)).toBeGreaterThan(-20);
   });
 });
 

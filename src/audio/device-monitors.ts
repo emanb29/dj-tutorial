@@ -1,7 +1,9 @@
 // Monitor outputs beyond one stereo device (output.ts has the modes):
 // - ControllerCueMonitor: a 4-channel sound card such as the DDJ-FLX4's: master on 1/2, cue on 3/4.
 // - TwoDeviceMonitor: master to this context's device, the headphone cue to another device through a
-//   HeadphoneSink, the two paths lined up by delaying the earlier one (lineUpDelays).
+//   HeadphoneSink, the two paths lined up by delaying the earlier one (lineUpDelays). The sink is a
+//   stereo device (deviceHeadphoneSink) or the FLX4's headphone jack (controllerPhonesSink, which puts
+//   the cue on its outputs 3/4 with ControllerCueMonitor and silence on 1/2).
 // Both mix the headphone path as SplitCueMonitor does (cue × (1 − mix) + master × mix, × headphone
 // gain), but in stereo, since each has a whole stereo output for the headphones.
 
@@ -104,17 +106,38 @@ export interface HeadphoneSink {
 }
 
 /**
- * The headphone device as a second AudioContext with its own sinkId, fed by a MediaStream from the
- * engine's context. The engine's context stays the one that owns the decks and the clock.
+ * Puts a stereo headphone signal on a four-channel sound card's headphone outputs (3/4) and silence on
+ * its master outputs (1/2), through ControllerCueMonitor with a silent master bus: the FLX4's headphone
+ * jack, with nothing on its MASTER OUT. Returns the undo.
  */
-export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
+export function routeToControllerPhones(headphones: AudioNode, output: BaseAudioContext): () => void {
+  const monitor = new ControllerCueMonitor();
+  const silentMaster = new GainNode(output, { channelCount: 2, channelCountMode: "explicit" });
+  const cue = new GainNode(output, { channelCount: 2, channelCountMode: "explicit" });
+  headphones.connect(cue);
+  // The headphone mix and level are applied before the signal gets here (TwoDeviceMonitor).
+  monitor.attach({ context: output, master: silentMaster, cue });
+  monitor.setCueMix(0);
+  monitor.setHeadphoneGain(1);
+  return () => {
+    monitor.detach();
+    headphones.disconnect(cue);
+  };
+}
+
+/**
+ * The headphone path as a second AudioContext (from `openOutput`), fed by a MediaStream from the
+ * engine's context and put on its outputs by `route`. The engine's context stays the one that owns the
+ * decks and the clock.
+ */
+function streamHeadphoneSink(openOutput: () => AudioContext, route: (headphones: AudioNode, output: AudioContext) => () => void): HeadphoneSink {
   let output: AudioContext | null = null;
   let stop: (() => void) | null = null;
   return {
     open(context) {
       const streamOut = new MediaStreamAudioDestinationNode(context as AudioContext, { channelCount: 2 });
-      const headphones = new AudioContext({ latencyHint: "interactive", sinkId: deviceId } as AudioContextOptions);
-      new MediaStreamAudioSourceNode(headphones, { mediaStream: streamOut.stream }).connect(headphones.destination);
+      const headphones = openOutput();
+      const unroute = route(new MediaStreamAudioSourceNode(headphones, { mediaStream: streamOut.stream }), headphones);
       const follow = () => {
         // Starts and stops with the engine's context (which starts on the Learner's click).
         if (context.state === "running") void headphones.resume();
@@ -125,6 +148,7 @@ export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
       output = headphones;
       stop = () => {
         context.removeEventListener("statechange", follow);
+        unroute();
         streamOut.disconnect();
       };
       return streamOut;
@@ -139,6 +163,28 @@ export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
       output = null;
     },
   };
+}
+
+/** The headphone device as a second stereo AudioContext with its own sinkId. */
+export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
+  return streamHeadphoneSink(
+    () => new AudioContext({ latencyHint: "interactive", sinkId: deviceId } as AudioContextOptions),
+    (headphones, output) => {
+      headphones.connect(output.destination);
+      return () => {
+        headphones.disconnect();
+      };
+    },
+  );
+}
+
+/**
+ * The FLX4's headphone jack as the headphone device: a second AudioContext on its four-channel card,
+ * cue on 3/4 and silence on 1/2 (routeToControllerPhones). `openOutput` gives that context; the caller
+ * has checked it shows four outputs (output-routing.ts).
+ */
+export function controllerPhonesSink(openOutput: () => AudioContext): HeadphoneSink {
+  return streamHeadphoneSink(openOutput, routeToControllerPhones);
 }
 
 /**

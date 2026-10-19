@@ -27,7 +27,7 @@ declare global {
   }
 }
 
-const MODE_NAMES: Readonly<Record<OutputMode, string>> = { "split-cue": "this computer's output", controller: "the FLX4", "two-devices": "two devices" };
+const MODE_NAMES: Readonly<Record<OutputMode, string>> = { "split-cue": "this computer's output", controller: "the FLX4", "two-devices": "two devices", "computer-and-controller-phones": "this computer and the FLX4's headphones" };
 
 /** A click track: a short tone burst on every beat, the first of each bar higher. */
 function clickTrack(context: BaseAudioContext): { audio: AudioBuffer; grid: BeatGrid } {

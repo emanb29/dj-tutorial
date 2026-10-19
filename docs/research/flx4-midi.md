@@ -159,6 +159,17 @@ controller keeps its own pad mode and sends the mode's notes.
   mapped to the software gain", and MASTER CUE "is hardware implemented" [X3]. HEADPHONE LEVEL and
   MIX may be too **(unverified)**. The app still records them (Lessons grade master level), so when
   playing through the FLX4 the master knob may act twice: once in the app, once in the unit.
+- **Headphone knobs, what is documented (read 2026-10-18):** the Mixxx manual lists HEADPHONES
+  MIXING ("adjusts between headphone CUE and MASTER levels sent to headphones") and HEADPHONES LEVEL
+  ("adjusts output level from PHONES jack") with no "hardware implemented" note, unlike MASTER and
+  MASTER CUE [X3]. Mixxx's mapping sends HEADPHONES MIXING (`B6 0C`/`2C`) to its software `headMix`
+  and maps no HEADPHONES LEVEL at all [X2], which suggests MIX is mixed in software and LEVEL in the
+  unit. MASTER CUE "sends master output to headphones" in the unit [X3]. None of it is confirmed on
+  the owner's unit **(unverified)**. The app maps HEADPHONES MIX to its own cue mix either way.
+- **Speakers on the computer, headphones on the FLX4** (`computer-and-controller-phones`): the FLX4's
+  outputs 1/2 carry silence and 3/4 the app's headphone mix. If the unit does mix HEADPHONES MIX
+  itself, its MASTER side is that silence and would fade the cue out, so `/controller` says to turn
+  it to CUE; MASTER CUE would add only silence.
 - The mic input cannot be used as a computer input device [X3].
 
 ## Browser APIs (Chrome, Edge, Arc on macOS)

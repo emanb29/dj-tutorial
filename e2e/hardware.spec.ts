@@ -427,6 +427,44 @@ test("the output picker offers the FLX4 when its sound card is there, and keeps 
   await expect(page.getByLabel("Cue (headphones)")).toHaveValue("flx");
 });
 
+test("the output picker offers this computer's speakers with the FLX4's headphones, says to turn HEADPHONES MIX to CUE, and keeps the choice", async ({ page }) => {
+  await fakeMidi(page, {
+    controller: true,
+    outputs: [
+      { deviceId: "spk", label: "MacBook Pro Speakers" },
+      { deviceId: "flx", label: "DDJ-FLX4" },
+    ],
+  });
+  await page.goto("/controller");
+  const phones = page.getByRole("radio", { name: /Speakers: this computer · Headphones: FLX4/ });
+  await expect(phones).toBeEnabled();
+  await phones.check();
+  await expect(page.getByTestId("phones-mix-hint")).toHaveText(/Turn the FLX4’s HEADPHONES MIX to CUE/);
+  // The speakers are picked from this computer's outputs only, never the FLX4.
+  const speakers = page.getByLabel("Master (speakers)");
+  await expect(speakers).toHaveValue("spk");
+  await expect(speakers.locator("option")).toHaveText(["MacBook Pro Speakers"]);
+  await page.reload();
+  await expect(page.getByRole("radio", { name: /Speakers: this computer · Headphones: FLX4/ })).toBeChecked();
+  const stored = await page.evaluate(() => window.localStorage.getItem("learn-to-dj.audio-output"));
+  expect(JSON.parse(stored ?? "null")).toEqual({ kind: "computer-and-controller-phones", masterDeviceId: "spk", masterLabel: "MacBook Pro Speakers", controllerDeviceId: "flx", controllerLabel: "DDJ-FLX4", headphoneOffsetMs: 0 });
+  // Its own Timing check entry: the check names this output.
+  await expect(page.getByTestId("timing-check")).toContainText("this computer and the FLX4's headphones");
+});
+
+test("speakers with the FLX4's headphones is not offered without the FLX4's sound card", async ({ page }) => {
+  await fakeMidi(page, {
+    controller: true,
+    outputs: [
+      { deviceId: "spk", label: "MacBook Pro Speakers" },
+      { deviceId: "pods", label: "AirPods" },
+    ],
+  });
+  await page.goto("/controller");
+  await expect(page.getByRole("radio", { name: /Two devices/ })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: /Speakers: this computer · Headphones: FLX4/ })).toBeDisabled();
+});
+
 test("unnamed outputs are offered as Output N, with a way to name them", async ({ page }) => {
   await fakeMidi(page, {
     controller: false,

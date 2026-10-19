@@ -1,4 +1,4 @@
-// Where the engine's sound goes (research: docs/research/flx4-midi.md, "Browser APIs"). Three modes,
+// Where the engine's sound goes (research: docs/research/flx4-midi.md, "Browser APIs"). Four modes,
 // all chosen by the Learner and never switched to on their own:
 // - "split-cue": one device, today's default. Headphone Lessons put the cue in the left ear and the
 //   master in the right; other Lessons play the master in stereo.
@@ -6,6 +6,12 @@
 //   to speakers) and the headphone cue on 3/4 (its headphone jack).
 // - "two-devices": the master to one device (speakers) and the headphone cue to another (headphones),
 //   with the two paths' latencies lined up and a manual offset on top.
+// - "computer-and-controller-phones": the master to a computer device (speakers), the headphone cue to
+//   the FLX4's headphone jack (its outputs 3/4, with silence on 1/2). It is its own kind, not a variant
+//   of "two-devices", because its second device has a different shape (four channels, cue on 3/4, a
+//   fewer-than-4 fallback) and a different latency, and the Timing check is stored per kind
+//   (src/app/timing-offset.ts), so it gets its own entry. It reuses the two-devices line-up and offset
+//   (TwoDeviceMonitor) and the FLX4's channel layout (ControllerCueMonitor): device-monitors.ts.
 // Everything here is pure or takes the browser APIs as arguments, so it is tested with fake devices.
 
 export type OutputChoice =
@@ -18,6 +24,16 @@ export type OutputChoice =
       readonly headphoneDeviceId: string;
       readonly headphoneLabel: string;
       /** The Learner's correction, ms: positive when the headphones still sound late after the automatic line-up. */
+      readonly headphoneOffsetMs: number;
+    }
+  | {
+      readonly kind: "computer-and-controller-phones";
+      readonly masterDeviceId: string;
+      readonly masterLabel: string;
+      /** The FLX4's sound card: the cue goes to its headphone jack. */
+      readonly controllerDeviceId: string;
+      readonly controllerLabel: string;
+      /** As for two devices: positive when the FLX4's headphones still sound late after the line-up. */
       readonly headphoneOffsetMs: number;
     };
 
@@ -60,7 +76,18 @@ export function outputDevicesFrom(devices: readonly Pick<MediaDeviceInfo, "devic
 export type OutputPlan =
   | { readonly kind: "split-cue"; readonly sinkId: null; readonly fallback: string | null }
   | { readonly kind: "controller"; readonly sinkId: string; readonly label: string }
-  | { readonly kind: "two-devices"; readonly sinkId: string; readonly masterLabel: string; readonly headphoneSinkId: string; readonly headphoneLabel: string; readonly headphoneOffsetMs: number };
+  | { readonly kind: "two-devices"; readonly sinkId: string; readonly masterLabel: string; readonly headphoneSinkId: string; readonly headphoneLabel: string; readonly headphoneOffsetMs: number }
+  | {
+      readonly kind: "computer-and-controller-phones";
+      readonly sinkId: string;
+      readonly masterLabel: string;
+      readonly controllerSinkId: string;
+      readonly controllerLabel: string;
+      readonly headphoneOffsetMs: number;
+    };
+
+/** A plan with a second device for the headphones, lined up with the master's (TwoDeviceMonitor). */
+export type LinedUpPlan = Extract<OutputPlan, { kind: "two-devices" | "computer-and-controller-phones" }>;
 
 /**
  * The plan for a choice. A chosen device that is missing (unplugged) or a browser that cannot choose
@@ -73,8 +100,30 @@ export function planOutput(choice: OutputChoice, present: readonly OutputDevice[
   if (choice.kind === "controller") {
     return has(choice.deviceId) ? { kind: "controller", sinkId: choice.deviceId, label: choice.label } : { kind: "split-cue", sinkId: null, fallback: `${choice.label} not found` };
   }
-  const missing = [has(choice.masterDeviceId) ? null : choice.masterLabel, has(choice.headphoneDeviceId) ? null : choice.headphoneLabel].filter((label) => label !== null);
-  if (missing.length > 0) return { kind: "split-cue", sinkId: null, fallback: `${missing.join(" and ")} not found` };
+  const notFound = (devices: readonly (readonly [deviceId: string, label: string])[]): OutputPlan | null => {
+    const missing = devices.filter(([deviceId]) => !has(deviceId)).map(([, label]) => label);
+    return missing.length > 0 ? { kind: "split-cue", sinkId: null, fallback: `${missing.join(" and ")} not found` } : null;
+  };
+  if (choice.kind === "computer-and-controller-phones") {
+    return (
+      notFound([
+        [choice.masterDeviceId, choice.masterLabel],
+        [choice.controllerDeviceId, choice.controllerLabel],
+      ]) ?? {
+        kind: "computer-and-controller-phones",
+        sinkId: choice.masterDeviceId,
+        masterLabel: choice.masterLabel,
+        controllerSinkId: choice.controllerDeviceId,
+        controllerLabel: choice.controllerLabel,
+        headphoneOffsetMs: choice.headphoneOffsetMs,
+      }
+    );
+  }
+  const missing = notFound([
+    [choice.masterDeviceId, choice.masterLabel],
+    [choice.headphoneDeviceId, choice.headphoneLabel],
+  ]);
+  if (missing !== null) return missing;
   return {
     kind: "two-devices",
     sinkId: choice.masterDeviceId,
@@ -96,6 +145,8 @@ export function outputLine(plan: OutputPlan, headphones: boolean): string {
       return "FLX4: master to its MASTER OUT · cue to its headphones";
     case "two-devices":
       return `Master: ${plan.masterLabel} · Cue: ${plan.headphoneLabel}`;
+    case "computer-and-controller-phones":
+      return `Speakers: ${plan.masterLabel} · Headphones: FLX4`;
   }
 }
 
@@ -112,6 +163,14 @@ export function lineUpDelays(latency: { readonly masterSec: number; readonly hea
   const offsetSec = Math.max(-HEADPHONE_OFFSET_LIMIT_MS, Math.min(HEADPHONE_OFFSET_LIMIT_MS, headphoneOffsetMs)) / 1000;
   const difference = latency.headphoneSec + CONTEXT_HOP_SEC + offsetSec - latency.masterSec;
   return difference >= 0 ? { masterDelaySec: difference, cueDelaySec: 0 } : { masterDelaySec: 0, cueDelaySec: -difference };
+}
+
+/**
+ * Why the FLX4's headphone jack cannot take the cue, or null when its card shows the four outputs it
+ * needs. With two, a stereo cue would land on 1/2, its MASTER OUT, so the engine falls back instead.
+ */
+export function controllerPhonesFallback(controllerLabel: string, channels: number): string | null {
+  return channels >= 4 ? null : `${controllerLabel} shows ${String(channels)} outputs, not 4`;
 }
 
 /** Reads a stored choice; anything malformed is the default (one-device split cue). */
@@ -131,15 +190,23 @@ export function parseOutputChoice(text: string | null): OutputChoice {
     const label = text_("label");
     return deviceId === null || label === null ? DEFAULT_OUTPUT : { kind: "controller", deviceId, label };
   }
+  const offset = record["headphoneOffsetMs"];
+  const headphoneOffsetMs = typeof offset === "number" && Number.isFinite(offset) ? Math.max(-HEADPHONE_OFFSET_LIMIT_MS, Math.min(HEADPHONE_OFFSET_LIMIT_MS, offset)) : null;
+  const masterDeviceId = text_("masterDeviceId");
+  const masterLabel = text_("masterLabel");
   if (record["kind"] === "two-devices") {
-    const masterDeviceId = text_("masterDeviceId");
-    const masterLabel = text_("masterLabel");
     const headphoneDeviceId = text_("headphoneDeviceId");
     const headphoneLabel = text_("headphoneLabel");
-    const offset = record["headphoneOffsetMs"];
-    if (masterDeviceId === null || masterLabel === null || headphoneDeviceId === null || headphoneLabel === null || typeof offset !== "number" || !Number.isFinite(offset)) return DEFAULT_OUTPUT;
+    if (masterDeviceId === null || masterLabel === null || headphoneDeviceId === null || headphoneLabel === null || headphoneOffsetMs === null) return DEFAULT_OUTPUT;
     if (masterDeviceId === headphoneDeviceId) return DEFAULT_OUTPUT;
-    return { kind: "two-devices", masterDeviceId, masterLabel, headphoneDeviceId, headphoneLabel, headphoneOffsetMs: Math.max(-HEADPHONE_OFFSET_LIMIT_MS, Math.min(HEADPHONE_OFFSET_LIMIT_MS, offset)) };
+    return { kind: "two-devices", masterDeviceId, masterLabel, headphoneDeviceId, headphoneLabel, headphoneOffsetMs };
+  }
+  if (record["kind"] === "computer-and-controller-phones") {
+    const controllerDeviceId = text_("controllerDeviceId");
+    const controllerLabel = text_("controllerLabel");
+    if (masterDeviceId === null || masterLabel === null || controllerDeviceId === null || controllerLabel === null || headphoneOffsetMs === null) return DEFAULT_OUTPUT;
+    if (masterDeviceId === controllerDeviceId) return DEFAULT_OUTPUT;
+    return { kind: "computer-and-controller-phones", masterDeviceId, masterLabel, controllerDeviceId, controllerLabel, headphoneOffsetMs };
   }
   return DEFAULT_OUTPUT;
 }

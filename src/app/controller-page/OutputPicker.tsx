@@ -1,9 +1,10 @@
-// The sound output choice (src/audio/output.ts): split cue on one device, through the FLX4, or two
-// devices with a headphone line-up test. Saved per browser the moment the Learner picks; a Lesson
+// The sound output choice (src/audio/output.ts): split cue on one device, through the FLX4, two
+// devices, or this computer's speakers with the FLX4's headphones; the last two with a headphone
+// line-up test. Saved per browser the moment the Learner picks; a Lesson
 // opened afterwards uses it. Nothing here plays through a device the Learner did not pick.
 
 import { useCallback, useEffect, useState } from "react";
-import { HEADPHONE_OFFSET_LIMIT_MS, isControllerAudio, startAlignmentClicks, supportsOutputSelection, type AlignmentClicks, type OutputChoice, type OutputDevice } from "@audio";
+import { HEADPHONE_OFFSET_LIMIT_MS, isControllerAudio, startAlignmentClicks, supportsOutputSelection, type AlignmentClicks, type LinedUpPlan, type OutputChoice, type OutputDevice } from "@audio";
 import { askToListOutputs, listOutputs, saveOutputChoice, useOutputChoice, type OutputList } from "../audio-output.ts";
 
 type Listing = { kind: "loading" } | { kind: "ready"; list: OutputList } | { kind: "failed"; message: string };
@@ -48,6 +49,8 @@ export function OutputPicker() {
 
   const devices = listing.kind === "ready" ? listing.list.devices : [];
   const controller = devices.find((device) => isControllerAudio(device.label)) ?? null;
+  const computerDevices = devices.filter((device) => !isControllerAudio(device.label));
+  const canPhones = controller !== null && computerDevices.length > 0 && canSelect;
 
   return (
     <div className="output-picker">
@@ -102,6 +105,26 @@ export function OutputPicker() {
           </span>
         </label>
 
+        <label className="output-option" data-disabled={!canPhones}>
+          <input
+            type="radio"
+            name="output"
+            disabled={!canPhones}
+            checked={choice.kind === "computer-and-controller-phones"}
+            onChange={() => {
+              const [master] = computerDevices;
+              if (controller !== null && master !== undefined) {
+                saveOutputChoice({ kind: "computer-and-controller-phones", masterDeviceId: master.deviceId, masterLabel: master.label, controllerDeviceId: controller.deviceId, controllerLabel: controller.label, headphoneOffsetMs: 0 });
+              }
+            }}
+          />
+          <span>
+            <b>Speakers: this computer · Headphones: FLX4</b>
+            <small>{controller === null ? "Plug in the FLX4 to use its headphone jack." : "Master to this computer's speakers · cue to the FLX4's headphone jack."}</small>
+            {choice.kind === "computer-and-controller-phones" ? <ChannelCheck deviceId={choice.controllerDeviceId} /> : null}
+          </span>
+        </label>
+
         <label className="output-option" data-disabled={devices.length < 2 || !canSelect}>
           <input
             type="radio"
@@ -122,6 +145,7 @@ export function OutputPicker() {
         </label>
       </fieldset>
       {choice.kind === "two-devices" ? <TwoDevices choice={choice} devices={devices} /> : null}
+      {choice.kind === "computer-and-controller-phones" ? <ComputerAndPhones choice={choice} devices={computerDevices} /> : null}
       <p className="hw-hint">A Lesson opened after this uses it.</p>
     </div>
   );
@@ -147,30 +171,15 @@ function ChannelCheck({ deviceId }: { readonly deviceId: string }) {
   return <small className={channels >= 4 ? "hw-ok" : "hw-warn"}>{channels >= 4 ? `${String(channels)} outputs found.` : `Only ${String(channels)} outputs: Lessons will use split cue here instead.`}</small>;
 }
 
-function TwoDevices({ choice, devices }: { readonly choice: Extract<OutputChoice, { kind: "two-devices" }>; readonly devices: readonly OutputDevice[] }) {
-  const [clicks, setClicks] = useState<AlignmentClicks | null>(null);
-  useEffect(
-    () => () => {
-      void clicks?.stop();
-    },
-    [clicks],
-  );
-  const pick = (role: "master" | "headphone", deviceId: string) => {
-    const device = devices.find((candidate) => candidate.deviceId === deviceId);
-    if (device === undefined) return;
-    const next = role === "master" ? { ...choice, masterDeviceId: device.deviceId, masterLabel: device.label } : { ...choice, headphoneDeviceId: device.deviceId, headphoneLabel: device.label };
-    if (next.masterDeviceId === next.headphoneDeviceId) return;
-    void clicks?.stop();
-    setClicks(null);
-    saveOutputChoice(next);
-  };
-  const select = (role: "master" | "headphone", value: string, label: string) => (
+function DeviceSelect({ label, value, devices, onPick }: { readonly label: string; readonly value: string; readonly devices: readonly OutputDevice[]; readonly onPick: (device: OutputDevice) => void }) {
+  return (
     <label className="output-device">
       {label}
       <select
         value={value}
         onChange={(event) => {
-          pick(role, event.target.value);
+          const device = devices.find((candidate) => candidate.deviceId === event.target.value);
+          if (device !== undefined) onPick(device);
         }}
       >
         {devices.map((device) => (
@@ -181,27 +190,112 @@ function TwoDevices({ choice, devices }: { readonly choice: Extract<OutputChoice
       </select>
     </label>
   );
+}
+
+function TwoDevices({ choice, devices }: { readonly choice: Extract<OutputChoice, { kind: "two-devices" }>; readonly devices: readonly OutputDevice[] }) {
+  const pick = (next: Extract<OutputChoice, { kind: "two-devices" }>) => {
+    if (next.masterDeviceId !== next.headphoneDeviceId) saveOutputChoice(next);
+  };
+  const plan: LinedUpPlan = { kind: "two-devices", sinkId: choice.masterDeviceId, masterLabel: choice.masterLabel, headphoneSinkId: choice.headphoneDeviceId, headphoneLabel: choice.headphoneLabel, headphoneOffsetMs: choice.headphoneOffsetMs };
   return (
     <div className="output-two">
-      {select("master", choice.masterDeviceId, "Master (speakers)")}
-      {select("headphone", choice.headphoneDeviceId, "Cue (headphones)")}
+      <DeviceSelect
+        label="Master (speakers)"
+        value={choice.masterDeviceId}
+        devices={devices}
+        onPick={(device) => {
+          pick({ ...choice, masterDeviceId: device.deviceId, masterLabel: device.label });
+        }}
+      />
+      <DeviceSelect
+        label="Cue (headphones)"
+        value={choice.headphoneDeviceId}
+        devices={devices}
+        onPick={(device) => {
+          pick({ ...choice, headphoneDeviceId: device.deviceId, headphoneLabel: device.label });
+        }}
+      />
+      <LineUp
+        key={`${choice.masterDeviceId}|${choice.headphoneDeviceId}`}
+        plan={plan}
+        onOffset={(headphoneOffsetMs) => {
+          saveOutputChoice({ ...choice, headphoneOffsetMs });
+        }}
+        hint="Line them up: play the clicks, wear one headphone, and slide until speakers and headphones click as one. Right if the headphones click late."
+      />
+    </div>
+  );
+}
+
+/** Speakers on this computer, the cue in the FLX4's headphones: pick the speakers, line the two up. */
+function ComputerAndPhones({ choice, devices }: { readonly choice: Extract<OutputChoice, { kind: "computer-and-controller-phones" }>; readonly devices: readonly OutputDevice[] }) {
+  const plan: LinedUpPlan = {
+    kind: "computer-and-controller-phones",
+    sinkId: choice.masterDeviceId,
+    masterLabel: choice.masterLabel,
+    controllerSinkId: choice.controllerDeviceId,
+    controllerLabel: choice.controllerLabel,
+    headphoneOffsetMs: choice.headphoneOffsetMs,
+  };
+  return (
+    <div className="output-two">
+      <DeviceSelect
+        label="Master (speakers)"
+        value={choice.masterDeviceId}
+        devices={devices}
+        onPick={(device) => {
+          saveOutputChoice({ ...choice, masterDeviceId: device.deviceId, masterLabel: device.label });
+        }}
+      />
+      {/* The FLX4 carries silence on its MASTER OUT in this mode; if the unit itself mixes HEADPHONES MIX
+          (unverified, docs/research/flx4-midi.md), its MASTER side would fade the cue out. */}
+      <p className="hw-hint" data-testid="phones-mix-hint">
+        Turn the FLX4’s HEADPHONES MIX to CUE: its MASTER side is silent in this mode.
+      </p>
+      <LineUp
+        key={`${choice.masterDeviceId}|${choice.controllerDeviceId}`}
+        plan={plan}
+        onOffset={(headphoneOffsetMs) => {
+          saveOutputChoice({ ...choice, headphoneOffsetMs });
+        }}
+        hint="Line them up: play the clicks, wear one side of the FLX4’s headphones, and slide until speakers and headphones click as one. Right if the headphones click late."
+      />
+    </div>
+  );
+}
+
+/**
+ * The headphone offset slider and the click test, for a plan with a second headphone device. Keyed by
+ * the devices where it is used, so picking another device stops the old clicks (the unmount does).
+ */
+function LineUp({ plan, onOffset, hint }: { readonly plan: LinedUpPlan; readonly onOffset: (ms: number) => void; readonly hint: string }) {
+  const [clicks, setClicks] = useState<AlignmentClicks | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  useEffect(
+    () => () => {
+      void clicks?.stop();
+    },
+    [clicks],
+  );
+  return (
+    <>
       <label className="output-device">
-        Headphone offset: {choice.headphoneOffsetMs > 0 ? "+" : ""}
-        {choice.headphoneOffsetMs} ms
+        Headphone offset: {plan.headphoneOffsetMs > 0 ? "+" : ""}
+        {plan.headphoneOffsetMs} ms
         <input
           type="range"
           min={-HEADPHONE_OFFSET_LIMIT_MS}
           max={HEADPHONE_OFFSET_LIMIT_MS}
           step={5}
-          value={choice.headphoneOffsetMs}
+          value={plan.headphoneOffsetMs}
           onChange={(event) => {
             const headphoneOffsetMs = Number(event.target.value);
             clicks?.setOffset(headphoneOffsetMs);
-            saveOutputChoice({ ...choice, headphoneOffsetMs });
+            onOffset(headphoneOffsetMs);
           }}
         />
       </label>
-      <p className="hw-hint">Line them up: play the clicks, wear one headphone, and slide until speakers and headphones click as one. Right if the headphones click late.</p>
+      <p className="hw-hint">{hint}</p>
       <button
         type="button"
         className="btn"
@@ -211,13 +305,16 @@ function TwoDevices({ choice, devices }: { readonly choice: Extract<OutputChoice
             setClicks(null);
             return;
           }
-          void startAlignmentClicks({ kind: "two-devices", sinkId: choice.masterDeviceId, masterLabel: choice.masterLabel, headphoneSinkId: choice.headphoneDeviceId, headphoneLabel: choice.headphoneLabel, headphoneOffsetMs: choice.headphoneOffsetMs }).then(setClicks, (error: unknown) => {
+          setFailure(null);
+          void startAlignmentClicks(plan).then(setClicks, (error: unknown) => {
             console.warn("[output] the click test could not start", error);
+            setFailure(error instanceof Error ? error.message : String(error));
           });
         }}
       >
         {clicks === null ? "Play test clicks" : "Stop the clicks"}
       </button>
-    </div>
+      {failure === null ? null : <p className="hw-warn">The clicks could not start: {failure}</p>}
+    </>
   );
 }

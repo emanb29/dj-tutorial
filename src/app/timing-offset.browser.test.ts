@@ -34,6 +34,15 @@ describe("the stored Timing check", () => {
     expect(timingFor("controller")).toBeNull();
     expect(timingCorrectionMs("two-devices")).toBe(-20);
   });
+
+  it("keeps speakers-and-FLX4-headphones apart from the other modes, and reads it back from storage", () => {
+    saveTiming("controller", 30, 16);
+    saveTiming("computer-and-controller-phones", 55, 16);
+    forgetTimingCache();
+    expect(timingCorrectionMs("computer-and-controller-phones")).toBe(55);
+    expect(timingCorrectionMs("controller")).toBe(30);
+    expect(timingCorrectionMs("two-devices")).toBe(0);
+  });
 });
 
 describe("the Timing check's taps", () => {

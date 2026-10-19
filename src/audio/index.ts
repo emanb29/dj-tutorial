@@ -34,10 +34,11 @@ export { containerOf, fileExtensionOf, MasterRecording, pickRecordingFormat, REC
 export type { FinishedRecording } from "./master-recording.ts";
 
 export { MasterOnlyMonitor, SplitCueMonitor } from "./monitor.ts";
-export { ControllerCueMonitor, deviceHeadphoneSink, TwoDeviceMonitor } from "./device-monitors.ts";
+export { controllerPhonesSink, ControllerCueMonitor, deviceHeadphoneSink, routeToControllerPhones, TwoDeviceMonitor } from "./device-monitors.ts";
 export type { HeadphoneSink } from "./device-monitors.ts";
 export {
   CONTEXT_HOP_SEC,
+  controllerPhonesFallback,
   DEFAULT_OUTPUT,
   HEADPHONE_OFFSET_LIMIT_MS,
   isControllerAudio,
@@ -48,7 +49,7 @@ export {
   planOutput,
   supportsOutputSelection,
 } from "./output.ts";
-export type { OutputChoice, OutputDevice, OutputPlan } from "./output.ts";
+export type { LinedUpPlan, OutputChoice, OutputDevice, OutputPlan } from "./output.ts";
 export { createOutputRouting, startAlignmentClicks } from "./output-routing.ts";
 export type { AlignmentClicks, OutputRouting } from "./output-routing.ts";
 export { BEAT_FX_BEATS, ECHO_FEEDBACK } from "./beat-fx.ts";

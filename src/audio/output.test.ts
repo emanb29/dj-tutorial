@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONTEXT_HOP_SEC, DEFAULT_OUTPUT, isControllerAudio, lineUpDelays, outputDevicesFrom, outputLine, parseOutputChoice, planOutput, supportsOutputSelection, type OutputChoice } from "./output.ts";
+import { CONTEXT_HOP_SEC, controllerPhonesFallback, DEFAULT_OUTPUT, isControllerAudio, lineUpDelays, outputDevicesFrom, outputLine, parseOutputChoice, planOutput, supportsOutputSelection, type OutputChoice } from "./output.ts";
 
 const device = (deviceId: string, label: string) => ({ deviceId, kind: "audiooutput" as const, label });
 
@@ -50,6 +50,7 @@ describe("output devices", () => {
 
 const flx4: OutputChoice = { kind: "controller", deviceId: "flx", label: "DDJ-FLX4" };
 const twoDevices: OutputChoice = { kind: "two-devices", masterDeviceId: "spk", masterLabel: "MacBook Pro Speakers", headphoneDeviceId: "pods", headphoneLabel: "AirPods", headphoneOffsetMs: 15 };
+const phones: OutputChoice = { kind: "computer-and-controller-phones", masterDeviceId: "spk", masterLabel: "MacBook Pro Speakers", controllerDeviceId: "flx", controllerLabel: "DDJ-FLX4", headphoneOffsetMs: -10 };
 const present = [
   { deviceId: "spk", label: "MacBook Pro Speakers", named: true },
   { deviceId: "flx", label: "DDJ-FLX4", named: true },
@@ -72,6 +73,23 @@ describe("planOutput", () => {
 
   it("falls back where the browser cannot choose an output", () => {
     expect(planOutput(flx4, present, false)).toMatchObject({ kind: "split-cue", fallback: "This browser cannot choose a sound output" });
+    expect(planOutput(phones, present, false)).toMatchObject({ kind: "split-cue", fallback: "This browser cannot choose a sound output" });
+  });
+
+  it("plans this computer's speakers with the FLX4's headphones, with the offset", () => {
+    expect(planOutput(phones, present, true)).toEqual({
+      kind: "computer-and-controller-phones",
+      sinkId: "spk",
+      masterLabel: "MacBook Pro Speakers",
+      controllerSinkId: "flx",
+      controllerLabel: "DDJ-FLX4",
+      headphoneOffsetMs: -10,
+    });
+  });
+
+  it("falls back, naming what is missing, when the speakers or the FLX4 are unplugged", () => {
+    expect(planOutput(phones, present.slice(0, 1), true)).toEqual({ kind: "split-cue", sinkId: null, fallback: "DDJ-FLX4 not found" });
+    expect(planOutput(phones, [], true)).toEqual({ kind: "split-cue", sinkId: null, fallback: "MacBook Pro Speakers and DDJ-FLX4 not found" });
   });
 
   it("plans two devices with the offset", () => {
@@ -92,6 +110,14 @@ describe("outputLine", () => {
     expect(outputLine({ kind: "split-cue", sinkId: null, fallback: "DDJ-FLX4 not found" }, true)).toBe("DDJ-FLX4 not found: Left ear: cue · Right ear: master");
     expect(outputLine(planOutput(flx4, present, true), true)).toBe("FLX4: master to its MASTER OUT · cue to its headphones");
     expect(outputLine(planOutput(twoDevices, present, true), true)).toBe("Master: MacBook Pro Speakers · Cue: AirPods");
+    expect(outputLine(planOutput(phones, present, true), true)).toBe("Speakers: MacBook Pro Speakers · Headphones: FLX4");
+  });
+});
+
+describe("controllerPhonesFallback", () => {
+  it("needs four outputs, so the cue never lands on the FLX4's MASTER OUT", () => {
+    expect(controllerPhonesFallback("DDJ-FLX4", 4)).toBeNull();
+    expect(controllerPhonesFallback("DDJ-FLX4", 2)).toBe("DDJ-FLX4 shows 2 outputs, not 4");
   });
 });
 
@@ -116,16 +142,17 @@ describe("lineUpDelays", () => {
 
 describe("parseOutputChoice", () => {
   it("round-trips each choice", () => {
-    for (const choice of [DEFAULT_OUTPUT, flx4, twoDevices]) expect(parseOutputChoice(JSON.stringify(choice))).toEqual(choice);
+    for (const choice of [DEFAULT_OUTPUT, flx4, twoDevices, phones]) expect(parseOutputChoice(JSON.stringify(choice))).toEqual(choice);
   });
 
   it("treats anything malformed as the default", () => {
-    for (const text of [null, "", "{", "42", '{"kind":"controller"}', '{"kind":"two-devices","masterDeviceId":"a","masterLabel":"A","headphoneDeviceId":"a","headphoneLabel":"A","headphoneOffsetMs":0}', '{"kind":"rocket"}']) {
+    for (const text of [null, "", "{", "42", '{"kind":"controller"}', '{"kind":"two-devices","masterDeviceId":"a","masterLabel":"A","headphoneDeviceId":"a","headphoneLabel":"A","headphoneOffsetMs":0}', '{"kind":"rocket"}', JSON.stringify({ ...phones, controllerDeviceId: "spk" }), JSON.stringify({ ...phones, headphoneOffsetMs: "late" }), JSON.stringify({ ...phones, controllerLabel: "" })]) {
       expect(parseOutputChoice(text)).toEqual(DEFAULT_OUTPUT);
     }
   });
 
   it("clamps a stored offset", () => {
     expect(parseOutputChoice(JSON.stringify({ ...twoDevices, headphoneOffsetMs: 9000 }))).toMatchObject({ headphoneOffsetMs: 400 });
+    expect(parseOutputChoice(JSON.stringify({ ...phones, headphoneOffsetMs: -9000 }))).toMatchObject({ kind: "computer-and-controller-phones", headphoneOffsetMs: -400 });
   });
 });

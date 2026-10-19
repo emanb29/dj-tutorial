@@ -19,7 +19,7 @@ type Timings = Partial<Record<OutputMode, StoredTiming>>;
 
 const STORAGE_KEY = "learn-to-dj.timing-offset";
 const OFFERED_KEY = "learn-to-dj.timing-check-offered";
-const MODES: readonly OutputMode[] = ["split-cue", "controller", "two-devices"];
+const MODES: readonly OutputMode[] = ["split-cue", "controller", "two-devices", "computer-and-controller-phones"];
 
 let cached: Timings | null = null;
 const listeners = new Set<() => void>();
