@@ -166,6 +166,18 @@ controller keeps its own pad mode and sends the mode's notes.
   and maps no HEADPHONES LEVEL at all [X2], which suggests MIX is mixed in software and LEVEL in the
   unit. MASTER CUE "sends master output to headphones" in the unit [X3]. None of it is confirmed on
   the owner's unit **(unverified)**. The app maps HEADPHONES MIX to its own cue mix either way.
+- **What the app does with them (2026-10-19, owner: "make the headphone level dial actually be
+  respected"):** HEADPHONES LEVEL and MIXING drive the app's values at once, with no soft takeover
+  (`HARDWARE_FIRST` in `src/app/controller/hardware.ts`). Before, the app started at LEVEL 12 o'clock
+  and MIXING fully to CUE, and the knobs did nothing until turned past those points. Going by Mixxx's
+  mapping, the app takes LEVEL to be applied in the unit, so where the cue leaves through the FLX4's
+  own outputs 3/4 (Through the FLX4, and this computer's speakers with the FLX4's headphones) the app
+  leaves its headphone gain at 1 rather than apply LEVEL a second time. On this computer's output
+  (split cue) and on a second headphone device, the app applies LEVEL itself. In a Lesson without
+  headphone cueing, this computer plays only the master (as the speakers), which LEVEL does not touch,
+  as on the unit. LEVEL is unlocked in every Lesson (`ALWAYS_UNLOCKED`, `src/lessons/catalogue.ts`):
+  it is a listening volume, not a skill. If LEVEL does nothing through the FLX4, the unit does not
+  apply it after all, and `ControllerCueMonitor` and `controllerPhonesSink` must apply it again.
 - **Speakers on the computer, headphones on the FLX4** (`computer-and-controller-phones`): the FLX4's
   outputs 1/2 carry silence and 3/4 the app's headphone mix. If the unit does mix HEADPHONES MIX
   itself, its MASTER side is that silence and would fade the cue out, so `/controller` says to turn

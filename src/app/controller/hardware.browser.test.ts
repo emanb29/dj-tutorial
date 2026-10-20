@@ -4,8 +4,8 @@
 // can check a MIDI message is heard at its own timestamp, exactly as a key press would be.
 
 import { describe, expect, it } from "vitest";
-import { AttemptRecorder, createAudioEngine, type AudioEngine, type OutputClock } from "@audio";
-import { at, offlineContext, toneBuffer } from "@audio/offline-test-support.ts";
+import { AttemptRecorder, createAudioEngine, SplitCueMonitor, type AudioEngine, type MonitorOutput, type OutputClock } from "@audio";
+import { at, channelRmsDb, offlineContext, toneBuffer } from "@audio/offline-test-support.ts";
 import type { MidiMessage } from "@midi";
 import { ALL_CONTROL_IDS } from "./control-ids.ts";
 import { HardwareBridge, type HardwarePort } from "./hardware.ts";
@@ -41,9 +41,9 @@ class Port implements HardwarePort {
   }
 }
 
-async function rig(): Promise<{ context: OfflineAudioContext; engine: AudioEngine; port: Port; recorder: AttemptRecorder; session: ControllerSession }> {
+async function rig(monitor?: MonitorOutput): Promise<{ context: OfflineAudioContext; engine: AudioEngine; port: Port; recorder: AttemptRecorder; session: ControllerSession }> {
   const context = offlineContext(3);
-  const engine = await createAudioEngine({ context, masterTempo: false, lookaheadSec: LOOKAHEAD_S, clock: fixedOffsetClock() });
+  const engine = await createAudioEngine({ context, masterTempo: false, lookaheadSec: LOOKAHEAD_S, clock: fixedOffsetClock(), ...(monitor === undefined ? {} : { monitor }) });
   const loaded = await engine.load("A", toneBuffer(context, { frequency: 220, peak: 0.25, seconds: 4 }), { trackId: "tone", grid: { bpm: 120, firstBeat: 0, downbeatIndex: 0, rmsResidualMs: 1 } });
   if (!loaded.ok) throw new Error(`loading failed: ${loaded.error.kind}`);
   const session = new ControllerSession(engine, { unlocks: new Set(ALL_CONTROL_IDS), macPlatform: true, schedule: () => () => undefined });
@@ -103,6 +103,32 @@ describe("the FLX4 through the session into a real engine", () => {
     ]);
     expect(engineEvents.filter((event) => event.device !== "engine").every((event) => event.device === "midi")).toBe(true);
     expect(engine.mixerState().channels.A["channel-fader"]).toBe(0);
+  });
+
+  it("HEADPHONES MIXING and LEVEL change the headphone ear at once, from wherever the knobs are", async () => {
+    // Split cue: the left ear is the headphones, the right the master. Nothing is cued, so with MIXING
+    // turned to MASTER the left ear is the master; LEVEL at 0.25 (about 9 o'clock) is 12 dB quieter.
+    const { context, port, engine } = await rig(new SplitCueMonitor());
+    const steps = [
+      at(context, 0.1, () => {
+        port.midi([0x90, 0x0b, 0x7f], 0.1);
+        port.midi([0x90, 0x0b, 0x00], 0.11);
+      }),
+      at(context, 0.3, () => {
+        // AlphaTheta's list: HEADPHONE MIX B6 0C / 2C, HEADPHONE LEVEL B6 0D / 2D (MSB, then LSB).
+        port.midi([0xb6, 0x0c, 0x7f], 0.3);
+        port.midi([0xb6, 0x2c, 0x7f], 0.3);
+        port.midi([0xb6, 0x0d, 0x20], 0.3);
+        port.midi([0xb6, 0x2d, 0x00], 0.3);
+      }),
+    ];
+    const rendered = await context.startRendering();
+    await Promise.all(steps);
+    expect(engine.mixerState().cueMix).toBeCloseTo(1, 3);
+    expect(engine.mixerState().headphoneLevel).toBeCloseTo(0.25, 3);
+    const masterDb = channelRmsDb(rendered, 1, 1, 2.5);
+    expect(masterDb).toBeGreaterThan(-30);
+    expect(channelRmsDb(rendered, 0, 1, 2.5)).toBeCloseTo(masterDb - 12.04, 0);
   });
 
   it("CUE/LOOP CALL ◀ halves the loop and ▶ doubles it; SHIFT + LOOP IN (IN ADJ) changes nothing", async () => {

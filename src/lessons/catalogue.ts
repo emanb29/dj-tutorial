@@ -263,7 +263,7 @@ function cuedDecks(track: LessonTrack): DeckSetups {
 const headphoneCue: LessonDefinition = {
   id: "headphone-cue",
   title: "Listen before they hear it",
-  unlocks: ["A.headphone-cue", "B.headphone-cue", "cue-mix", "headphone-level", "tap"],
+  unlocks: ["A.headphone-cue", "B.headphone-cue", "cue-mix", "tap"],
   practiceStart: (track) => cuedDecks(track).A.pos,
   practiceDecks: (track) => {
     const decks = cuedDecks(track);
@@ -493,6 +493,13 @@ export function lessonDefinition(id: BuiltLessonId): BuiltLesson {
 }
 
 /** The controller after these Lessons: every built Lesson's unlocks, in catalogue order. */
+/**
+ * Controls unlocked in every Lesson and Placement task, hook included: HEADPHONES LEVEL is how loud the
+ * Learner's own headphones are, not a skill, and on the FLX4 its amp turns the PHONES jack down whatever
+ * the app says.
+ */
+export const ALWAYS_UNLOCKED: readonly ControlId[] = ["headphone-level"];
+
 export function unlocksAfter(lessons: readonly LessonId[]): ReadonlySet<ControlId> {
   return new Set(LESSONS.filter((lesson) => lessons.includes(lesson.id)).flatMap((lesson) => lesson.unlocks));
 }
@@ -506,7 +513,7 @@ export function unlocksAfter(lessons: readonly LessonId[]): ReadonlySet<ControlI
 export function lessonUnlocks(definition: LessonDefinition, passed: readonly LessonId[], hookStep: number | null): ReadonlySet<ControlId> {
   const steps = hookStep === null ? definition.hook : definition.hook.slice(0, hookStep + 1);
   const handed = steps.flatMap((step) => [step.control, ...(step.reveals ?? [])]);
-  return new Set([...unlocksAfter(passed.filter((id) => id !== definition.id)), ...(hookStep === null ? definition.unlocks : []), ...handed]);
+  return new Set([...ALWAYS_UNLOCKED, ...unlocksAfter(passed.filter((id) => id !== definition.id)), ...(hookStep === null ? definition.unlocks : []), ...handed]);
 }
 
 /** How an attempt is graded: a Lesson Check (the default), or another mode such as a Placement task. */

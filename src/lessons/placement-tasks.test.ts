@@ -27,11 +27,16 @@ function recorded(plan: CheckPlan, overrides: Partial<Attempt>): Attempt {
 }
 
 describe("Placement task controls", () => {
-  it("are the union of the task's Lesson and its ancestors' controls", () => {
+  it("are the union of the task's Lesson and its ancestors' controls, and HEADPHONES LEVEL", () => {
     expect(new Set(placementControls("cut-on-phrase", placementTask("cut-on-phrase").grading.aids))).toEqual(
-      unlocksAfter(["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point"]),
+      new Set([...unlocksAfter(["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point"]), "headphone-level"]),
     );
-    expect(placementTask("beats-and-bars").controls).toEqual(["A.play", "A.channel-fader", "master-level", "master-meter", "tap"]);
+    expect(placementTask("beats-and-bars").controls).toEqual(["A.play", "A.channel-fader", "master-level", "master-meter", "tap", "headphone-level"]);
+  });
+
+  it("always include HEADPHONES LEVEL, a listening volume", () => {
+    expect(placementTask("beats-and-bars").controls).toContain("headphone-level");
+    expect(placementTask("blend-by-ear").controls).toContain("headphone-level");
   });
 
   it("leave locked aids greyed: blend-by-ear has no SYNC, BPM display or phase meter, but jog bend, EQ and the tempo fader", () => {

@@ -42,6 +42,13 @@ describe("the Lesson catalogue for Lessons 1–3", () => {
     expect([...unlocksAfter(["deck-basics", "beats-and-bars"])]).toContain("tap");
   });
 
+  it("keeps HEADPHONES LEVEL unlocked in every Lesson, hook included: it is a listening volume, not a skill", () => {
+    for (const lesson of LESSONS) {
+      expect(lessonUnlocks(lesson, [], 0).has("headphone-level")).toBe(true);
+      expect(lessonUnlocks(lesson, [], null).has("headphone-level")).toBe(true);
+    }
+  });
+
   it("keeps the hook's controls unlocked after the hook, so Count phrases taps on the FLX4 before Beats and bars is passed", () => {
     const phrases = lessonDefinition("phrases");
     expect(lessonUnlocks(phrases, ["deck-basics"], null).has("tap")).toBe(true);

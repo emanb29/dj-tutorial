@@ -64,6 +64,7 @@ function statefulEngine() {
         mixer.channels[command.deck].cue = command.value;
       } else if (command.control === "crossfader") mixer.crossfader = command.value;
       else if (command.control === "cue-mix") mixer.cueMix = command.value;
+      else if (command.control === "headphone-level") mixer.headphoneLevel = command.value;
       else if (command.control === "master-level") mixer.masterLevel = command.value;
       else if ("deck" in command && "value" in command && typeof command.value === "number" && command.control in mixer.channels[command.deck]) {
         (mixer.channels[command.deck] as unknown as Record<string, number>)[command.control] = command.value;
@@ -588,6 +589,21 @@ describe("faders and knobs, with soft takeover", () => {
       "headphone-level",
       "A.tempo",
     ]);
+  });
+
+  it("HEADPHONES LEVEL and MIXING drive their values at once, wherever the knobs are (no pickup)", () => {
+    const { port, sent, session } = rig();
+    // The app starts at LEVEL 12 o'clock and MIXING fully to CUE; the Learner's knobs are elsewhere.
+    for (const message of fourteenBit(0xb6, 0x0d, 0.9)) port.midi(message);
+    for (const message of fourteenBit(0xb6, 0x0d, 0.8)) port.midi(message);
+    for (const message of fourteenBit(0xb6, 0x0c, 0.75)) port.midi(message);
+    expect(commands(sent)).toEqual([
+      { control: "headphone-level", value: expect.closeTo(0.9, 3) as unknown },
+      { control: "headphone-level", value: expect.closeTo(0.8, 3) as unknown },
+      { control: "cue-mix", value: expect.closeTo(0.75, 3) as unknown },
+    ]);
+    expect(session.snapshot().pickup["headphone-level"]).toBeUndefined();
+    expect(session.snapshot().pickup["cue-mix"]).toBeUndefined();
   });
 
   it("reads the tempo fader's '−' end as the slowest tempo", () => {

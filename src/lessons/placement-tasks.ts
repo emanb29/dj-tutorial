@@ -4,7 +4,7 @@
 // the Lesson session runs them; the attempt starts with the music (the first 8 bars are the hook).
 import type { Aids, LessonId, LessonTask } from "@shared/attempt.ts";
 import { lessonById } from "@shared/catalogue.ts";
-import { LESSONS, type Grading } from "./catalogue.ts";
+import { ALWAYS_UNLOCKED, LESSONS, type Grading } from "./catalogue.ts";
 import { heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
 import { ancestorsOf, type PlacementTaskId } from "./placement.ts";
 import { barStart, beatSec, heardTimeOf, cuedAt, phraseOf, phraseStart, setUpTrimDb, trimKnobFor } from "./track.ts";
@@ -65,12 +65,12 @@ const AID_CONTROLS: Readonly<Partial<Record<keyof Aids, readonly ControlId[]>>> 
 };
 
 /**
- * Exactly the union of catalogue §1's "Controls unlocked" over the task's Lesson and its ancestors,
- * minus aids the task locks off.
+ * Exactly the union of catalogue §1's "Controls unlocked" over the task's Lesson and its ancestors, and
+ * ALWAYS_UNLOCKED, minus aids the task locks off.
  */
 export function placementControls(lessonId: LessonId, aids: Aids): ControlId[] {
   const locked = new Set((Object.keys(AID_CONTROLS) as (keyof Aids)[]).filter((aid) => !aids[aid]).flatMap((aid) => AID_CONTROLS[aid] ?? []));
-  const all = [...ancestorsOf(lessonId), lessonId].flatMap(controlsOf);
+  const all = [...ancestorsOf(lessonId), lessonId].flatMap(controlsOf).concat(ALWAYS_UNLOCKED);
   return [...new Set(all)].filter((control) => !locked.has(control));
 }
 

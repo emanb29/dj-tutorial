@@ -5,7 +5,10 @@
 //   stereo device (deviceHeadphoneSink) or the FLX4's headphone jack (controllerPhonesSink, which puts
 //   the cue on its outputs 3/4 with ControllerCueMonitor and silence on 1/2).
 // Both mix the headphone path as SplitCueMonitor does (cue × (1 − mix) + master × mix, × headphone
-// gain), but in stereo, since each has a whole stereo output for the headphones.
+// gain), but in stereo, since each has a whole stereo output for the headphones. The FLX4's PHONES jack
+// is the exception for the gain: its own headphone amp applies HEADPHONES LEVEL (Mixxx maps MIXING to
+// software and LEVEL to nothing; docs/research/flx4-midi.md), so the app leaves the gain at 1 there
+// rather than turning the headphones down twice.
 
 import type { MonitorBuses, MonitorOutput } from "./monitor.ts";
 import { lineUpDelays } from "./output.ts";
@@ -46,7 +49,7 @@ export class ControllerCueMonitor implements MonitorOutput {
   readonly kind = "controller-cue";
   private attached: { buses: MonitorBuses; mix: HeadphoneMix; masterSplit: ChannelSplitterNode; cueSplit: ChannelSplitterNode; merger: ChannelMergerNode } | null = null;
   private cueMix = 0;
-  private headphoneGain = 1;
+  private readonly headphoneGain = 1;
 
   /** Whether a destination can take the four channels. */
   static fits(context: BaseAudioContext): boolean {
@@ -81,9 +84,8 @@ export class ControllerCueMonitor implements MonitorOutput {
     if (this.attached !== null) applyMix(this.attached.mix, this.attached.buses.context, this.cueMix, this.headphoneGain);
   }
 
-  setHeadphoneGain(gain: number): void {
-    this.headphoneGain = gain;
-    if (this.attached !== null) applyMix(this.attached.mix, this.attached.buses.context, this.cueMix, this.headphoneGain);
+  setHeadphoneGain(): void {
+    // The FLX4's headphone amp applies HEADPHONES LEVEL to outputs 3/4 itself.
   }
 
   detach(): void {
@@ -98,6 +100,8 @@ export class ControllerCueMonitor implements MonitorOutput {
 
 /** Where the headphone path leaves the engine's context for another device. */
 export interface HeadphoneSink {
+  /** Whether the device's own headphone amp applies HEADPHONES LEVEL (the FLX4's PHONES jack), so the app must not. */
+  readonly levelOnDevice: boolean;
   /** The node in `context` that leads to the headphone device. */
   open(context: BaseAudioContext): AudioNode;
   /** The headphone path's own output latency, seconds. */
@@ -118,7 +122,6 @@ export function routeToControllerPhones(headphones: AudioNode, output: BaseAudio
   // The headphone mix and level are applied before the signal gets here (TwoDeviceMonitor).
   monitor.attach({ context: output, master: silentMaster, cue });
   monitor.setCueMix(0);
-  monitor.setHeadphoneGain(1);
   return () => {
     monitor.detach();
     headphones.disconnect(cue);
@@ -130,10 +133,11 @@ export function routeToControllerPhones(headphones: AudioNode, output: BaseAudio
  * engine's context and put on its outputs by `route`. The engine's context stays the one that owns the
  * decks and the clock.
  */
-function streamHeadphoneSink(openOutput: () => AudioContext, route: (headphones: AudioNode, output: AudioContext) => () => void): HeadphoneSink {
+function streamHeadphoneSink(openOutput: () => AudioContext, route: (headphones: AudioNode, output: AudioContext) => () => void, levelOnDevice: boolean): HeadphoneSink {
   let output: AudioContext | null = null;
   let stop: (() => void) | null = null;
   return {
+    levelOnDevice,
     open(context) {
       const streamOut = new MediaStreamAudioDestinationNode(context as AudioContext, { channelCount: 2 });
       const headphones = openOutput();
@@ -175,6 +179,7 @@ export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
         headphones.disconnect();
       };
     },
+    false,
   );
 }
 
@@ -184,7 +189,7 @@ export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
  * has checked it shows four outputs (output-routing.ts).
  */
 export function controllerPhonesSink(openOutput: () => AudioContext): HeadphoneSink {
-  return streamHeadphoneSink(openOutput, routeToControllerPhones);
+  return streamHeadphoneSink(openOutput, routeToControllerPhones, true);
 }
 
 /**
@@ -244,6 +249,8 @@ export class TwoDeviceMonitor implements MonitorOutput {
   }
 
   setHeadphoneGain(gain: number): void {
+    // The FLX4's jack turns itself down (levelOnDevice); a plain headphone device has only this gain.
+    if (this.headphones.levelOnDevice) return;
     this.headphoneGain = gain;
     if (this.attached !== null) applyMix(this.attached.mix, this.attached.buses.context, this.cueMix, this.headphoneGain);
   }

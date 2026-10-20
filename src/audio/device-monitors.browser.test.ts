@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createAudioEngine } from "./engine.ts";
 import { ControllerCueMonitor, routeToControllerPhones, TwoDeviceMonitor, type HeadphoneSink } from "./device-monitors.ts";
 import { channelRmsDb, onsetSec, SAMPLE_RATE } from "./offline-test-support.ts";
+import type { MonitorOutput } from "./monitor.ts";
 import { CONTEXT_HOP_SEC } from "./output.ts";
 
 const SILENT_DB = -100;
@@ -41,15 +42,16 @@ describe("ControllerCueMonitor (the FLX4's four outputs)", () => {
     expect(channelRmsDb(rendered, 3, 0.1, 0.9)).toBeGreaterThan(-20);
   });
 
-  it("mixes the master into the headphones with MIXING, scaled by LEVEL", async () => {
+  it("mixes the master into the headphones with MIXING, and leaves LEVEL to the FLX4's own headphone amp", async () => {
     const context = new OfflineAudioContext(4, SAMPLE_RATE, SAMPLE_RATE);
-    const monitor = new ControllerCueMonitor();
+    const monitor: MonitorOutput = new ControllerCueMonitor();
     monitor.attach(buses(context));
     monitor.setCueMix(1);
     monitor.setHeadphoneGain(0.5);
     const rendered = await context.startRendering();
-    // Master only in the headphones now, 6 dB down; the master outputs are unchanged.
-    expect(channelRmsDb(rendered, 2, 0.1, 0.9)).toBeCloseTo(channelRmsDb(rendered, 0, 0.1, 0.9) - 6.02, 0);
+    // Master only in the headphones now, at the master's level: the FLX4 turns its PHONES jack down
+    // itself, so the app scaling 3/4 too would apply LEVEL twice.
+    expect(channelRmsDb(rendered, 2, 0.1, 0.9)).toBeCloseTo(channelRmsDb(rendered, 0, 0.1, 0.9), 1);
     expect(channelRmsDb(rendered, 3, 0.1, 0.9)).toBeLessThan(SILENT_DB);
   });
 
@@ -59,11 +61,12 @@ describe("ControllerCueMonitor (the FLX4's four outputs)", () => {
 });
 
 /** The "headphone device": channels 2/3 of the offline render, with a set latency. */
-function fakeHeadphones(context: OfflineAudioContext, latencySec: number): HeadphoneSink & { closed: boolean } {
+function fakeHeadphones(context: OfflineAudioContext, latencySec: number, levelOnDevice = false): HeadphoneSink & { closed: boolean } {
   const merger = new ChannelMergerNode(context, { numberOfInputs: 4 });
   merger.connect(context.destination);
   const sink = {
     closed: false,
+    levelOnDevice,
     open() {
       const split = new ChannelSplitterNode(context, { numberOfOutputs: 2 });
       split.connect(merger, 0, 2);
@@ -109,6 +112,24 @@ describe("TwoDeviceMonitor (speakers and headphones)", () => {
     expect(monitor.cueDelaySec()).toBeCloseTo(0.2 - CONTEXT_HOP_SEC, 9);
     monitor.setHeadphoneOffset(50);
     expect(monitor.cueDelaySec()).toBeCloseTo(0.2 - CONTEXT_HOP_SEC - 0.05, 9);
+  });
+
+  it("scales the headphones by LEVEL on a plain headphone device, and not on the FLX4's jack (its own amp does)", async () => {
+    const render = async (levelOnDevice: boolean) => {
+      const context = new OfflineAudioContext(4, SAMPLE_RATE, SAMPLE_RATE);
+      context.destination.channelCount = 4;
+      context.destination.channelInterpretation = "discrete";
+      const monitor = new TwoDeviceMonitor(fakeHeadphones(context, 0, levelOnDevice), 0, () => 0);
+      monitor.attach(buses(context));
+      monitor.setCueMix(0);
+      monitor.setHeadphoneGain(0.5);
+      const rendered = await context.startRendering();
+      return channelRmsDb(rendered, 3, 0.1, 0.9);
+    };
+    const device = await render(false);
+    const flx4 = await render(true);
+    expect(device).toBeCloseTo(flx4 - 6.02, 0);
+    expect(flx4).toBeGreaterThan(-20);
   });
 
   it("closes the headphone device when detached", () => {

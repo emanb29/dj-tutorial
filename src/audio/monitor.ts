@@ -16,7 +16,10 @@ export interface MonitorOutput {
   attach(buses: MonitorBuses): void;
   /** Cue/master mix knob: 0 is cue only, 1 is master only. */
   setCueMix(mix: number): void;
-  /** Headphone LEVEL as an amplitude gain (1 is unity) on the headphone path; outputs without one ignore it. */
+  /**
+   * Headphone LEVEL as an amplitude gain (1 is unity) on the headphone path. Outputs without one ignore
+   * it, and so does the FLX4's PHONES jack, whose own amp applies the knob (device-monitors.ts).
+   */
   setHeadphoneGain(gain: number): void;
   detach(): void;
   /**

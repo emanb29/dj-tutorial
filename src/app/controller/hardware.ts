@@ -1,8 +1,9 @@
 // The DDJ-FLX4 as an input device of the controller session: decoded MIDI goes through the same
 // session methods as the screen and the keyboard (one lock check, one command path), recorded with
 // device "midi" at the MIDI message's own timestamp, which is on the performance.now() clock like a key
-// press's, so heard time and grading leeway are the same. Absolute faders and knobs use soft takeover;
-// a locked control does nothing and says "not yet" on screen. LEDs follow the session and the engine.
+// press's, so heard time and grading leeway are the same. Absolute faders and knobs use soft takeover,
+// except HEADPHONES LEVEL and MIXING (HARDWARE_FIRST); a locked control does nothing and says "not yet"
+// on screen. LEDs follow the session and the engine.
 //
 // Mapping decisions beyond AlphaTheta's list (docs/research/flx4-midi.md):
 // - BEAT SYNC long press = MASTER TEMPO (the FLX4 has no MASTER TEMPO button); SHIFT + BEAT SYNC = tempo range.
@@ -92,6 +93,14 @@ const SHARED_CONTINUOUS: Partial<Record<ContinuousName, "crossfader" | "master-l
   "headphone-level": "headphone-level",
   "beat-fx-depth": "beat-fx-depth",
 };
+
+/**
+ * Knobs that drive their value at once, without soft takeover: HEADPHONES LEVEL and MIXING only shape
+ * what the Learner hears in their own headphones, no set-up ever sets them, and the FLX4 cannot say
+ * where they are. The knob is where the Learner wants it; waiting for it to pass the app's default
+ * (12 o'clock, or MIXING fully to CUE) made it seem dead.
+ */
+const HARDWARE_FIRST: ReadonlySet<ContinuousControlId> = new Set(["headphone-level", "cue-mix"]);
 
 /** The Beat FX CH SELECT lever's positions, as the app's channels. */
 const FX_LEVER: Readonly<Record<"1" | "2" | "1&2", BeatFxChannel>> = { "1": "A", "2": "B", "1&2": "master" };
@@ -404,7 +413,8 @@ export class HardwareBridge {
       return;
     }
     const spec = continuousSpec(id);
-    const move = this.takeover.move(id, input.value, this.normalized(id));
+    // A HARDWARE_FIRST knob takes the value wherever it is: the takeover sees it caught there.
+    const move = this.takeover.move(id, input.value, HARDWARE_FIRST.has(id) ? input.value : this.normalized(id));
     if (move.kind === "send") {
       this.session.hardwareValue(id, hardwareAppValue(id, move.value), timeMs);
       this.session.setPickup(id, null);

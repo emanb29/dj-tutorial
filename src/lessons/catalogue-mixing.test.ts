@@ -47,7 +47,7 @@ describe("the Lesson catalogue for Lessons 1–7", () => {
 
   it("grows the controller with each Lesson's controls", () => {
     const after = unlocksAfter(["deck-basics", "gain-staging", "headphone-cue", "cue-point"]);
-    for (const control of ["A.trim", "B.trim", "A.level-meter", "B.level-meter", "B.play", "B.channel-fader", "B.headphone-cue", "cue-mix", "headphone-level", "A.cue", "A.jog"] as const) {
+    for (const control of ["A.trim", "B.trim", "A.level-meter", "B.level-meter", "B.play", "B.channel-fader", "B.headphone-cue", "cue-mix", "A.cue", "A.jog"] as const) {
       expect(after.has(control)).toBe(true);
     }
     // Pitch bend waits for nudge-phase: the cue-point jog only searches.
