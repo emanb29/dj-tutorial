@@ -66,7 +66,7 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
     const { leadPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const bar = 4 * beat;
-    // "Set up: CUE 🎧 B on, LOW B all the way down — then R", off the clock.
+    // "Set up: CUE 🎧 B on, LOW B all the way down", off the clock.
     const playAt = await startedCheck(run, [], [
       { control: "headphone-cue", deck: "B", value: true },
       { control: "eq-low", deck: "B", value: -1 },
@@ -91,7 +91,7 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
     const { leadPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const bar = 4 * beat;
-    // "Set up: CUE 🎧 B on — then R", off the clock.
+    // "Set up: CUE 🎧 B on", off the clock.
     const playAt = await startedCheck(run, [], [{ control: "headphone-cue", deck: "B", value: true }]);
     // "Start CFX A right, slowly": from 10 bars before A's out, to most of the way right (0.85).
     const sweepFrom = handoverPos - 10 * bar + 0.3;
@@ -263,7 +263,7 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     const bar = 4 * beat;
     // bass-swap and blend-by-ear passed: the captions swap the bass, and one-bass (warn) is graded.
     const passed = passedBefore(LESSON_IDS, "loop-transition");
-    // "Set up: CUE 🎧 B on, LOW B all the way down — then R", off the clock.
+    // "Set up: CUE 🎧 B on, LOW B all the way down", off the clock.
     const playAt = await startedCheck(run, passed, [
       { control: "headphone-cue", deck: "B", value: true },
       { control: "eq-low", deck: "B", value: -1 },
@@ -302,7 +302,7 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     const bar = 4 * beat;
     // An elective: sync-blend and phrases are all it needs. The LOW knobs may be locked, one-bass is not graded.
     const passed = passedBefore(LESSON_IDS, "crossfader");
-    // "Set up: CUE 🎧 B on — then R", off the clock.
+    // "Set up: CUE 🎧 B on", off the clock.
     const playAt = await startedCheck(run, passed, [{ control: "headphone-cue", deck: "B", value: true }]);
     const plan = planOf(run);
     const loopPos = plan.startPos + 8 * bar;
@@ -328,7 +328,7 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     const run = await pairHarness("echo-out", latencySec, { renderSec: 170, sameOnB: true });
     const beat = 60 / run.track.grid.bpm;
     const bar = 4 * beat;
-    // "Set up: CUE 🎧 B on, ECHO on (V) — then R", off the clock.
+    // "Set up: CUE 🎧 B on, ECHO on (V)", off the clock.
     const playAt = await startedCheck(run, [], [
       { control: "headphone-cue", deck: "B", value: true },
       { control: "beat-fx", value: true },

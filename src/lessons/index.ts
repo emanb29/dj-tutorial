@@ -67,6 +67,7 @@ export { drillReveals, drillStep, livePhaseMs, startDrill, tempoPercentApart, ty
 export { hotCuePadPhrases, PERFORMANCE_LESSONS, type PerformanceLessonId } from "./catalogue-performance.ts";
 export { EQ_CENTRED_DB, EQ_CUT_DB, FILTER_CENTRED, initialLessonState, lessonReducer, practiceRep, TIP_AFTER_MISSES, triggerStep, type LessonEvent, type LessonPhase, type LessonState } from "./runtime.ts";
 export { SYNTHETIC_HOUSE, SYNTHETIC_PARTNER, SYNTHETIC_TRACK_ID, synthesizeHouse, syntheticLessonTrack, type SyntheticLayout } from "./synthetic-track.ts";
+export { askDone, FADER_UP_AT, setUpStep, trimmedPeakDb, TRIMS_MATCHED_DB, type SetUpAsk, type SetUpReading, type SetUpStepPlan } from "./set-up-asks.ts";
 export { barStart, beatSec, heardTimeOf, lessonTrackFromAnalysis, lessonTrackFromKnownGrid, peakDbfsOf, phraseStart, SET_UP_PEAK_DB, setUpTrim, setUpTrimDb, sliceTrack, trackOnDeck } from "./track.ts";
 export type * from "./types.ts";
 export {

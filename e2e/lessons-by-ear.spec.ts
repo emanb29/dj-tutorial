@@ -192,12 +192,12 @@ test("blend-by-ear: B matched in the headphones, a 16-bar blend with the bass sw
   await page.keyboard.up("ArrowLeft");
   await expect(phase(page)).toHaveAttribute("data-phase", "practice");
 
-  // Set up off the clock: cut LOW B (the set-up leaves it to the Learner), then R. The Check from bar 1:
+  // Set up off the clock: cut LOW B (the set-up leaves it to the Learner). The Check from bar 1:
   // B plays in the headphones; match it, keep it in line, blend from bar 9 (beat 32) to bar 26 with the
   // bass swapped on bar 17 (beat 64).
   await page.keyboard.press("Enter");
   await expect(phase(page)).toHaveAttribute("data-phase", "check");
-  await expect(page.locator(".lesson-cue")).toHaveText("Set up: LOW B all the way down — then R");
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: LOW B all the way down");
   const lowB = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.command({ control: "eq-low", deck: "B", value: -1 }, { device: "trackpad" }).ok);
   expect(lowB).toBe(true);
   await readyFromPhraseStart(page, "check", 0);

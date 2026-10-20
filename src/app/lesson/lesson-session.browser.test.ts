@@ -193,8 +193,9 @@ async function until(done: () => boolean, what: string): Promise<void> {
  * late by however long the main thread took to get there, which shifts every heard beat off the taps.
  */
 /**
- * A set-up step off the clock ("Set up: … — then R"), in practice or the Check: the moves at the
- * Learner's pace while A loops its first phrase, then R. Returns once A plays from its start again.
+ * A set-up step off the clock ("Set up: …"), in practice or the Check: the moves at the
+ * Learner's pace while A loops its first phrase, then R (it would go by itself at the phrase's end).
+ * Returns once A plays from its start again.
  */
 async function setUpThenReady(run: Harness, moves: readonly EngineCommand[] = []): Promise<void> {
   expect(run.session.setUpPending()).not.toBeNull();

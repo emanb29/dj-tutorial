@@ -50,7 +50,7 @@ import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
 import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
 import { practiceSetUp } from "./practice-set-up.ts";
 import { ResultCard } from "./ResultCard.tsx";
-import { SetUpStep } from "./SetUpStep.tsx";
+import { SetUpStep, useSetUpCaption } from "./SetUpStep.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
 import "./lesson.css";
 import "./lesson-extras.css";
@@ -294,6 +294,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   }, [setup.kind, rerollable]);
 
   const session = setup.kind === "ready" ? setup.session : null;
+  // Practice's set-up step says what to set up in the caption line, as the Check's does.
+  const setUpCaption = useSetUpCaption(session);
 
   // The ear check is for split cue; with the FLX4 or two devices, the cue has its own output.
   const outputHasOwnCue = engine?.output != null && engine.output.kind !== "split-cue";
@@ -536,7 +538,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             phase={phase}
             definition={definition}
             graded={graded}
-            practiceCaption={session === null ? definition.practice.caption : (definition.practiceCaptionFor?.(session.track) ?? definition.practice.caption)}
+            practiceCaption={setUpCaption ?? (session === null ? definition.practice.caption : (definition.practiceCaptionFor?.(session.track) ?? definition.practice.caption))}
             setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null}
             cueLine={cueLine}
           />

@@ -6,6 +6,7 @@ import { BY_EAR_LESSONS, type ByEarLessonId } from "./catalogue-by-ear.ts";
 import { PERFORMANCE_LESSONS, type PerformanceLessonId } from "./catalogue-performance.ts";
 import { SYNC_LESSONS, type SyncLessonId } from "./catalogue-sync.ts";
 import { barCountdown, barsSec, fromOwnCue, heardSpan, steadyPhrase, switchCountdown } from "./plan.ts";
+import { setUpStep } from "./set-up-asks.ts";
 import { barStart, beatSec, phraseOf, phraseStart, sliceTrack, trackOnDeck, trimKnobFor, UNMEASURED_PEAK_DB } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
@@ -379,7 +380,7 @@ const cutOnPhrase: LessonDefinition = {
     { caption: "Fader B up (O): silent till it plays", control: "B.channel-fader", trigger: { kind: "fader-up", deck: "B" }, named: "Fader up, deck paused: nothing yet." },
     { caption: "On the next phrase's 1: Press , and S together", control: "B.play", trigger: { kind: "cut" }, named: "That's a cut: B in, A out, on the phrase." },
   ],
-  practice: { caption: "Set up, then R. Cut on the next phrase: Press , and S on the 1", rep: "cut", window: 2, needed: 1 },
+  practice: { caption: "Cut on the next phrase: Press , and S on the 1", rep: "cut", window: 2, needed: 1 },
   checkCaption: "This one counts: CUE B, fader B up, cut on the phrase",
   questions: [],
   planCheck: (track) => {
@@ -391,8 +392,8 @@ const cutOnPhrase: LessonDefinition = {
       faderAtStart: 1,
       deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
-      // Set up off the clock, then R: the clock and the recording start from A's phrase start.
-      setUp: { caption: "Set up: CUE 🎧 B on, fader B up, trims matched — then R" },
+      // Set up off the clock: the clock and the recording start from A's phrase start once all is set.
+      setUp: setUpStep([{ kind: "cue-on", deck: "B" }, { kind: "fader-up", deck: "B" }, { kind: "trims-matched" }]),
       firstPhraseAction: cutPos,
       endWhen: { kind: "after", sec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) },
       timeoutSec: barsSec(track, CUT_LEAD_BARS + CUT_TAIL_BARS) + 5,

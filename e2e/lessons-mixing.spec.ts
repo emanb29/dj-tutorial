@@ -170,13 +170,14 @@ test("cut-on-phrase: CUE B, fader B up, then PLAY B and cut A on the phrase star
   await openLesson(page, learnerId, "cut-on-phrase");
   await expect(caption(page)).toContainText("Turn on CUE 🎧 on channel B");
 
-  // Set up off the clock, A looping phrase 2 (bar 9, beat 32), then R: a whole phrase, and the cut on
-  // phrase 3 (bar 17, beat 64); B waits on its cue point.
+  // Set up off the clock, A looping phrase 2 (bar 9, beat 32). Once set it goes on by itself (no R)
+  // where the phrase comes round: a whole phrase, and the cut on phrase 3 (bar 17, beat 64); B waits
+  // on its cue point.
   await page.keyboard.press("Enter");
-  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, fader B up, trims matched — then R");
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, fader B up, trims matched");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.keyboard.press("KeyO");
-  await readyFromPhraseStart(page, "check", 32);
+  await readyFromPhraseStart(page, "check", 32, { byItself: true });
   await expect(page.locator(".lesson-cue")).toHaveText("Count this phrase: cut on the next 1");
   // On the 1, as heard: B's Play is graded from the press, however late a headless browser's audio starts.
   await keysAtBeats(page, [64], { codes: ["Comma", "KeyS"] });

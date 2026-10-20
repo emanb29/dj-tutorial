@@ -422,11 +422,12 @@ async function rideTo(run: Run, pos: number): Promise<void> {
 }
 
 /**
- * The Check's set-up step ("Set up: … — then R"), off the clock: the set-up moves at the Learner's
- * pace while A loops its first phrase, then R. A plays from the Check's start a lookahead later.
+ * The Check's set-up step ("Set up: …"), off the clock: the set-up moves at the Learner's pace
+ * while A loops its first phrase, then R (the quick way; it would go by itself at the phrase's end).
+ * A plays from the Check's start a lookahead later.
  */
 async function setUpThenReady(run: Run, moves: readonly EngineCommand[]): Promise<void> {
-  expect(run.session.checkCue()?.caption ?? "").toMatch(/^Set up: .+ — then R$/);
+  expect(run.session.checkCue()?.caption ?? "").toMatch(/^Set up: /);
   for (const command of moves) {
     run.send(command);
     await run.renderTo(run.now() + 0.3);
@@ -541,7 +542,7 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
 
   "cut-on-phrase": async (run) => {
     const { plan, track } = run;
-    // "Set up: CUE 🎧 B on, fader B up, trims matched — then R" (the set-up trims match already).
+    // "Set up: CUE 🎧 B on, fader B up, trims matched" (the set-up trims match already).
     await setUpThenReady(run, [
       { control: "headphone-cue", deck: "B", value: true },
       { control: "channel-fader", deck: "B", value: 1 },
@@ -694,7 +695,7 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
     if (!Number.isFinite(fadeBars)) throw new Error(`The fade caption names no length: "${fade.caption}"`);
     const outPos = fade.pos + barLength(track);
     const lowBack = cueStarting(plan, "All the way down, then LOW A").pos;
-    // "Set up: LOW B all the way down — then R", off the clock, then "Now match B".
+    // "Set up: LOW B all the way down", off the clock, then "Now match B".
     await setUpThenReady(run, plan.setUp?.caption.includes("LOW B all the way down") === true ? [{ control: "eq-low", deck: "B", value: -1 }] : []);
     const match = plan.cues.find((cue) => cue.caption.includes("Now match B"));
     if (match !== undefined) await run.toPos(match.fromPos);

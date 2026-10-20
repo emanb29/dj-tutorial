@@ -1,10 +1,18 @@
 // "Match your controller": the DDJ-FLX4's faders and knobs a set-up needs, each ticked off live as the
 // hardware gets there (hardware-sync.ts). The Lesson, practice or Check starts once all have, or on Skip.
-// A set-up step of the Lesson's own ("Set up: … — then R") shows its caption above the items, and goes
-// on with R once all have ticked, or on Skip.
+// A set-up step of the Lesson's own ("Set up: CUE 🎧 B on, fader B up") shows its caption above the
+// items. It goes on by itself once all have ticked and everything the caption asks is done ("All set"),
+// where deck A's looped phrase comes round; R goes at once, Skip goes without the rest.
 import { useSyncExternalStore } from "react";
 import { matchLine } from "./hardware-sync.ts";
 import type { LessonSession } from "./lesson-session.ts";
+
+const NO_SESSION = () => () => undefined;
+
+/** The set-up step's own caption showing now ("Set up: …", then "All set: …"), or null for none. */
+export function useSetUpCaption(session: LessonSession | null): string | null {
+  return useSyncExternalStore(session?.subscribeSetUp ?? NO_SESSION, () => session?.setUpPending()?.caption ?? null);
+}
 
 export function SetUpStep({ session }: { readonly session: LessonSession }) {
   const pending = useSyncExternalStore(session.subscribeSetUp, () => session.setUpPending());

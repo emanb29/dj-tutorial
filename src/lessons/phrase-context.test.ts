@@ -5,7 +5,7 @@
 // 2. A whole 8-bar phrase is heard before the first phrase-timed action, and the timeout covers it.
 // 3. Practice shows the 8-bar count (phrase-count.ts), unless a by-ear drill runs it.
 // 4. Set-up moves (CUE, SYNC, LOW B down, ECHO on, trims …) are never asked inside the lead-in on the
-//    clock: they go in the unclocked set-up step (`CheckPlan.setUp`), then R.
+//    clock: they go in the unclocked set-up step (`CheckPlan.setUp`), which goes on once they are done.
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { OriginalMetaSchema } from "@shared/originals.ts";
@@ -92,14 +92,14 @@ describe.each(LESSONS.map((lesson) => ({ id: lesson.id, lesson })))("$id", ({ id
     expect(lesson.phraseCount === true).toBe(lesson.drill === undefined);
   });
 
-  it("asks for set-up moves only off the clock, before R, never inside the lead-in", () => {
+  it("asks for set-up moves only off the clock, in the set-up step, never inside the lead-in", () => {
     for (const track of tracks) {
       for (const plan of plansOf(lesson, track)) {
         const action = plan.firstPhraseAction ?? Number.NaN;
         // The last 2 bars count down to the action: those captions may name it.
         const leadIn = plan.cues.filter((cue) => cue.fromPos < action - barsSec(track, 2) - 1e-6);
         expect(leadIn.filter((cue) => SET_UP_MOVE.test(cue.caption)).map((cue) => cue.caption), track.trackId).toEqual([]);
-        if (plan.setUp !== undefined) expect(plan.setUp.caption).toMatch(/^Set up: .+ — then R$/);
+        if (plan.setUp !== undefined) expect(plan.setUp.caption).toMatch(/^Set up: [^R]+$/);
       }
     }
   });
@@ -118,9 +118,9 @@ describe.each(LESSONS.map((lesson) => ({ id: lesson.id, lesson })))("$id", ({ id
 describe("Lesson 7 (Your first transition: the cut)", () => {
   const lesson = LESSONS.find((each) => each.id === "cut-on-phrase");
 
-  it("sets up off the clock, then R; practice waits for R too", () => {
+  it("sets up off the clock; practice waits for its set-up too", () => {
     const plan = lesson?.planCheck(synthetic);
-    expect(plan?.setUp?.caption).toBe("Set up: CUE 🎧 B on, fader B up, trims matched — then R");
+    expect(plan?.setUp?.caption).toBe("Set up: CUE 🎧 B on, fader B up, trims matched");
     expect(lesson?.practiceSetUp).toBe(true);
     expect(plan?.cues.map((cue) => cue.caption)).toContain("Next phrase: Press , and S on the 1");
   });

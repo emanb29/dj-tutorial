@@ -228,13 +228,14 @@ export async function startedCheck(run: LessonHarness, passed: readonly LessonId
 export async function setUpThenReady(run: LessonHarness, moves: readonly EngineCommand[]): Promise<number> {
   await run.renderTo(run.now() + 0.5);
   const caption = run.session.checkCue()?.caption ?? "";
-  if (!caption.startsWith("Set up:")) throw new Error(`The Learner expects the set-up step, but the caption is ${JSON.stringify(caption)}`);
+  // "All set" when the set-up moves were made already (or nothing was left to do).
+  if (!caption.startsWith("Set up:") && !caption.startsWith("All set:")) throw new Error(`The Learner expects the set-up step, but the caption is ${JSON.stringify(caption)}`);
   for (const command of moves) {
     const sent = run.engine.command(command, { device: "keyboard" });
     if (!sent.ok) throw new Error(`the engine refused ${JSON.stringify(command)}: ${JSON.stringify(sent.error)}`);
     await run.renderTo(run.now() + 0.3);
   }
-  // Taking a while over it: the clock does not run until R.
+  // Taking a while over it: the clock does not run until the step goes on (here, on R).
   await run.renderTo(run.now() + 3);
   return untilPlayedA(run, () => {
     run.session.ready();

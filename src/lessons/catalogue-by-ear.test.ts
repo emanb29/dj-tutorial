@@ -262,7 +262,7 @@ describe("blend-by-ear", () => {
 
   it("leaves LOW B for the Learner to cut in the set-up, off the clock, so an FLX4 knob and the app agree", () => {
     expect(plan.deckB).not.toHaveProperty("lowCut");
-    expect(plan.setUp).toEqual({ caption: "Set up: LOW B all the way down — then R" });
+    expect(plan.setUp).toMatchObject({ caption: "Set up: LOW B all the way down" });
     expect(plan.cues[0]?.fromPos).toBe(plan.startPos);
     expect(plan.cues[0]?.caption).toContain("match B: TEMPO B, then jog B");
   });

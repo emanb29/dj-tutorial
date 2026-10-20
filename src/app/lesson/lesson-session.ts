@@ -4,9 +4,10 @@
 //
 // The audio part of a Check ends (and the recorder stops) before any questions are asked, so the
 // grading window and the end reason never include the time spent answering.
-import { AttemptRecorder, eqKnobToDecibels, type AudioEngine, type CommandEvent, type EngineCommand, type RecordedAttempt, type Result } from "@audio";
+import { AttemptRecorder, eqKnobToDecibels, trimKnobToDecibels, type AudioEngine, type CommandEvent, type EngineCommand, type RecordedAttempt, type Result } from "@audio";
 import { CLASH_LOW_DB, cuePlacement, runCheck } from "@checks";
 import {
+  askDone,
   blendPose,
   checkDecksFor,
   checkSpecFor,
@@ -47,11 +48,14 @@ import {
   type PhraseCountState,
   type PhrasePosition,
   type PositionCue,
+  type SetUpReading,
+  type SetUpStepPlan,
+  trimmedPeakDb,
 } from "@lessons";
 import type { DeckId, LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { commandFor, type ContinuousControlId } from "../controller/gestures.ts";
-import { CONTINUOUS_CONTROLS, describeTarget, liveHardwareView, matchItems, settledValue, setUpTargets, type HardwareView, type MatchItem, type SetUpTarget } from "./hardware-sync.ts";
+import { CONTINUOUS_CONTROLS, describeTarget, liveHardwareView, matchItems, settledValue, setUpTargets, stepTargets, type HardwareView, type MatchItem, type SetUpTarget } from "./hardware-sync.ts";
 import { DrillRunner, liveReading, type DrillStatus } from "./practice-drill.ts";
 
 /** How often the session looks at the playhead to end the audio part or loop practice. */
@@ -93,6 +97,10 @@ const DEVICE = { device: "keyboard" } as const;
 const DECKS: readonly DeckId[] = ["A", "B"];
 /** A set-up step loops deck A's first phrase: 8 bars. */
 const BARS_PER_PHRASE = 8;
+/** A set-up step's line once everything it asks is done: it goes on where A's phrase comes round. */
+const ALL_SET_CAPTION = "All set: starts on the next phrase";
+/** Practice's set-up step for a Lesson whose Check names none (none does: every practiceSetUp Lesson has one). */
+const NO_ASKS: SetUpStepPlan = { caption: "Set up", asks: [] };
 
 export type GradeOutcome =
   | { readonly ok: true; readonly outcome: CheckResult | VoidAttempt }
@@ -116,25 +124,29 @@ export interface BeatClock {
 
 /**
  * The set-up step showing now: the controller's faders and knobs to match before the decks start
- * (hardware-sync.ts), and the set-up's own caption ("Set up: … — then R"), if it has one. With no
- * caption it goes on once every item ticks, or Skip; with one, on R once every item has ticked, or Skip.
+ * (hardware-sync.ts), and the set-up's own caption ("Set up: CUE 🎧 B on, fader B up"), if it has one.
+ * With no caption it goes on once every item ticks, or Skip. With one, once every item has ticked and
+ * everything the caption asks is done, where deck A's looped phrase comes round; or at once on R
+ * (every item ticked), or Skip.
  */
 export interface SetUpPending {
-  /** The set-up step's own line (`CheckPlan.setUp`, `practiceSetUp`); null for none. */
+  /** The set-up step's own line (`CheckPlan.setUp`, `practiceSetUp`), "All set: …" once it is; null for none. */
   readonly caption: string | null;
   readonly items: readonly MatchItem[];
 }
 
 /**
  * A set-up waiting: what it sets, and what it does once matched (or skipped). `step` is a set-up step
- * waiting for R (`CheckPlan.setUp`, `LessonDefinition.practiceSetUp`): deck A loops the phrase from its
- * start while the Learner sets up, and a Check's recorder and clock start only on R. Without `step`,
- * the decks are paused until the controller matches.
+ * of the Lesson's own (`CheckPlan.setUp`, `LessonDefinition.practiceSetUp`), with `own` its caption and
+ * asks: deck A loops the phrase from its start while the Learner sets up, and a Check's recorder and
+ * clock start only once the step goes on (at the phrase's end once all is set, or on R). Without
+ * `step`, the decks are paused until the controller matches.
  */
 interface PendingSetUp {
   readonly targets: readonly SetUpTarget[];
   readonly proceed: () => void;
   readonly step: { readonly kind: "check"; readonly plan: CheckPlan } | { readonly kind: "practice" } | null;
+  readonly own: SetUpStepPlan | null;
   shown: SetUpPending;
 }
 
@@ -265,6 +277,8 @@ export class LessonSession {
     const stops = [
       engine.on("command", (event) => {
         this.onCommand(event);
+        // CUE 🎧, SYNC, a fader or a knob may be what a set-up step asks for (or SYNC dropped).
+        this.showStep();
       }),
       engine.on("cue-point", (cue) => {
         this.onCuePoint(cue.deck, cue.pos);
@@ -726,18 +740,64 @@ export class LessonSession {
     this.settingUpWith(() => {
       for (const deck of DECKS) if (this.onDeck[deck] !== null) this.send({ control: "pause", deck });
     });
-    this.pendingSetUp = { targets, proceed, step: null, shown: { caption: null, items } };
+    this.pendingSetUp = { targets, proceed, step: null, own: null, shown: { caption: null, items } };
     this.setUpChanged();
   }
 
   /**
-   * A set-up step waiting for R (the decks are cued, A loops its first phrase): `caption` says what to
-   * set up, and the "Match your controller" items tick off meanwhile. R, or Skip, runs `proceed`.
+   * A set-up step of the Lesson's own (the decks are cued, A loops its first phrase): `own.caption`
+   * says what to set up, and the "Match your controller" items tick off meanwhile, less the controls
+   * the asks set themselves (stepTargets). Once all is set, it goes on where A's phrase comes round
+   * (watchLoop); R (every item ticked) or Skip runs `proceed` at once.
    */
-  private waitForStep(step: NonNullable<PendingSetUp["step"]>, caption: string, targets: readonly SetUpTarget[], proceed: () => void): void {
+  private waitForStep(step: NonNullable<PendingSetUp["step"]>, own: SetUpStepPlan, targets: readonly SetUpTarget[], proceed: () => void): void {
     this.cancelSetUp();
-    const items = this.hardware.connected ? matchItems(targets, this.hardware, this.skippedControls) : [];
-    this.pendingSetUp = { targets, proceed, step, shown: { caption, items } };
+    const matched = stepTargets(targets, own.asks);
+    const items = this.hardware.connected ? matchItems(matched, this.hardware, this.skippedControls) : [];
+    const pending: PendingSetUp = { targets: matched, proceed, step, own, shown: { caption: own.caption, items } };
+    this.pendingSetUp = pending;
+    pending.shown = this.stepShown(pending, items);
+    this.setUpChanged();
+  }
+
+  /** The decks and the mixer as a set-up step's asks read them (set-up-asks.ts). */
+  private setUpReading(): SetUpReading {
+    const mixer = this.engine.mixerState();
+    const perDeck = <T>(read: (deck: DeckId) => T): Record<DeckId, T> => ({ A: read("A"), B: read("B") });
+    return {
+      cueOn: perDeck((deck) => mixer.channels[deck].cue),
+      syncOn: perDeck((deck) => this.engine.deckState(deck).syncOn),
+      lowCut: perDeck((deck) => eqKnobToDecibels(mixer.channels[deck]["eq-low"]) <= EQ_CUT_DB),
+      fader: perDeck((deck) => mixer.channels[deck]["channel-fader"]),
+      beatFxOn: mixer.beatFx.on,
+      levelDb: perDeck((deck) => {
+        const track = this.onDeck[deck];
+        return track === null ? null : trimmedPeakDb(track, trimKnobToDecibels(mixer.channels[deck].trim));
+      }),
+    };
+  }
+
+  /** Whether a set-up step is set: every item ticked and everything its caption asks done. */
+  private stepSet(pending: PendingSetUp, items: readonly MatchItem[] = pending.shown.items): boolean {
+    if (pending.own === null || !items.every((item) => item.state === "matched")) return false;
+    const reading = this.setUpReading();
+    return pending.own.asks.every((ask) => askDone(ask, reading));
+  }
+
+  /** What a set-up step shows with these items: its own caption, or "All set" once it is. */
+  private stepShown(pending: PendingSetUp, items: readonly MatchItem[]): SetUpPending {
+    const own = pending.own;
+    return { caption: own === null ? null : this.stepSet(pending, items) ? ALL_SET_CAPTION : own.caption, items };
+  }
+
+  /** A set-up step's caption again, after a move that may have set it (or undone it). */
+  private showStep(items?: readonly MatchItem[]): void {
+    const pending = this.pendingSetUp;
+    // Only a set-up step of the Lesson's own has a caption to change.
+    if (pending?.own == null) return;
+    const shown = this.stepShown(pending, items ?? pending.shown.items);
+    if (shown.caption === pending.shown.caption && shown.items.map(matchKey).join() === pending.shown.items.map(matchKey).join()) return;
+    pending.shown = shown;
     this.setUpChanged();
   }
 
@@ -751,9 +811,13 @@ export class LessonSession {
       return;
     }
     const items = this.hardware.connected ? matchItems(pending.targets, this.hardware, this.skippedControls) : [];
-    // A set-up step waits for R even once everything matches.
     if (pending.step === null && items.every((item) => item.state === "matched")) {
       this.releaseSetUp();
+      return;
+    }
+    // A set-up step goes on where its phrase comes round (watchLoop): here it only shows "All set".
+    if (pending.step !== null) {
+      this.showStep(items);
       return;
     }
     if (items.map(matchKey).join() === pending.shown.items.map(matchKey).join()) return;
@@ -935,6 +999,13 @@ export class LessonSession {
       if (this.pendingSetUp !== null && this.pendingSetUp.step === null) return;
       const reading = this.engine.playhead(loop?.deck ?? "A");
       if (loop !== null && reading.ok && reading.positionSec >= loop.atPos && positionsValid() && seekHeard()) {
+        // A set-up step goes on by itself here, where its phrase comes round, once everything is set:
+        // a whole phrase heard first, then the Check (or practice) from the phrase start, as on R.
+        const pending = this.pendingSetUp;
+        if (pending !== null && this.stepSet(pending)) {
+          this.releaseSetUp();
+          return;
+        }
         // A set-up loop that waits for R again (`afterLoop`) shows its own set-up step: it never pauses
         // for the controller first.
         this.loopBack(decks, loop, () => {
@@ -1020,17 +1091,17 @@ export class LessonSession {
     this.watchLoop(decks, loop, tick, undefined, again);
   }
 
-  /** The set-up step's loop: deck A's phrase from `pos` (a phrase start), round and round, until R. */
+  /** The set-up step's loop: deck A's phrase from `pos` (a phrase start), round and round, until it goes on. */
   private setUpLoop(pos: number): LoopPlan {
     return { atPos: pos + BARS_PER_PHRASE * 4 * beatSecOf(this.track), reset: "positions" };
   }
 
-  /** Practice's set-up step: A loops its first phrase until R, then practice plays on from there. */
+  /** Practice's set-up step: A loops its first phrase until it goes on, then practice plays on from there. */
   private waitForPracticeSetUp(decks: DeckSetups, targets: readonly SetUpTarget[]): void {
     this.stopWatching();
-    const caption = this.definition.planCheck(this.track).setUp?.caption ?? "Set up, then R";
-    this.waitForStep({ kind: "practice" }, caption, targets, () => {
-      // R: A from its phrase start, every knob and fader as the Learner set it (no new cue).
+    const own = this.definition.planCheck(this.track).setUp ?? NO_ASKS;
+    this.waitForStep({ kind: "practice" }, own, targets, () => {
+      // Set (or R): A from its phrase start, every knob and fader as the Learner set it (no new cue).
       this.stopWatching();
       this.settingUpWith(() => {
         this.send({ control: "seek", deck: "A", value: decks.A.pos });
@@ -1041,15 +1112,15 @@ export class LessonSession {
   }
 
   /** The Check's set-up step: A loops its first phrase, every other deck waits; nothing is recorded yet. */
-  private waitForCheckSetUp(plan: CheckPlan, caption: string): void {
+  private waitForCheckSetUp(plan: CheckPlan, own: SetUpStepPlan): void {
     const planned = checkDecksFor(plan);
     const waiting: DeckSetups = { ...planned, A: { ...planned.A, play: true }, ...(planned.B === undefined ? {} : { B: { ...planned.B, play: false } }) };
     const targets = this.targetsFor(waiting);
     this.cueDecks(waiting, true);
     this.playDecks(waiting);
-    this.waitForStep({ kind: "check", plan }, caption, targets, () => {
-      // R: the decks back to their start positions (A from its phrase start), every knob and fader as
-      // the Learner set it. The Check then records, and its clock starts.
+    this.waitForStep({ kind: "check", plan }, own, targets, () => {
+      // Set (or R): the decks back to their start positions (A from its phrase start), every knob and
+      // fader as the Learner set it. The Check then records, and its clock starts.
       this.stopWatching();
       this.settingUpWith(() => {
         for (const deck of DECKS) {
@@ -1163,7 +1234,7 @@ export class LessonSession {
 
   private beginCheck(plan: CheckPlan): void {
     if (plan.setUp !== undefined) {
-      this.waitForCheckSetUp(plan, plan.setUp.caption);
+      this.waitForCheckSetUp(plan, plan.setUp);
       return;
     }
     const planned = checkDecksFor(plan);
@@ -1282,8 +1353,8 @@ export class LessonSession {
   ready(): void {
     const pending = this.pendingSetUp;
     if (pending !== null) {
-      // A set-up step goes on with R once the controller matches; matching the controller alone is
-      // not a rep or a Ready yet.
+      // R takes a set-up step on at once, once the controller matches (it goes by itself at the
+      // phrase's end once all is set); matching the controller alone is not a rep or a Ready yet.
       if (pending.step !== null && pending.shown.items.every((item) => item.state === "matched")) this.releaseSetUp();
       return;
     }

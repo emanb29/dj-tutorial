@@ -76,7 +76,7 @@ describe("blend-by-ear with the FLX4", () => {
     // The set-up centred the EQ, as the knob is: nothing to pick up.
     expect(lowB()).toBe(0);
     expect(waiting()).toBeUndefined();
-    expect(run.session.checkCue()?.caption).toBe("Set up: LOW B all the way down — then R");
+    expect(run.session.checkCue()?.caption).toBe("Set up: LOW B all the way down");
 
     // "LOW B all the way down", off the clock: every turn moves the app's LOW B with the knob.
     const down: number[] = [];
@@ -88,7 +88,8 @@ describe("blend-by-ear with the FLX4", () => {
     }
     expect(down.every((value, index) => index === 0 || value < (down[index - 1] ?? Number.POSITIVE_INFINITY))).toBe(true);
     expect(down.at(-1)).toBe(-1);
-    // R: the Check starts, LOW B left as the knob put it.
+    expect(run.session.checkCue()?.caption).toBe("All set: starts on the next phrase");
+    // R: the Check starts at once, LOW B left as the knob put it.
     const playAt = await setUpThenReady(run, []);
     await run.renderToHeard(playAt + 0.5);
     expect(lowB()).toBe(-1);

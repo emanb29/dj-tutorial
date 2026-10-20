@@ -11,6 +11,7 @@ import {
   MIXER_SETUP_FIELDS,
   settledValue,
   setUpTargets,
+  stepTargets,
   targetMatched,
   type HardwarePlaces,
   type SetUpTarget,
@@ -141,5 +142,39 @@ describe("matching the controller", () => {
   it("points the tempo hint the way the fader moves: + is towards you", () => {
     const tempo: SetUpTarget = { control: "B.tempo", value: 0.25, kind: "deliberate", to: "to +1.5%" };
     expect(matchItems([tempo], at({ "B.tempo": 0 }), new Set())[0]?.hint).toBe("↓");
+  });
+});
+
+describe("a set-up step's own asks", () => {
+  it("leaves the controls its asks set (fader B up, LOW B down, SYNC B, trims) out of the match items", () => {
+    const targets: SetUpTarget[] = [
+      { control: "A.channel-fader", value: 1, kind: "deliberate", to: "all the way up" },
+      { control: "B.channel-fader", value: 0, kind: "deliberate", to: "all the way down" },
+      { control: "B.eq-low", value: 0, kind: "deliberate", to: "centre" },
+      { control: "B.eq-mid", value: 0, kind: "deliberate", to: "centre" },
+      { control: "B.tempo", value: 0, kind: "deliberate", to: "centre" },
+      { control: "A.trim", value: 0, kind: "deliberate", to: "centre" },
+      { control: "B.trim", value: 0, kind: "deliberate", to: "centre" },
+    ];
+    const controls = (asks: Parameters<typeof stepTargets>[1]) => stepTargets(targets, asks).map((target) => target.control);
+    expect(controls([{ kind: "cue-on", deck: "B" }, { kind: "echo-on" }])).toEqual(targets.map((target) => target.control));
+    expect(controls([{ kind: "fader-up", deck: "B" }])).toEqual(["A.channel-fader", "B.eq-low", "B.eq-mid", "B.tempo", "A.trim", "B.trim"]);
+    expect(controls([{ kind: "low-cut", deck: "B" }])).toEqual(["A.channel-fader", "B.channel-fader", "B.eq-mid", "B.tempo", "A.trim", "B.trim"]);
+    // A synced deck's tempo is the leader's.
+    expect(controls([{ kind: "sync-on", deck: "B" }])).toEqual(["A.channel-fader", "B.channel-fader", "B.eq-low", "B.eq-mid", "A.trim", "B.trim"]);
+    expect(controls([{ kind: "trims-matched" }])).toEqual(["A.channel-fader", "B.channel-fader", "B.eq-low", "B.eq-mid", "B.tempo"]);
+  });
+
+  it("never asks the controller for the opposite of what a Lesson's set-up step asks", () => {
+    for (const definition of LESSONS) {
+      for (const plan of [definition.planCheck(track, 1), definition.planCheck(track, 1, LESSONS.map((each) => each.id))]) {
+        if (plan.setUp === undefined) continue;
+        const asked = stepTargets(targetsOf(checkDecksFor(plan)), plan.setUp.asks).map((target) => target.control);
+        for (const ask of plan.setUp.asks) {
+          if (ask.kind === "fader-up") expect(asked, definition.id).not.toContain(`${ask.deck}.channel-fader`);
+          if (ask.kind === "low-cut") expect(asked, definition.id).not.toContain(`${ask.deck}.eq-low`);
+        }
+      }
+    }
   });
 });

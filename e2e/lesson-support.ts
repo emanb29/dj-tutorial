@@ -186,14 +186,22 @@ export async function checkPlayingPast(page: Page, beat: number, deck: DeckId = 
 }
 
 /**
- * Ends a set-up step off the clock ("Set up: … — then R", in practice or the Check): R, then waits
- * until deck A is heard playing again from `beat`, its first phrase's start. While the set-up waits, A
- * loops that phrase: the pause lets the jump back be heard before the playhead is read.
+ * Ends a set-up step off the clock ("Set up: …", in practice or the Check), everything it asks done:
+ * R (the quick way), or with `byItself` no R, waiting for the step to go on where A's phrase comes
+ * round. Then waits until deck A is heard playing again from `beat`, its first phrase's start. While
+ * the set-up waits, A loops that phrase: the pause lets the jump back be heard before the playhead is
+ * read. A step already gone by itself takes no R (a stray R does nothing in these Checks anyway).
  */
-export async function readyFromPhraseStart(page: Page, phase: string, beat: number): Promise<void> {
+export async function readyFromPhraseStart(page: Page, phase: string, beat: number, options: { readonly byItself?: boolean } = {}): Promise<void> {
+  // The step shows (it cannot go on by itself before a whole phrase has played).
   await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true, undefined, { timeout: 30_000, polling: 20 });
-  await page.keyboard.press("KeyR");
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: 10_000, polling: 20 });
+  if (options.byItself === true) {
+    await expect(caption(page)).toContainText("All set: starts on the next phrase");
+  } else if (await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true)) {
+    await page.keyboard.press("KeyR");
+  }
+  // A phrase of 8 bars at the slowest tempo here, and some.
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: options.byItself === true ? 30_000 : 10_000, polling: 20 });
   // The jump back is heard an output latency after R: until then the heard playhead is the set-up loop's.
   await page.waitForTimeout(250);
   await playingPast(page, phase, beat + 0.5, { before: beat + 8 });

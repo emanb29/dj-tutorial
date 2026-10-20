@@ -5,7 +5,7 @@
 // not to be.
 import { afterEach, describe, expect, it } from "vitest";
 import type { CommandEvent } from "@audio";
-import { checkDecksFor, lessonDefinition, practiceDecksFor, SYNTHETIC_PARTNER, setUpTrim } from "@lessons";
+import { lessonDefinition, practiceDecksFor, SYNTHETIC_PARTNER, setUpTrim } from "@lessons";
 import { HardwarePositions, trackPositions, type MidiMessage } from "@midi";
 import { ALL_CONTROL_IDS } from "../controller/control-ids.ts";
 import type { ContinuousControlId } from "../controller/gestures.ts";
@@ -71,12 +71,12 @@ afterEach(async () => {
   current = null;
 });
 
-async function harness(lessonId: Parameters<typeof lessonHarness>[0]["lessonId"], controller: HardwareView): Promise<LessonHarness> {
+async function harness(lessonId: Parameters<typeof lessonHarness>[0]["lessonId"], controller: HardwareView, renderSec = 60): Promise<LessonHarness> {
   current = await lessonHarness({
     sampleRate: SAMPLE_RATE,
     lessonId,
     track: pairTrack(),
-    renderSec: 60,
+    renderSec,
     partnerAudio: (context) => synthetic(context, SYNTHETIC_PARTNER),
     hardware: controller,
   });
@@ -152,63 +152,97 @@ describe("a set-up with the FLX4 connected", () => {
     expect(run.session.setUpPending()).toBeNull();
   });
 
-  it("starts the Check on R only once matched, and a retry with the controller unchanged has nothing to match", { timeout: 30_000 }, async () => {
-    // Lesson 7 (Your first transition: the cut): fader A up, fader B down before the cut. Its Check
-    // opens with its own set-up step ("Set up: … — then R"): the items tick off in that step.
-    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
+  it("goes on by itself at the phrase's end once the items tick and the caption's asks are done; R goes at once", { timeout: 60_000 }, async () => {
+    // Lesson 7 (Your first transition: the cut): fader A up; the caption asks CUE 🎧 B on, fader B up,
+    // trims matched. B is cued with its fader down, but the step asks it up: no "Fader B" item to
+    // contradict the caption. Its Check opens with this set-up step: the items tick off in it.
+    const controller = new FakeController({ "A.channel-fader": 0.6, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
     const run = await harness("cut-on-phrase", controller);
     const sets = watchSets(run, controller);
+    const midi = (control: "A.channel-fader" | "B.channel-fader", value: number) => {
+      controller.move(control, value);
+      run.engine.command({ control: "channel-fader", deck: control === "A.channel-fader" ? "A" : "B", value }, { device: "midi" });
+    };
     run.session.startCheck();
     await until(() => run.session.setUpPending() !== null, "the set-up step");
-    expect(run.session.setUpPending()?.caption).toMatch(/^Set up: /);
-    expect(run.session.setUpPending()?.items.find((item) => item.label === "Fader B")).toMatchObject({ state: "move", to: "all the way down", hint: "↓" });
+    expect(run.session.setUpPending()?.caption).toBe("Set up: CUE 🎧 B on, fader B up, trims matched");
+    expect(run.session.setUpPending()?.items.map((item) => [item.label, item.state])).toEqual([["Fader A", "move"]]);
     // Fader B stays where the hardware has it until the Learner moves it.
     expect(run.engine.mixerState().channels.B["channel-fader"]).toBeCloseTo(0.6, 6);
     // R does nothing while an item is still to match; A loops its first phrase meanwhile.
     run.session.ready();
     expect(run.session.setUpPending()).not.toBeNull();
     await until(() => run.engine.deckState("A").playing, "A to loop its first phrase");
-    // The Learner pulls fader B down: the hardware bridge sends it, as from the FLX4.
-    controller.move("B.channel-fader", 0);
-    run.engine.command({ control: "channel-fader", deck: "B", value: 0 }, { device: "midi" });
-    await until(() => run.session.setUpPending()?.items.every((item) => item.state === "matched") === true, "Fader B to tick");
-    // All matched: the step still waits for R.
+    run.engine.command({ control: "headphone-cue", deck: "B", value: true }, { device: "midi" });
+    midi("B.channel-fader", 1);
+    // Fader A still to match: not set yet.
+    await run.renderTo(run.now() + 0.5);
+    expect(run.session.setUpPending()?.caption).toBe("Set up: CUE 🎧 B on, fader B up, trims matched");
+    midi("A.channel-fader", 1);
+    await until(() => run.session.setUpPending()?.caption === "All set: starts on the next phrase", "the step to be set");
+    // Set: it waits for A's phrase to come round, then the Check starts by itself (no R).
+    await run.renderTo(run.now() + 0.5);
     expect(run.session.setUpPending()).not.toBeNull();
-    run.session.ready();
-    expect(run.session.setUpPending()).toBeNull();
+    for (let tries = 0; run.session.setUpPending() !== null; tries += 1) {
+      if (tries > 200) throw new Error("The set-up step never went on by itself.");
+      await run.renderTo(run.now() + 0.1);
+    }
     await until(() => run.session.runningPlan() !== null && run.engine.deckState("A").playing, "the Check to start");
-    const plan = run.session.runningPlan();
-    if (plan === null) throw new Error("the Check is running");
-    expect(checkDecksFor(plan).B?.fader).toBe(0);
-    expect(run.engine.mixerState().channels.B["channel-fader"]).toBe(0);
+    expect(run.engine.mixerState().channels.B["channel-fader"]).toBe(1);
 
+    // A retry: the Check cues CUE 🎧 B off again; the controller is unchanged, so nothing to match.
     run.session.startCheck();
     await until(() => run.session.setUpPending() !== null, "the retry's set-up step");
     expect(run.session.setUpPending()?.items.every((item) => item.state === "matched")).toBe(true);
+    expect(run.session.setUpPending()?.caption).toBe("Set up: CUE 🎧 B on, fader B up, trims matched");
+    // R, the manual way: at once, the asks or not.
     run.session.ready();
     expect(run.session.setUpPending()).toBeNull();
     await until(() => run.session.runningPlan() !== null && run.engine.deckState("A").playing, "the retry to start");
     expect(sets.filter((set) => set.hardware !== null && Math.abs(set.value - set.hardware) > 1e-9)).toEqual([]);
   });
 
-  it("practice's set-up step loops A and keeps observing the Learner while the items tick, then waits for R", { timeout: 30_000 }, async () => {
-    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
-    const run = await harness("cut-on-phrase", controller);
+  it("practice's set-up step keeps observing the Learner, and when it comes round already set it still plays its phrase first", { timeout: 90_000 }, async () => {
+    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 1, "A.trim": 0, "B.trim": 0 });
+    const run = await harness("cut-on-phrase", controller, 120);
+    const bar = (4 * 60) / run.track.grid.bpm;
+    const start = lessonDefinition("cut-on-phrase").practiceStart(run.track);
     run.session.preparePractice("practice");
     await until(() => run.session.setUpPending() !== null && run.engine.deckState("A").playing, "practice's set-up step, A looping");
-    expect(run.session.setUpPending()?.caption).toMatch(/^Set up: /);
-    expect(run.session.setUpPending()?.items.map((item) => item.state)).toContain("move");
+    // Fader B is up on the hardware, and stays there: only CUE 🎧 B to go.
+    expect(run.session.setUpPending()?.caption).toBe("Set up: CUE 🎧 B on, fader B up, trims matched");
     const seen = run.observed.length;
     const sent = run.engine.command({ control: "headphone-cue", deck: "B", value: true }, { device: "keyboard" });
     expect(sent.ok).toBe(true);
     expect(run.observed.length).toBeGreaterThan(seen);
-    controller.move("B.channel-fader", 0);
-    run.engine.command({ control: "channel-fader", deck: "B", value: 0 }, { device: "midi" });
-    await until(() => run.session.setUpPending()?.items.every((item) => item.state === "matched") === true, "the items to tick");
-    expect(run.session.setUpPending()).not.toBeNull();
+    expect(run.session.setUpPending()?.caption).toBe("All set: starts on the next phrase");
     run.session.ready();
     expect(run.session.setUpPending()).toBeNull();
     expect(run.engine.deckState("A").playing).toBe(true);
+
+    // Practice goes round to its set-up again: CUE 🎧 B and fader B are as the Learner left them.
+    for (let tries = 0; run.session.setUpPending() === null; tries += 1) {
+      if (tries > 600) throw new Error("Practice never went back to its set-up.");
+      await run.renderTo(run.now() + 0.1);
+    }
+    // The step came round (A back at its phrase start) within the last render step.
+    const cameAt = run.now();
+    expect(Math.abs((run.engine.playheadAt("A", run.now())?.positionSec ?? Number.NaN) - start)).toBeLessThan(0.2);
+    expect(run.session.setUpPending()?.caption).toBe("All set: starts on the next phrase");
+    // Not at once: A plays its phrase through first, for the Learner to hear where it starts.
+    await run.renderTo(run.now() + 4 * bar);
+    expect(run.session.setUpPending()).not.toBeNull();
+    let wentAt = Number.NaN;
+    const stop = run.engine.on("command", (event) => {
+      if (Number.isNaN(wentAt) && run.session.setUpPending() === null && event.command.control === "seek" && "deck" in event.command && event.command.deck === "A") wentAt = event.appliedCtx;
+    });
+    for (let tries = 0; run.session.setUpPending() !== null; tries += 1) {
+      if (tries > 200) throw new Error("The set-up step never went on by itself.");
+      await run.renderTo(run.now() + 0.1);
+    }
+    stop();
+    expect(wentAt - cameAt).toBeGreaterThan(8 * bar - 0.15);
+    expect(wentAt - cameAt).toBeLessThan(8 * bar + 0.3);
   });
 
   it("Lesson 6 (Set a cue point by ear) practice waits for the controller, then each cue point set is a rep", { timeout: 30_000 }, async () => {
@@ -232,14 +266,14 @@ describe("a set-up with the FLX4 connected", () => {
     expect(run.observed.filter((observation) => observation.kind === "cue-set")).toHaveLength(1);
   });
 
-  it("skips a captioned set-up step's unmatched items: they are set on screen, and R is not needed", { timeout: 30_000 }, async () => {
-    const controller = new FakeController({ "A.channel-fader": 1, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
+  it("skips a captioned set-up step's unmatched items: they are set on screen, and nothing else is waited for", { timeout: 30_000 }, async () => {
+    const controller = new FakeController({ "A.channel-fader": 0.6, "B.channel-fader": 0.6, "A.trim": 0, "B.trim": 0 });
     const run = await harness("cut-on-phrase", controller);
     run.session.startCheck();
     await until(() => run.session.setUpPending() !== null, "the set-up step");
     run.session.skipSetUp();
     expect(run.session.setUpPending()).toBeNull();
-    expect(run.engine.mixerState().channels.B["channel-fader"]).toBe(0);
+    expect(run.engine.mixerState().channels.A["channel-fader"]).toBe(1);
     await until(() => run.session.runningPlan() !== null && run.engine.deckState("A").playing, "the Check to start");
   });
 

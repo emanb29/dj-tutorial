@@ -160,8 +160,8 @@ describe("loop-transition", () => {
 
   it("after bass-swap, cuts LOW B before B comes in and swaps the bass over A's loop, before EXIT", () => {
     const swapping = definition.planCheck(track, 1, ["eq-basics", "sync-blend", "bass-swap"]);
-    expect(swapping.setUp).toEqual({ caption: "Set up: CUE 🎧 B on, LOW B all the way down — then R" });
-    expect(plan.setUp).toEqual({ caption: "Set up: CUE 🎧 B on — then R" });
+    expect(swapping.setUp).toMatchObject({ caption: "Set up: CUE 🎧 B on, LOW B all the way down" });
+    expect(plan.setUp).toMatchObject({ caption: "Set up: CUE 🎧 B on" });
     expect(swapping.cues.map((cue) => cue.caption)).toContain("Next phrase's 1: LOOP IN (D)");
     expect(swapping.stepCues).toEqual([
       { after: { kind: "loop-on" }, caption: "Looping. On the loop's 1: Press ," },

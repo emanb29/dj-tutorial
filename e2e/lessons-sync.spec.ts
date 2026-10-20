@@ -130,10 +130,10 @@ async function syncBlendCheck(page: Page, name: string, moves: (fromBeat: number
   // Deck B holds the second groove, slower: SYNC has something to do.
   expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B")?.grid.bpm)).toBe(121);
 
-  // Set up off the clock, A looping phrase 1 (bar 1, beat 0), then R: a whole phrase, and the blend
+  // Set up off the clock, A looping phrase 1 (bar 1, beat 0), then go: a whole phrase, and the blend
   // starts on phrase 2 (bar 9, beat 32).
   await page.keyboard.press("Enter");
-  await expect(page.locator(".lesson-cue")).toHaveText("Set up: SYNC B on, CUE 🎧 B on — then R");
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: SYNC B on, CUE 🎧 B on");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.getByRole("button", { name: "Deck B beat sync" }).click();
   await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").syncOn)).toBe(true);

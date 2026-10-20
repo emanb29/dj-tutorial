@@ -3,6 +3,7 @@
 // loop-transition and echo-out bring the same track in on deck B from another phrase.
 import type { LessonId, LessonTask } from "@shared/attempt.ts";
 import { barsSec, steadyPhrase } from "./plan.ts";
+import { setUpStep } from "./set-up-asks.ts";
 import { beatSec, cuedAt, phraseOf, phraseStart } from "./track.ts";
 import type { CheckPlan, DeckSetups, LessonDefinition, LessonTrack, LoopPlan } from "./types.ts";
 
@@ -160,7 +161,7 @@ const loopTransition: LessonDefinition = {
     { caption: "LOOP IN on a 1 (D)", control: "A.loop-in", trigger: { kind: "loop-in" }, named: "IN marks where the loop starts." },
     { caption: "LOOP OUT on a 1, 4 bars on (F)", control: "A.loop-out", trigger: { kind: "loop-on" }, named: "OUT closes it: a 4-bar loop. 2X (6) doubles it, ½X (5) halves it." },
   ],
-  practice: { caption: "Set up, then R. LOOP IN on the phrase's 1 (D), LOOP OUT 4 bars on (F), then EXIT (G)", rep: "loop", window: 2, needed: 1 },
+  practice: { caption: "LOOP IN on the phrase's 1 (D), LOOP OUT 4 bars on (F), then EXIT (G)", rep: "loop", window: 2, needed: 1 },
   checkCaption: "This one counts: loop A's last phrase, Press , on the loop's 1, EXIT on a 1",
   questions: [],
   planCheck: (track, _attempt, passedLessons = []): CheckPlan => {
@@ -176,7 +177,7 @@ const loopTransition: LessonDefinition = {
       faderAtStart: 1,
       deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
-      setUp: { caption: swap ? "Set up: CUE 🎧 B on, LOW B all the way down — then R" : "Set up: CUE 🎧 B on — then R" },
+      setUp: setUpStep(swap ? [{ kind: "cue-on", deck: "B" }, { kind: "low-cut", deck: "B" }] : [{ kind: "cue-on", deck: "B" }]),
       firstPhraseAction: loopPos,
       endWhen: { kind: "faded-out-then", deck: "A", bars: LOOP_TAIL_BARS },
       timeoutSec: barsSec(track, LOOP_LEAD_BARS + loopsPlayed * LOOP_BARS + LOOP_TAIL_BARS) + 10,
@@ -278,7 +279,7 @@ const echoOut: LessonDefinition = {
       deckA: { headphoneCue: false },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       beatFx: ECHO_SETUP,
-      setUp: { caption: "Set up: CUE 🎧 B on, ECHO on (V) — then R" },
+      setUp: setUpStep([{ kind: "cue-on", deck: "B" }, { kind: "echo-on" }]),
       firstPhraseAction: next - barsSec(track, 1),
       endWhen: { kind: "did-then", what: { kind: "play", deck: "B" }, count: 1, bars: ECHO_TAIL_BARS },
       timeoutSec: barsSec(track, ECHO_LEAD_BARS + 8 + ECHO_TAIL_BARS) + 8,

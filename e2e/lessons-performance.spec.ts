@@ -138,10 +138,10 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   await expect(page.locator('[data-control="A.loop-in"] .not-yet')).toBeVisible();
   expect(await loopSec()).toBeCloseTo(startSec, 3);
 
-  // Set up off the clock (A looping bars 57–64, beats 224–256), then R: A from bar 57 (beat 224), a whole
+  // Set up off the clock (A looping bars 57–64, beats 224–256), then go: A from bar 57 (beat 224), a whole
   // phrase; LOOP IN on the outro's phrase start (bar 65, beat 256), LOOP OUT 4 bars on (beat 272).
   await page.keyboard.press("Enter");
-  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on — then R");
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await readyFromPhraseStart(page, "check", 224);
   await keysAtBeats(page, [256], { codes: ["KeyD"] });
@@ -179,7 +179,7 @@ test("loop-transition after the bass swap: LOW B cut, B on the loop's 1, the bas
 
   const cue = page.locator(".lesson-cue");
   await page.keyboard.press("Enter");
-  await expect(cue).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down — then R");
+  await expect(cue).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await command(page, { control: "eq-low", deck: "B", value: -1 });
   await readyFromPhraseStart(page, "check", 224);
@@ -223,10 +223,10 @@ test("echo-out: ECHO on, A cut on the last bar's 1, B on the phrase's 1, FX off 
   await page.keyboard.press("KeyS");
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
 
-  // Set up off the clock (CUE B, ECHO on), then R: A from bar 9 (beat 32), two phrases; cut on bar 24
+  // Set up off the clock (CUE B, ECHO on), then go: A from bar 9 (beat 32), two phrases; cut on bar 24
   // (beat 92); B on bar 25 (beat 96); FX off 2 bars later.
   await page.keyboard.press("Enter");
-  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, ECHO on (V) — then R");
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, ECHO on (V)");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.keyboard.press("KeyV");
   await readyFromPhraseStart(page, "check", 32);

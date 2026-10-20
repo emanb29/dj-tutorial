@@ -33,9 +33,10 @@ test("bass-swap: LOW B cut, PLAY B on A's phrase start, the LOWs swapped on the 
   await command(page, { control: "eq-low", deck: "A", value: -1 });
   await command(page, { control: "eq-low", deck: "B", value: 0 });
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
-  await expect(caption(page)).toContainText("swap the LOWs on the next phrase's 1");
+  // Practice's set-up step says what to set up first; the practice line follows once it goes on.
+  await expect(caption(page)).toContainText("Set up: CUE 🎧 B on, LOW B all the way down");
 
-  // Practice cues the decks again, every EQ centred, and waits for its set-up (LOW B cut), then R. One swap on the 1 is enough.
+  // Practice cues the decks again, every EQ centred, and waits for its set-up (LOW B cut). One swap on the 1 is enough.
   await command(page, { control: "eq-low", deck: "B", value: -1 });
   await readyFromPhraseStart(page, "practice", 32);
   await keysAtBeats(page, [64], { codes: ["Comma"] });
@@ -47,7 +48,7 @@ test("bass-swap: LOW B cut, PLAY B on A's phrase start, the LOWs swapped on the 
   await expect(caption(page)).toContainText("Ready? This one counts.");
 
   await page.keyboard.press("Enter");
-  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down — then R");
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await command(page, { control: "eq-low", deck: "B", value: -1 });
   await readyFromPhraseStart(page, "check", 32);
@@ -97,7 +98,7 @@ test("filter-transition: CFX A swept to high-pass over 10 bars, B in on the phra
   await expect(caption(page)).toContainText("Ready? This one counts.");
 
   await page.keyboard.press("Enter");
-  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on — then R");
+  await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await readyFromPhraseStart(page, "check", 32);
   await commandsAtBeats(page, timed);

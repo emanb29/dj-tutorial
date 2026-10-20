@@ -77,7 +77,7 @@ describe("Ready (R)", () => {
     const used = Object.fromEntries(LESSONS.map((lesson) => [lesson.id, readyUsedIn(lesson, track)]));
     expect(used["gain-staging"]).toEqual({ practice: true, check: true });
     expect(used["cue-point"]).toEqual({ practice: false, check: true });
-    // cut-on-phrase sets up off the clock, then R, in practice and in the Check.
+    // cut-on-phrase sets up off the clock, in practice and in the Check.
     expect(used["cut-on-phrase"]).toEqual({ practice: true, check: true });
     for (const id of ["deck-basics", "beats-and-bars", "phrases", "headphone-cue"]) expect(used[id]).toEqual({ practice: false, check: false });
   });
@@ -258,7 +258,7 @@ describe("cut-on-phrase", () => {
     expect(plan.startPos).toBeCloseTo(cutPos - 8 * BAR);
     expect(plan.startPos).toBeCloseTo(phraseStart(track.grid, 2));
     expect(plan.firstPhraseAction).toBeCloseTo(cutPos);
-    expect(plan.setUp).toEqual({ caption: "Set up: CUE 🎧 B on, fader B up, trims matched — then R" });
+    expect(plan.setUp).toMatchObject({ caption: "Set up: CUE 🎧 B on, fader B up, trims matched" });
     expect(plan.deckB).toMatchObject({ pos: phraseStart(track.grid, 2), fader: 0, play: false, cuePoint: true, headphoneCue: false });
     expect(plan.endWhen).toEqual({ kind: "after", sec: 13 * BAR });
   });

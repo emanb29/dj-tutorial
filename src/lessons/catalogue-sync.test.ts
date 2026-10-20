@@ -77,7 +77,7 @@ describe("the Lesson catalogue for Lessons 8–11", () => {
       expect(lesson.hook.length).toBeLessThanOrEqual(3);
     }
     expect(readyUsedIn(lessonDefinition("tempo-fader"), track)).toEqual({ practice: true, check: true });
-    // sync-blend sets up (SYNC B, CUE B) off the clock, then R, in practice and in the Check.
+    // sync-blend sets up (SYNC B, CUE B) off the clock, in practice and in the Check.
     expect(readyUsedIn(lessonDefinition("sync-blend"), track)).toEqual({ practice: true, check: true });
     expect(readyUsedIn(lessonDefinition("crossfader"), track)).toEqual({ practice: false, check: false });
   });
@@ -208,7 +208,7 @@ describe("sync-blend", () => {
     expect(blendPos).toBeCloseTo(phraseStart(track.grid, 2));
     expect(plan.startPos).toBeCloseTo(phraseStart(track.grid, 1));
     expect(plan.firstPhraseAction).toBeCloseTo(blendPos);
-    expect(plan.setUp).toEqual({ caption: "Set up: SYNC B on, CUE 🎧 B on — then R" });
+    expect(plan.setUp).toMatchObject({ caption: "Set up: SYNC B on, CUE 🎧 B on" });
     expect(cueB).toBeCloseTo(phraseStart(partner.grid, 2));
     expect(plan.deckB).toMatchObject({ play: false, fader: 0, cuePoint: true, sync: false, tempoPercent: 0 });
     expect(plan.endWhen).toEqual({ kind: "faded-out-then", deck: "A", bars: 2 });

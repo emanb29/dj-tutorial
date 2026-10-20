@@ -612,7 +612,7 @@ test.describe("Lessons 12–13 on a phone (412×915, touch)", () => {
     await go.tap();
     await expect(phase(page)).toHaveAttribute("data-phase", "check");
     // The set-up step, off the clock: Ready is a finger-sized button.
-    await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down — then Ready");
+    await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down");
     await expectFingerSized(page, page.getByRole("button", { name: "Ready", exact: true }));
   });
 
@@ -626,7 +626,11 @@ test.describe("Lessons 12–13 on a phone (412×915, touch)", () => {
     await expect(caption(page)).toContainText("CFX A back to the middle");
     await command(page, { control: "filter", deck: "A", value: 0 });
     await expect(phase(page)).toHaveAttribute("data-phase", "practice");
-    await expect(caption(page)).toContainText("CFX A right from 2 bars before B; A out a phrase after B");
+    // Practice's set-up step first; once set it goes on by itself where A's phrase comes round.
+    await expect(caption(page)).toContainText("Set up: CUE 🎧 B on");
+    await command(page, { control: "headphone-cue", deck: "B", value: true });
+    await expect(caption(page)).toContainText("All set: starts on the next phrase");
+    await expect(caption(page)).toContainText("CFX A right from 2 bars before B; A out a phrase after B", { timeout: 30_000 });
     await expect(caption(page)).not.toContainText("(S)");
     // No step asks for CFX B yet: it is unlocked and finger-sized, a scroll away.
     const cfxB = page.locator(".channel-B").getByRole("slider", { name: "CFX" });

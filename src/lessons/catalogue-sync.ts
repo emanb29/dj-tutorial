@@ -4,6 +4,7 @@
 import type { CheckQuestion, CheckPlan, DeckSetups, LessonDefinition, LessonTrack, ListeningClip, LoopPlan } from "./types.ts";
 import type { LessonTask } from "@shared/attempt.ts";
 import { barsSec, fromOwnCue, fullGroovePhrase, heardSpan, steadyPhrase, steadyRun } from "./plan.ts";
+import { setUpStep } from "./set-up-asks.ts";
 import { beatSec, phraseStart, trackOnDeck } from "./track.ts";
 
 const tooShort = (track: LessonTrack) => (track.phraseStarts.length < 6 ? ["The track is too short for this Lesson's 40 bars."] : []);
@@ -231,7 +232,7 @@ const syncBlend: LessonDefinition = {
     { caption: "Fader B to ¾, then A to ¾", control: "B.channel-fader", trigger: { kind: "blend-step", step: 1 }, named: "Both at ¾: a blend. Then B up, A down." },
   ],
   // One rep per step: ready once all four are made in order.
-  practice: { caption: "Set up, then R. On the 1: Press , B to ¾, A to ¾. Later: B up, A down", rep: "blend-step", window: 4, needed: 4 },
+  practice: { caption: "On the 1: Press , B to ¾, A to ¾. Later: B up, A down", rep: "blend-step", window: 4, needed: 4 },
   checkCaption: "This one counts: SYNC B, Press , on the 1. B ¾, A ¾ … B up, A down",
   questions: [],
   planCheck: (track) => {
@@ -243,7 +244,7 @@ const syncBlend: LessonDefinition = {
       faderAtStart: 1,
       deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
-      setUp: { caption: "Set up: SYNC B on, CUE 🎧 B on — then R" },
+      setUp: setUpStep([{ kind: "sync-on", deck: "B" }, { kind: "cue-on", deck: "B" }]),
       firstPhraseAction: blendPos,
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
       timeoutSec: barsSec(track, BLEND_LEAD_BARS + BLEND_MAX_BARS + 4) + 5,

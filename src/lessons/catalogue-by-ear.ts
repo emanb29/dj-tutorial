@@ -8,6 +8,7 @@ import type { CriterionResult } from "@shared/check-result.ts";
 import { pairProblems } from "./catalogue-sync.ts";
 import { tempoPercentApart } from "./drill.ts";
 import { barsSec, sectionOf, steadyPhrase } from "./plan.ts";
+import { setUpStep } from "./set-up-asks.ts";
 import { beatSec, cuedAt, heardTimeOf, phraseStart, trackOnDeck } from "./track.ts";
 import type { CheckPlan, ControlId, DeckSetups, LessonDefinition, LessonTrack, PracticeDrill } from "./types.ts";
 
@@ -327,7 +328,7 @@ const blendByEar: LessonDefinition = {
       deckA: { headphoneCue: false, eqCentred: true, ...tempoSetup(0) },
       ...(decks.B === undefined ? {} : { deckB: decks.B }),
       // LOW B is cut off the clock, B waiting: the phrase of matching starts with both decks on R.
-      setUp: { caption: "Set up: LOW B all the way down — then R" },
+      setUp: setUpStep([{ kind: "low-cut", deck: "B" }]),
       firstPhraseAction: inPos,
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
       timeoutSec: barsSec(track, BLEND_MATCH_BARS + BLEND_BARS + BLEND_TAIL_BARS + 8) + 15,

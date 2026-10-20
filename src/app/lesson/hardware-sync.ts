@@ -10,7 +10,7 @@
 
 import type { BeatFxSnapshot } from "@audio";
 import { hardwarePositions, midiConnection, type HardwarePositions, type MidiConnection } from "@midi";
-import { setUpTrim, type DeckSetup, type DeckSetups, type LessonTrack } from "@lessons";
+import { setUpTrim, type DeckSetup, type DeckSetups, type LessonTrack, type SetUpAsk } from "@lessons";
 import type { DeckId } from "@shared/attempt.ts";
 import { continuousSpec, type ContinuousControlId } from "../controller/gestures.ts";
 import { hardwareAppValue, physicalIdOf } from "../controller/hardware.ts";
@@ -104,6 +104,33 @@ export function setUpTargets(decks: DeckSetups, track: LessonTrack, options: { r
     ...(crossfader === undefined ? [] : [{ control: "crossfader" as const, value: crossfader, kind: MIXER_SETUP_FIELDS.crossfader, to: describeTarget("crossfader", crossfader, 0) }]),
     ...(depth === undefined ? [] : [{ control: "beat-fx-depth" as const, value: depth, kind: BEAT_FX_SETUP_FIELDS.depth, to: describeTarget("beat-fx-depth", depth, 0) }]),
   ];
+}
+
+/** The faders and knobs a set-up step's ask sets itself (SYNC: the deck's tempo becomes the leader's). */
+function controlsOfAsk(ask: SetUpAsk): readonly ContinuousControlId[] {
+  switch (ask.kind) {
+    case "fader-up":
+      return [`${ask.deck}.channel-fader`];
+    case "low-cut":
+      return [`${ask.deck}.eq-low`];
+    case "sync-on":
+      return [`${ask.deck}.tempo`];
+    case "trims-matched":
+      return ["A.trim", "B.trim"];
+    case "cue-on":
+    case "echo-on":
+      return [];
+  }
+}
+
+/**
+ * The targets a set-up step of the Lesson's own matches the controller to: the set-up's, less the
+ * controls its asks set (Lesson 7 (Your first transition: the cut) asks fader B up, though B is cued
+ * with it down). The asks are checked off the decks and the mixer instead (set-up-asks.ts).
+ */
+export function stepTargets(targets: readonly SetUpTarget[], asks: readonly SetUpAsk[]): SetUpTarget[] {
+  const asked = new Set(asks.flatMap(controlsOfAsk));
+  return targets.filter((target) => !asked.has(target.control));
 }
 
 /** Where the hardware has a fader or knob, as an app value. */
