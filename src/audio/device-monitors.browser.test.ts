@@ -1,10 +1,10 @@
 // Routing of the four-channel and two-device monitors, rendered offline (never the speakers). The second
-// device is faked by a node in the same offline context, routed to channels 2/3, so the test can hear
-// both "devices" in one render.
+// device is faked by a node in the same offline context, routed to channels 2/3 (its headphones) and,
+// for PC MASTER OUT, 4/5 (its master), so the test can hear both "devices" in one render.
 
 import { describe, expect, it } from "vitest";
 import { createAudioEngine } from "./engine.ts";
-import { ControllerCueMonitor, routeToControllerPhones, TwoDeviceMonitor, type HeadphoneSink } from "./device-monitors.ts";
+import { ControllerCueMonitor, routeToControllerOutputs, routeToControllerPhones, TwoDeviceMonitor, type SecondDeviceSink } from "./device-monitors.ts";
 import { channelRmsDb, onsetSec, SAMPLE_RATE } from "./offline-test-support.ts";
 import type { MonitorOutput } from "./monitor.ts";
 import { CONTEXT_HOP_SEC } from "./output.ts";
@@ -60,18 +60,27 @@ describe("ControllerCueMonitor (the FLX4's four outputs)", () => {
   });
 });
 
-/** The "headphone device": channels 2/3 of the offline render, with a set latency. */
-function fakeHeadphones(context: OfflineAudioContext, latencySec: number, levelOnDevice = false): HeadphoneSink & { closed: boolean } {
-  const merger = new ChannelMergerNode(context, { numberOfInputs: 4 });
+/**
+ * The second device: channels 2/3 of the offline render are its headphones, with a set latency; with
+ * `carriesMaster` (PC MASTER OUT), channels 4/5 are its master outputs. `levelOnDevice`: its own amp
+ * applies HEADPHONES LEVEL (the FLX4's jack).
+ */
+function fakeHeadphones(context: OfflineAudioContext, latencySec: number, shape: { readonly levelOnDevice?: boolean; readonly carriesMaster?: boolean } = {}): SecondDeviceSink & { closed: boolean } {
+  const { levelOnDevice = false, carriesMaster = false } = shape;
+  const merger = new ChannelMergerNode(context, { numberOfInputs: carriesMaster ? 6 : 4 });
   merger.connect(context.destination);
+  const pair = (from: number) => {
+    const split = new ChannelSplitterNode(context, { numberOfOutputs: 2 });
+    split.connect(merger, 0, from);
+    split.connect(merger, 1, from + 1);
+    return split;
+  };
   const sink = {
     closed: false,
     levelOnDevice,
+    carriesMaster,
     open() {
-      const split = new ChannelSplitterNode(context, { numberOfOutputs: 2 });
-      split.connect(merger, 0, 2);
-      split.connect(merger, 1, 3);
-      return split;
+      return { headphones: pair(2), master: carriesMaster ? pair(4) : null };
     },
     latencySec: () => latencySec,
     close() {
@@ -79,6 +88,13 @@ function fakeHeadphones(context: OfflineAudioContext, latencySec: number, levelO
     },
   };
   return sink;
+}
+
+/** One channel of a render, as a mono buffer, for onsetSec. */
+function channelOf(rendered: AudioBuffer, index: number): AudioBuffer {
+  const only = new AudioBuffer({ length: rendered.length, numberOfChannels: 1, sampleRate: SAMPLE_RATE });
+  only.copyToChannel(rendered.getChannelData(index), 0);
+  return only;
 }
 
 describe("TwoDeviceMonitor (speakers and headphones)", () => {
@@ -119,7 +135,7 @@ describe("TwoDeviceMonitor (speakers and headphones)", () => {
       const context = new OfflineAudioContext(4, SAMPLE_RATE, SAMPLE_RATE);
       context.destination.channelCount = 4;
       context.destination.channelInterpretation = "discrete";
-      const monitor = new TwoDeviceMonitor(fakeHeadphones(context, 0, levelOnDevice), 0, () => 0);
+      const monitor = new TwoDeviceMonitor(fakeHeadphones(context, 0, { levelOnDevice }), 0, () => 0);
       monitor.attach(buses(context));
       monitor.setCueMix(0);
       monitor.setHeadphoneGain(0.5);
@@ -193,6 +209,72 @@ describe("speakers on this computer, headphones on the FLX4 (TwoDeviceMonitor in
   });
 });
 
+describe("PC MASTER OUT: the master on this computer and on the FLX4's MASTER OUT, the cue in the FLX4's headphones", () => {
+  function sixChannels(): OfflineAudioContext {
+    const context = new OfflineAudioContext(6, SAMPLE_RATE, SAMPLE_RATE);
+    context.destination.channelCount = 6;
+    context.destination.channelInterpretation = "discrete";
+    return context;
+  }
+
+  it("puts the master on the FLX4's 1/2 and the headphone signal on its 3/4", async () => {
+    const flx4 = new OfflineAudioContext(4, SAMPLE_RATE, SAMPLE_RATE);
+    const { master, cue } = buses(flx4);
+    routeToControllerOutputs(flx4, { headphones: cue, master });
+    const rendered = await flx4.startRendering();
+    // Master (a left-only tone) on MASTER OUT left; the headphone signal (a right-only tone) on the jack's right.
+    expect(channelRmsDb(rendered, 0, 0.1, 0.9)).toBeGreaterThan(-20);
+    expect(channelRmsDb(rendered, 1, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    expect(channelRmsDb(rendered, 2, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    expect(channelRmsDb(rendered, 3, 0.1, 0.9)).toBeGreaterThan(-20);
+  });
+
+  it("sends the master to both devices and the cue to the FLX4 only, and delays the computer when the FLX4 is later", async () => {
+    const context = sixChannels();
+    const flx4 = fakeHeadphones(context, 0.1, { carriesMaster: true, levelOnDevice: true });
+    const monitor = new TwoDeviceMonitor(flx4, 0, () => 0.01);
+    expect(monitor.secondDevicePlaysMaster).toBe(true);
+    monitor.attach(buses(context, 0.2));
+    monitor.setCueMix(0);
+    const expected = 0.1 + CONTEXT_HOP_SEC - 0.01;
+    expect(monitor.masterDelaySec()).toBeCloseTo(expected, 9);
+    expect(monitor.cueDelaySec()).toBe(0);
+    const rendered = await context.startRendering();
+    // This computer: the master, delayed; never the cue.
+    expect(onsetSec(channelOf(rendered, 0))).toBeCloseTo(0.2 + expected, 2);
+    expect(channelRmsDb(rendered, 1, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+    // The FLX4: its MASTER OUT (4) and its headphones (3, the cue) together, undelayed.
+    expect(onsetSec(channelOf(rendered, 4))).toBeCloseTo(0.2, 2);
+    expect(onsetSec(channelOf(rendered, 3))).toBeCloseTo(0.2, 2);
+    expect(channelRmsDb(rendered, 5, 0.1, 0.9)).toBeLessThan(SILENT_DB);
+  });
+
+  it("delays the FLX4's master and headphones together when this computer is later, and takes the Learner's offset", async () => {
+    const context = sixChannels();
+    const monitor = new TwoDeviceMonitor(fakeHeadphones(context, 0, { carriesMaster: true, levelOnDevice: true }), 0, () => 0.2);
+    monitor.attach(buses(context, 0.1));
+    monitor.setCueMix(0);
+    const flx4Delay = 0.2 - CONTEXT_HOP_SEC;
+    expect(monitor.masterDelaySec()).toBe(0);
+    expect(monitor.cueDelaySec()).toBeCloseTo(flx4Delay, 9);
+    const rendered = await context.startRendering();
+    expect(onsetSec(channelOf(rendered, 0))).toBeCloseTo(0.1, 2);
+    expect(onsetSec(channelOf(rendered, 4))).toBeCloseTo(0.1 + flx4Delay, 2);
+    expect(onsetSec(channelOf(rendered, 3))).toBeCloseTo(0.1 + flx4Delay, 2);
+    monitor.setHeadphoneOffset(50);
+    expect(monitor.cueDelaySec()).toBeCloseTo(flx4Delay - 0.05, 9);
+  });
+
+  it("closes the FLX4's context when detached", () => {
+    const context = new OfflineAudioContext(2, 128, SAMPLE_RATE);
+    const flx4 = fakeHeadphones(context, 0, { carriesMaster: true, levelOnDevice: true });
+    const monitor = new TwoDeviceMonitor(flx4, 0, () => 0);
+    monitor.attach({ context, master: new GainNode(context), cue: new GainNode(context) });
+    monitor.detach();
+    expect(flx4.closed).toBe(true);
+  });
+});
+
 describe("the engine's clock with two devices", () => {
   it("hears the master later by its line-up delay, so grading stays on the master device's clock", async () => {
     const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
@@ -201,6 +283,27 @@ describe("the engine's clock with two devices", () => {
     const heard = engine.heardTime(2000);
     expect(heard.ok && heard.ctx).toBeCloseTo(2 - monitor.masterDelaySec(), 9);
     expect(monitor.masterDelaySec()).toBeGreaterThan(0.1);
+    await engine.close();
+  });
+
+  // PC MASTER OUT: the engine's context is this computer's speakers, so heard time is read from their
+  // output timestamp. Lined up, the FLX4 sounds at that same moment, so either output is "heard".
+  it("PC MASTER OUT, FLX4 later: heard time is this computer's output timestamp minus its line-up delay", async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const monitor = new TwoDeviceMonitor(fakeHeadphones(context, 0.12, { carriesMaster: true, levelOnDevice: true }), 0, () => 0.01);
+    const engine = await createAudioEngine({ context, monitor, masterTempo: false, clock: { heardTime: (ms) => ({ ok: true, ctx: (ms ?? 0) / 1000 }) } });
+    const heard = engine.heardTime(2000);
+    expect(heard.ok && heard.ctx).toBeCloseTo(2 - (0.12 + CONTEXT_HOP_SEC - 0.01), 9);
+    await engine.close();
+  });
+
+  it("PC MASTER OUT, this computer later: the FLX4 is delayed instead and heard time is this computer's timestamp as it is", async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const monitor = new TwoDeviceMonitor(fakeHeadphones(context, 0, { carriesMaster: true, levelOnDevice: true }), 0, () => 0.2);
+    const engine = await createAudioEngine({ context, monitor, masterTempo: false, clock: { heardTime: (ms) => ({ ok: true, ctx: (ms ?? 0) / 1000 }) } });
+    const heard = engine.heardTime(2000);
+    expect(heard.ok && heard.ctx).toBeCloseTo(2, 9);
+    expect(monitor.cueDelaySec()).toBeGreaterThan(0.1);
     await engine.close();
   });
 });

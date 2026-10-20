@@ -182,6 +182,12 @@ controller keeps its own pad mode and sends the mode's notes.
   outputs 1/2 carry silence and 3/4 the app's headphone mix. If the unit does mix HEADPHONES MIX
   itself, its MASTER side is that silence and would fade the cue out, so `/controller` says to turn
   it to CUE; MASTER CUE would add only silence.
+- **PC MASTER OUT** (`dual-master`, read 2026-10-19): rekordbox's name for playing the master on the
+  computer's speakers as well as the controller; with it on, rekordbox's Master Output preference
+  names the computer's device alongside "DDJ-FLX4 : MASTER", and with it off only the latter [R1].
+  The app's version: master on the computer's device and on the FLX4's 1/2, the app's headphone mix
+  on 3/4. MASTER LEVEL may act in the unit **(unverified, see above)**, so the FLX4's MASTER OUT can
+  sit at a different level from the computer's speakers.
 - The mic input cannot be used as a computer input device [X3].
 
 ## Browser APIs (Chrome, Edge, Arc on macOS)
@@ -216,6 +222,7 @@ controller keeps its own pad mode and sends the mode's notes.
 - [N1] Shimamura Music, DDJ-FLX4-N (GOLD Edition), 2026-06-26 — https://www.shimamura.co.jp/update/?p=13243
 - [N2] Shimamura Music Chiba, limited gold DDJ-FLX4-N and XDJ-AZ-N — https://www.shimamura.co.jp/update/shops/chiba/digital-dj/14766/
 - [N3] DJ City Australia, DDJ-FLX4-N Limited Edition Gold — https://djcity.com.au/product/pioneer-dj-ddj-flx4-n-2-channel-dj-controller-limited-edition-gold/
+- [R1] Crossfader, "Getting Started With The Pioneer DJ DDJ-FLX4" (third-party; the rekordbox manual was not reached) — https://wearecrossfader.co.uk/blog/getting-started-with-the-pioneer-dj-ddj-flx4/
 - [X1] Mixxx, `Pioneer-DDJ-FLX4-script.js` (GPL; cross-check only) — https://github.com/mixxxdj/mixxx/blob/main/res/controllers/Pioneer-DDJ-FLX4-script.js
 - [X2] Mixxx, `Pioneer-DDJ-FLX4.midi.xml` (GPL; cross-check only) — https://github.com/mixxxdj/mixxx/blob/main/res/controllers/Pioneer-DDJ-FLX4.midi.xml
 - [X3] Mixxx manual, Pioneer DDJ-FLX4 — https://manual.mixxx.org/2.4/en/hardware/controllers/pioneer_ddj_flx4

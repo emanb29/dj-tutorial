@@ -43,6 +43,14 @@ describe("the stored Timing check", () => {
     expect(timingCorrectionMs("controller")).toBe(30);
     expect(timingCorrectionMs("two-devices")).toBe(0);
   });
+
+  it("keeps PC MASTER OUT (dual master) apart from the other modes, and reads it back from storage", () => {
+    saveTiming("computer-and-controller-phones", 55, 16);
+    saveTiming("dual-master", -35, 16);
+    forgetTimingCache();
+    expect(timingCorrectionMs("dual-master")).toBe(-35);
+    expect(timingCorrectionMs("computer-and-controller-phones")).toBe(55);
+  });
 });
 
 describe("the Timing check's taps", () => {

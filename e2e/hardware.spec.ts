@@ -452,7 +452,32 @@ test("the output picker offers this computer's speakers with the FLX4's headphon
   await expect(page.getByTestId("timing-check")).toContainText("this computer and the FLX4's headphones");
 });
 
-test("speakers with the FLX4's headphones is not offered without the FLX4's sound card", async ({ page }) => {
+test("the output picker offers PC MASTER OUT, the master on the FLX4 and this computer, and keeps the choice", async ({ page }) => {
+  await fakeMidi(page, {
+    controller: true,
+    outputs: [
+      { deviceId: "spk", label: "MacBook Pro Speakers" },
+      { deviceId: "flx", label: "DDJ-FLX4" },
+    ],
+  });
+  await page.goto("/controller");
+  const dual = page.getByRole("radio", { name: /PC MASTER OUT/ });
+  await expect(dual).toBeEnabled();
+  await dual.check();
+  // The computer's speakers are picked from this computer's outputs only, never the FLX4.
+  const speakers = page.getByLabel("Speakers on this computer");
+  await expect(speakers).toHaveValue("spk");
+  await expect(speakers.locator("option")).toHaveText(["MacBook Pro Speakers"]);
+  await expect(page.getByRole("button", { name: "Play test clicks" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("radio", { name: /PC MASTER OUT/ })).toBeChecked();
+  const stored = await page.evaluate(() => window.localStorage.getItem("learn-to-dj.audio-output"));
+  expect(JSON.parse(stored ?? "null")).toEqual({ kind: "dual-master", masterDeviceId: "spk", masterLabel: "MacBook Pro Speakers", controllerDeviceId: "flx", controllerLabel: "DDJ-FLX4", headphoneOffsetMs: 0 });
+  // Its own Timing check entry: the check names this output.
+  await expect(page.getByTestId("timing-check")).toContainText("PC MASTER OUT");
+});
+
+test("speakers with the FLX4's headphones, and PC MASTER OUT, are not offered without the FLX4's sound card", async ({ page }) => {
   await fakeMidi(page, {
     controller: true,
     outputs: [
@@ -463,6 +488,7 @@ test("speakers with the FLX4's headphones is not offered without the FLX4's soun
   await page.goto("/controller");
   await expect(page.getByRole("radio", { name: /Two devices/ })).toBeEnabled();
   await expect(page.getByRole("radio", { name: /Speakers: this computer · Headphones: FLX4/ })).toBeDisabled();
+  await expect(page.getByRole("radio", { name: /PC MASTER OUT/ })).toBeDisabled();
 });
 
 test("unnamed outputs are offered as Output N, with a way to name them", async ({ page }) => {

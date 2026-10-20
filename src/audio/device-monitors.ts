@@ -1,9 +1,10 @@
 // Monitor outputs beyond one stereo device (output.ts has the modes):
 // - ControllerCueMonitor: a 4-channel sound card such as the DDJ-FLX4's: master on 1/2, cue on 3/4.
 // - TwoDeviceMonitor: master to this context's device, the headphone cue to another device through a
-//   HeadphoneSink, the two paths lined up by delaying the earlier one (lineUpDelays). The sink is a
-//   stereo device (deviceHeadphoneSink) or the FLX4's headphone jack (controllerPhonesSink, which puts
-//   the cue on its outputs 3/4 with ControllerCueMonitor and silence on 1/2).
+//   SecondDeviceSink, the two paths lined up by delaying the earlier one (lineUpDelays). The sink is a
+//   stereo device (deviceHeadphoneSink), the FLX4's headphone jack (controllerPhonesSink, which puts
+//   the cue on its outputs 3/4 with ControllerCueMonitor and silence on 1/2), or the FLX4's MASTER OUT
+//   and headphone jack both (controllerMasterAndPhonesSink, PC MASTER OUT: master on 1/2 too).
 // Both mix the headphone path as SplitCueMonitor does (cue × (1 − mix) + master × mix, × headphone
 // gain), but in stereo, since each has a whole stereo output for the headphones. The FLX4's PHONES jack
 // is the exception for the gain: its own headphone amp applies HEADPHONES LEVEL (Mixxx maps MIXING to
@@ -98,64 +99,84 @@ export class ControllerCueMonitor implements MonitorOutput {
   }
 }
 
-/** Where the headphone path leaves the engine's context for another device. */
-export interface HeadphoneSink {
+/** Where the second device's paths leave the engine's context: its headphones, and its master in PC MASTER OUT. */
+export interface SecondDeviceSink {
   /** Whether the device's own headphone amp applies HEADPHONES LEVEL (the FLX4's PHONES jack), so the app must not. */
   readonly levelOnDevice: boolean;
-  /** The node in `context` that leads to the headphone device. */
-  open(context: BaseAudioContext): AudioNode;
-  /** The headphone path's own output latency, seconds. */
+  /** Whether the second device plays the master too (PC MASTER OUT), so `open` gives a master input. */
+  readonly carriesMaster: boolean;
+  /** The nodes in `context` that lead to the second device: its headphones, and its master outputs or null. */
+  open(context: BaseAudioContext): { readonly headphones: AudioNode; readonly master: AudioNode | null };
+  /** The second device's own output latency, seconds. */
   latencySec(): number;
   close(): void;
 }
 
 /**
- * Puts a stereo headphone signal on a four-channel sound card's headphone outputs (3/4) and silence on
- * its master outputs (1/2), through ControllerCueMonitor with a silent master bus: the FLX4's headphone
- * jack, with nothing on its MASTER OUT. Returns the undo.
+ * Puts stereo signals on a four-channel sound card through ControllerCueMonitor: the headphone signal
+ * on its headphone outputs (3/4) and the master, or silence when there is none, on its master outputs
+ * (1/2). The FLX4's headphone jack, and its MASTER OUT in PC MASTER OUT. Returns the undo.
  */
-export function routeToControllerPhones(headphones: AudioNode, output: BaseAudioContext): () => void {
+export function routeToControllerOutputs(output: BaseAudioContext, inputs: { readonly headphones: AudioNode; readonly master: AudioNode | null }): () => void {
   const monitor = new ControllerCueMonitor();
-  const silentMaster = new GainNode(output, { channelCount: 2, channelCountMode: "explicit" });
+  const master = new GainNode(output, { channelCount: 2, channelCountMode: "explicit" });
   const cue = new GainNode(output, { channelCount: 2, channelCountMode: "explicit" });
-  headphones.connect(cue);
+  inputs.headphones.connect(cue);
+  inputs.master?.connect(master);
   // The headphone mix and level are applied before the signal gets here (TwoDeviceMonitor).
-  monitor.attach({ context: output, master: silentMaster, cue });
+  monitor.attach({ context: output, master, cue });
   monitor.setCueMix(0);
   return () => {
     monitor.detach();
-    headphones.disconnect(cue);
+    inputs.headphones.disconnect(cue);
+    inputs.master?.disconnect(master);
   };
 }
 
+/** The FLX4's headphone jack alone: the headphone signal on 3/4, silence on its MASTER OUT (1/2). */
+export function routeToControllerPhones(headphones: AudioNode, output: BaseAudioContext): () => void {
+  return routeToControllerOutputs(output, { headphones, master: null });
+}
+
 /**
- * The headphone path as a second AudioContext (from `openOutput`), fed by a MediaStream from the
- * engine's context and put on its outputs by `route`. The engine's context stays the one that owns the
- * decks and the clock.
+ * The second device as a second AudioContext (from `openOutput`), fed by a MediaStream per path from
+ * the engine's context (stereo each: a stream carries two channels reliably) and put on its outputs by
+ * `route`. Both streams cross the same hop into the same context, so they stay together. The engine's
+ * context stays the one that owns the decks and the clock.
  */
-function streamHeadphoneSink(openOutput: () => AudioContext, route: (headphones: AudioNode, output: AudioContext) => () => void, levelOnDevice: boolean): HeadphoneSink {
+function streamSink(
+  openOutput: () => AudioContext,
+  shape: { readonly carriesMaster: boolean; readonly levelOnDevice: boolean },
+  route: (output: AudioContext, inputs: { readonly headphones: AudioNode; readonly master: AudioNode | null }) => () => void,
+): SecondDeviceSink {
+  const { carriesMaster, levelOnDevice } = shape;
   let output: AudioContext | null = null;
   let stop: (() => void) | null = null;
   return {
+    carriesMaster,
     levelOnDevice,
     open(context) {
-      const streamOut = new MediaStreamAudioDestinationNode(context as AudioContext, { channelCount: 2 });
-      const headphones = openOutput();
-      const unroute = route(new MediaStreamAudioSourceNode(headphones, { mediaStream: streamOut.stream }), headphones);
+      const stream = () => new MediaStreamAudioDestinationNode(context as AudioContext, { channelCount: 2 });
+      const headphonesOut = stream();
+      const masterOut = carriesMaster ? stream() : null;
+      const device = openOutput();
+      const from = (streamOut: MediaStreamAudioDestinationNode) => new MediaStreamAudioSourceNode(device, { mediaStream: streamOut.stream });
+      const unroute = route(device, { headphones: from(headphonesOut), master: masterOut === null ? null : from(masterOut) });
       const follow = () => {
         // Starts and stops with the engine's context (which starts on the Learner's click).
-        if (context.state === "running") void headphones.resume();
-        else if (context.state === "suspended") void headphones.suspend();
+        if (context.state === "running") void device.resume();
+        else if (context.state === "suspended") void device.suspend();
       };
       context.addEventListener("statechange", follow);
       follow();
-      output = headphones;
+      output = device;
       stop = () => {
         context.removeEventListener("statechange", follow);
         unroute();
-        streamOut.disconnect();
+        headphonesOut.disconnect();
+        masterOut?.disconnect();
       };
-      return streamOut;
+      return { headphones: headphonesOut, master: masterOut };
     },
     latencySec() {
       return output === null ? 0 : output.outputLatency + output.baseLatency;
@@ -170,16 +191,16 @@ function streamHeadphoneSink(openOutput: () => AudioContext, route: (headphones:
 }
 
 /** The headphone device as a second stereo AudioContext with its own sinkId. */
-export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
-  return streamHeadphoneSink(
+export function deviceHeadphoneSink(deviceId: string): SecondDeviceSink {
+  return streamSink(
     () => new AudioContext({ latencyHint: "interactive", sinkId: deviceId } as AudioContextOptions),
-    (headphones, output) => {
+    { carriesMaster: false, levelOnDevice: false },
+    (output, { headphones }) => {
       headphones.connect(output.destination);
       return () => {
         headphones.disconnect();
       };
     },
-    false,
   );
 }
 
@@ -188,24 +209,36 @@ export function deviceHeadphoneSink(deviceId: string): HeadphoneSink {
  * cue on 3/4 and silence on 1/2 (routeToControllerPhones). `openOutput` gives that context; the caller
  * has checked it shows four outputs (output-routing.ts).
  */
-export function controllerPhonesSink(openOutput: () => AudioContext): HeadphoneSink {
-  return streamHeadphoneSink(openOutput, routeToControllerPhones, true);
+export function controllerPhonesSink(openOutput: () => AudioContext): SecondDeviceSink {
+  return streamSink(openOutput, { carriesMaster: false, levelOnDevice: true }, routeToControllerOutputs);
 }
 
 /**
- * The master to this context's device (speakers), the headphone cue to another (headphones). The
- * earlier path is delayed so a beat lands in both at once; `masterDelaySec` tells the engine's clock how
- * much later than its output timestamp the master is heard.
+ * PC MASTER OUT: the FLX4's card as the second device with the master on its MASTER OUT (1/2) and the
+ * headphone signal on its jack (3/4), from one context so the two stay together. As above, the caller
+ * has checked it shows four outputs.
+ */
+export function controllerMasterAndPhonesSink(openOutput: () => AudioContext): SecondDeviceSink {
+  // The cue is on the FLX4's PHONES jack here too, so its own amp applies HEADPHONES LEVEL.
+  return streamSink(openOutput, { carriesMaster: true, levelOnDevice: true }, routeToControllerOutputs);
+}
+
+/**
+ * The master to this context's device (speakers), the headphone cue to another (headphones), and in PC
+ * MASTER OUT the master to the other device as well. The earlier device is delayed so a beat lands on
+ * both at once: this context's master by `masterDelaySec`, or everything the other device plays by
+ * `cueDelaySec`. `masterDelaySec` tells the engine's clock how much later than its output timestamp the
+ * master is heard; the clock always reads this context's device.
  */
 export class TwoDeviceMonitor implements MonitorOutput {
   readonly kind = "two-devices";
-  private attached: { buses: MonitorBuses; mix: HeadphoneMix; masterDelay: DelayNode; cueDelay: DelayNode; sink: AudioNode } | null = null;
+  private attached: { buses: MonitorBuses; mix: HeadphoneMix; masterDelay: DelayNode; cueDelay: DelayNode; secondMasterDelay: DelayNode | null } | null = null;
   private cueMix = 0;
   private headphoneGain = 1;
   private delays = { masterDelaySec: 0, cueDelaySec: 0 };
 
   constructor(
-    private readonly headphones: HeadphoneSink,
+    private readonly headphones: SecondDeviceSink,
     private headphoneOffsetMs: number,
     /** The master device's output latency, seconds; defaults to the context's outputLatency. */
     private readonly masterLatencySec: (context: BaseAudioContext) => number = (context) => (context instanceof AudioContext ? context.outputLatency : 0),
@@ -216,16 +249,25 @@ export class TwoDeviceMonitor implements MonitorOutput {
     this.detach();
     const { context } = buses;
     const mix = headphoneMix(buses);
-    const masterDelay = new DelayNode(context, { maxDelayTime: MAX_DELAY_SEC });
-    const cueDelay = new DelayNode(context, { maxDelayTime: MAX_DELAY_SEC });
+    const delay = () => new DelayNode(context, { maxDelayTime: MAX_DELAY_SEC });
+    const masterDelay = delay();
+    const cueDelay = delay();
     const sink = this.headphones.open(context);
     buses.master.connect(masterDelay).connect(context.destination);
-    mix.out.connect(cueDelay).connect(sink);
-    this.attached = { buses, mix, masterDelay, cueDelay, sink };
+    mix.out.connect(cueDelay).connect(sink.headphones);
+    // PC MASTER OUT: the master to the second device too, delayed with its headphones (lineUp).
+    const secondMasterDelay = sink.master === null ? null : delay();
+    if (secondMasterDelay !== null && sink.master !== null) buses.master.connect(secondMasterDelay).connect(sink.master);
+    this.attached = { buses, mix, masterDelay, cueDelay, secondMasterDelay };
     applyMix(mix, context, this.cueMix, this.headphoneGain);
     this.lineUp();
     // Output latencies are known once the context runs; line up again then.
     context.addEventListener("statechange", this.lineUp);
+  }
+
+  /** Whether the second device plays the master too (PC MASTER OUT). */
+  get secondDevicePlaysMaster(): boolean {
+    return this.headphones.carriesMaster;
   }
 
   /** How much later than the context's output timestamp the master is heard (its delay). */
@@ -233,6 +275,7 @@ export class TwoDeviceMonitor implements MonitorOutput {
     return this.delays.masterDelaySec;
   }
 
+  /** The second device's delay: its headphones, and its master in PC MASTER OUT. */
   cueDelaySec(): number {
     return this.delays.cueDelaySec;
   }
@@ -260,8 +303,9 @@ export class TwoDeviceMonitor implements MonitorOutput {
     if (attached === null) return;
     attached.buses.context.removeEventListener("statechange", this.lineUp);
     attached.buses.master.disconnect(attached.masterDelay);
+    if (attached.secondMasterDelay !== null) attached.buses.master.disconnect(attached.secondMasterDelay);
     disconnectMix(attached.buses, attached.mix);
-    for (const node of [attached.masterDelay, attached.cueDelay]) node.disconnect();
+    for (const node of [attached.masterDelay, attached.cueDelay, attached.secondMasterDelay]) node?.disconnect();
     this.headphones.close();
     this.attached = null;
   }
@@ -273,5 +317,6 @@ export class TwoDeviceMonitor implements MonitorOutput {
     this.delays = lineUpDelays({ masterSec: this.masterLatencySec(context), headphoneSec: this.headphones.latencySec() }, this.headphoneOffsetMs);
     attached.masterDelay.delayTime.setValueAtTime(this.delays.masterDelaySec, context.currentTime);
     attached.cueDelay.delayTime.setValueAtTime(this.delays.cueDelaySec, context.currentTime);
+    attached.secondMasterDelay?.delayTime.setValueAtTime(this.delays.cueDelaySec, context.currentTime);
   };
 }

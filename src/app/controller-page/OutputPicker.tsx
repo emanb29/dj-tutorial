@@ -1,6 +1,6 @@
-// The sound output choice (src/audio/output.ts): split cue on one device, through the FLX4, two
-// devices, or this computer's speakers with the FLX4's headphones; the last two with a headphone
-// line-up test. Saved per browser the moment the Learner picks; a Lesson
+// The sound output choice (src/audio/output.ts): split cue on one device, through the FLX4, PC MASTER
+// OUT (the master on the FLX4 and this computer), two devices, or this computer's speakers with the
+// FLX4's headphones; the last three with a line-up test. Saved per browser the moment the Learner picks; a Lesson
 // opened afterwards uses it. Nothing here plays through a device the Learner did not pick.
 
 import { useCallback, useEffect, useState } from "react";
@@ -105,6 +105,28 @@ export function OutputPicker() {
           </span>
         </label>
 
+        {/* rekordbox's name for it: the PC MASTER OUT button plays the master on the computer's speakers as
+            well as the controller's MASTER OUT. */}
+        <label className="output-option" data-disabled={!canPhones}>
+          <input
+            type="radio"
+            name="output"
+            disabled={!canPhones}
+            checked={choice.kind === "dual-master"}
+            onChange={() => {
+              const [master] = computerDevices;
+              if (controller !== null && master !== undefined) {
+                saveOutputChoice({ kind: "dual-master", masterDeviceId: master.deviceId, masterLabel: master.label, controllerDeviceId: controller.deviceId, controllerLabel: controller.label, headphoneOffsetMs: 0 });
+              }
+            }}
+          />
+          <span>
+            <b>PC MASTER OUT: master on the FLX4 and this computer</b>
+            <small>{controller === null ? "Plug in the FLX4 to use its sound card." : "As in rekordbox: master to its MASTER OUT and this computer's speakers · cue to its headphones."}</small>
+            {choice.kind === "dual-master" ? <ChannelCheck deviceId={choice.controllerDeviceId} /> : null}
+          </span>
+        </label>
+
         <label className="output-option" data-disabled={!canPhones}>
           <input
             type="radio"
@@ -146,6 +168,7 @@ export function OutputPicker() {
       </fieldset>
       {choice.kind === "two-devices" ? <TwoDevices choice={choice} devices={devices} /> : null}
       {choice.kind === "computer-and-controller-phones" ? <ComputerAndPhones choice={choice} devices={computerDevices} /> : null}
+      {choice.kind === "dual-master" ? <DualMaster choice={choice} devices={computerDevices} /> : null}
       <p className="hw-hint">A Lesson opened after this uses it.</p>
     </div>
   );
@@ -264,11 +287,44 @@ function ComputerAndPhones({ choice, devices }: { readonly choice: Extract<Outpu
   );
 }
 
+/** PC MASTER OUT: pick this computer's speakers, line them up with the FLX4 (its MASTER OUT and headphones). */
+function DualMaster({ choice, devices }: { readonly choice: Extract<OutputChoice, { kind: "dual-master" }>; readonly devices: readonly OutputDevice[] }) {
+  const plan: LinedUpPlan = {
+    kind: "dual-master",
+    sinkId: choice.masterDeviceId,
+    masterLabel: choice.masterLabel,
+    controllerSinkId: choice.controllerDeviceId,
+    controllerLabel: choice.controllerLabel,
+    headphoneOffsetMs: choice.headphoneOffsetMs,
+  };
+  return (
+    <div className="output-two">
+      <DeviceSelect
+        label="Speakers on this computer"
+        value={choice.masterDeviceId}
+        devices={devices}
+        onPick={(device) => {
+          saveOutputChoice({ ...choice, masterDeviceId: device.deviceId, masterLabel: device.label });
+        }}
+      />
+      <LineUp
+        key={`${choice.masterDeviceId}|${choice.controllerDeviceId}`}
+        plan={plan}
+        label="FLX4 offset"
+        onOffset={(headphoneOffsetMs) => {
+          saveOutputChoice({ ...choice, headphoneOffsetMs });
+        }}
+        hint="Line them up: play the clicks and slide until this computer and the FLX4 click as one. Right if the FLX4 clicks late."
+      />
+    </div>
+  );
+}
+
 /**
  * The headphone offset slider and the click test, for a plan with a second headphone device. Keyed by
  * the devices where it is used, so picking another device stops the old clicks (the unmount does).
  */
-function LineUp({ plan, onOffset, hint }: { readonly plan: LinedUpPlan; readonly onOffset: (ms: number) => void; readonly hint: string }) {
+function LineUp({ plan, onOffset, hint, label = "Headphone offset" }: { readonly plan: LinedUpPlan; readonly onOffset: (ms: number) => void; readonly hint: string; readonly label?: string }) {
   const [clicks, setClicks] = useState<AlignmentClicks | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   useEffect(
@@ -280,7 +336,7 @@ function LineUp({ plan, onOffset, hint }: { readonly plan: LinedUpPlan; readonly
   return (
     <>
       <label className="output-device">
-        Headphone offset: {plan.headphoneOffsetMs > 0 ? "+" : ""}
+        {label}: {plan.headphoneOffsetMs > 0 ? "+" : ""}
         {plan.headphoneOffsetMs} ms
         <input
           type="range"
