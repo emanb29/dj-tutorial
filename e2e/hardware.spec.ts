@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { checkPlayingPast, learner, openLesson, playingPast, seedPassed, type LessonWindow } from "./lesson-support.ts";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { checkPlayingPast, ensureProfile, learner, openLesson, playingPast, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // The DDJ-FLX4 without the hardware: navigator.requestMIDIAccess is replaced (before the app loads) by a
 // fake MIDI access with a "DDJ-FLX4" port. Messages are the official list's bytes; LED output is kept
@@ -164,7 +164,6 @@ const TAP_PRESSES = {
   pad: [0x97, 0x00, 0x7f],
   "BEAT ▶": [0x94, 0x4b, 0x7f],
   "SHIFT + BEAT ▶": [0x94, 0x6b, 0x7f],
-  BROWSE: [0x96, 0x41, 0x7f],
 } as const;
 type TapControl = keyof typeof TAP_PRESSES;
 
@@ -207,8 +206,8 @@ async function tapsAtBeats(page: Page, control: TapControl, beats: readonly numb
 const TAP_RUNS: readonly { control: TapControl; stamp: "event" | "zero" }[] = [
   { control: "pad", stamp: "event" },
   { control: "BEAT ▶", stamp: "event" },
-  { control: "BROWSE", stamp: "event" },
-  { control: "BROWSE", stamp: "zero" },
+  { control: "SHIFT + BEAT ▶", stamp: "event" },
+  { control: "SHIFT + BEAT ▶", stamp: "zero" },
 ];
 
 for (const { control, stamp } of TAP_RUNS) {
@@ -236,7 +235,7 @@ for (const { control, stamp } of TAP_RUNS) {
   });
 }
 
-test("every TAP (pad, BEAT ▶, SHIFT + BEAT ▶, BROWSE, a 0-stamped press, Space) leaves an early/late mark in the hook and in practice", async ({ page }) => {
+test("every TAP (pad, BEAT ▶, SHIFT + BEAT ▶, a 0-stamped press, Space) leaves an early/late mark in the hook and in practice", async ({ page }) => {
   test.setTimeout(90_000);
   await fakeMidi(page, { controller: true });
   const learnerId = learner("flx4-marks");
@@ -251,13 +250,14 @@ test("every TAP (pad, BEAT ▶, SHIFT + BEAT ▶, BROWSE, a 0-stamped press, Spa
       await page.waitForTimeout(120);
     }
     await page.evaluate(() => {
-      window.__flx4?.sendStamped([0x96, 0x41, 0x7f], 0);
+      window.__flx4?.sendStamped([0x94, 0x6b, 0x7f], 0);
+      window.__flx4?.sendStamped([0x94, 0x6b, 0x00], 0);
     });
     await page.waitForTimeout(120);
     await page.keyboard.press("Space");
   };
   await tapEach();
-  await expect(marks).toHaveCount(6);
+  await expect(marks).toHaveCount(5);
 
   // Finish the hook on the pads (four beats, then three 1s) to reach practice.
   const beat = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.playhead("A").beat ?? 0);
@@ -503,4 +503,177 @@ test("unnamed outputs are offered as Output N, with a way to name them", async (
   await expect(page.getByRole("button", { name: "Show my outputs" })).toBeVisible();
   await page.getByRole("radio", { name: /Two devices/ }).check();
   await expect(page.getByLabel("Cue (headphones)")).toContainText("Output 2");
+});
+
+// ---- the whole app from the FLX4 (src/app/controller/flx4-keys.ts) ---------------------------------
+
+/** BROWSE turned `ticks` detents (negative: counter-clockwise), as the list's two's-complement CC. */
+const browseTurn = (ticks: number): number[][] => [[0xb6, 0x40, ticks >= 0 ? ticks : 0x80 + ticks]];
+const press = (note: number): number[][] => [
+  [0x96, note, 0x7f],
+  [0x96, note, 0x00],
+];
+const BROWSE_PRESS = press(0x41);
+const SHIFT_BROWSE_PRESS = press(0x42);
+const LOAD_A = press(0x46);
+const LOAD_B = press(0x47);
+/** A deck's TRIM to a position (0…1), as MSB then LSB. */
+const trim = (deck: 0 | 1, value: number): number[][] => {
+  const raw = Math.round(value * 16383);
+  return [
+    [0xb0 + deck, 0x04, raw >> 7],
+    [0xb0 + deck, 0x24, raw & 0x7f],
+  ];
+};
+
+/** Turns BROWSE one detent at a time until the ring is on `target` (or a control inside it). */
+async function ringTo(page: Page, target: Locator): Promise<void> {
+  for (let turn = 0; turn < 40; turn++) {
+    if (await target.evaluate((element) => element.contains(document.activeElement))) return;
+    await midi(page, ...browseTurn(1));
+  }
+  throw new Error(`BROWSE never reached ${target.toString()}`);
+}
+
+const focusedName = (page: Page) => page.evaluate(() => document.activeElement?.textContent.trim() ?? "");
+
+test("the whole app from the FLX4: a Lesson from the list, the Check, Ready on LOAD B, the result card, practice and back, no keyboard or mouse", async ({ page }) => {
+  test.setTimeout(120_000);
+  await fakeMidi(page, { controller: true });
+  const learnerId = learner("flx4-walk");
+  await seedPassed(page, learnerId, ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point"], { headphones: true });
+  await page.goto(`/?learner=${learnerId}&track=synthetic`);
+  const html = page.locator("html");
+
+  // The list says how to get around it from the FLX4, and names the Lesson LOAD A starts.
+  await expect(page.getByTestId("flx4-hint")).toContainText("LOAD A starts Lesson 7 (Your first transition: the cut)");
+  // BROWSE moves the ring (drawn large once the FLX4 moves it) to the Lesson; the press opens it.
+  await ringTo(page, page.locator('li[data-lesson="cut-on-phrase"]'));
+  await expect(html).toHaveAttribute("data-controller-nav", "");
+  await midi(page, ...BROWSE_PRESS);
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson !== undefined);
+  const lesson = page.locator("main.lesson");
+  await expect(lesson).not.toHaveAttribute("data-phase", "loading");
+  // The hardware is the source of truth: put its faders and trims where the Lesson starts.
+  await midi(page, ...fader(0, 1), ...fader(1, 0), ...trim(0, 0.5), ...trim(1, 0.5));
+  await expect(page.getByRole("region", { name: "Match your controller" })).toBeHidden();
+  await expect(page.getByRole("button", { name: /Lessons/ })).toContainText("SHIFT + BROWSE");
+
+  // LOAD A is Enter: into the Check. Its own set-up step waits; Ready is on LOAD B, and says so.
+  await midi(page, ...LOAD_A);
+  await expect(lesson).toHaveAttribute("data-phase", "check");
+  const setUp = page.getByRole("region", { name: "Match your controller" });
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true, undefined, { timeout: 15_000 });
+  await expect(setUp).toContainText("Ready R / LOAD B");
+  await midi(page, [0x91, 0x54, 0x7f], [0x91, 0x54, 0x00], ...fader(1, 1));
+  await expect(setUp.locator('li[data-state="matched"]')).toHaveCount(await setUp.locator("li").count());
+  await midi(page, ...LOAD_B);
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: 5_000 });
+
+  // The result card: the ring starts on Go again (LOAD A names it), one detent on is Practice.
+  const card = page.getByRole("region", { name: "Result" });
+  await expect(card).toBeVisible({ timeout: 45_000 });
+  await expect(card.getByRole("button", { name: /Go again/ })).toContainText("LOAD A");
+  await midi(page, ...browseTurn(1));
+  expect(await focusedName(page)).toMatch(/^Go again/);
+  await midi(page, ...browseTurn(1));
+  expect(await focusedName(page)).toMatch(/^Practice/);
+  await midi(page, ...BROWSE_PRESS);
+  await expect(lesson).toHaveAttribute("data-phase", "practice");
+
+  // Practice has the same set-up step: LOAD B goes on once it is set.
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true, undefined, { timeout: 15_000 });
+  await expect(setUp.locator('li[data-state="matched"]')).toHaveCount(await setUp.locator("li").count());
+  await midi(page, ...LOAD_B);
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: 5_000 });
+  await expect(lesson).toHaveAttribute("data-phase", "practice");
+
+  // SHIFT + BROWSE press is back (Esc): the list again. There, LOAD A starts the next Lesson.
+  await midi(page, ...SHIFT_BROWSE_PRESS);
+  await expect(page.locator("main.home")).toBeVisible();
+  await midi(page, ...LOAD_A);
+  await expect(page).toHaveURL(/\/lesson\/cut-on-phrase/);
+  await midi(page, ...SHIFT_BROWSE_PRESS);
+  await expect(page.locator("main.home")).toBeVisible();
+});
+
+test("a file or a list on the FLX4: it says what it can't do, and BROWSE changes a list", async ({ page }) => {
+  await fakeMidi(page, { controller: true, outputs: [{ deviceId: "a1", label: "Speakers" }, { deviceId: "b2", label: "Headphones" }, { deviceId: "c3", label: "Other headphones" }] });
+  const learnerId = learner("flx4-limits");
+  await ensureProfile(page, learnerId);
+  await page.goto(`/mix?learner=${learnerId}`);
+  // The page says so up front, and again when the ring is on the file picker and BROWSE presses it.
+  await expect(page.getByText("the FLX4 can't open your files")).toBeVisible();
+  await ringTo(page, page.locator('input[type="file"]'));
+  await midi(page, ...BROWSE_PRESS);
+  await expect(page.getByTestId("controller-nav-notice")).toContainText("Picking a file needs the mouse, keyboard or screen");
+  // SHIFT + BROWSE presses the page's back button.
+  await midi(page, ...SHIFT_BROWSE_PRESS);
+  await expect(page.locator("main.home")).toBeVisible();
+
+  // The Controller page: the legend, and a list BROWSE turns once pressed.
+  await ringTo(page, page.getByRole("link", { name: "Controller" }));
+  await midi(page, ...BROWSE_PRESS);
+  await expect(page.getByRole("table", { name: "FLX4 buttons around the app" })).toContainText("SHIFT + LOAD A");
+  const cue = page.getByLabel("Cue (headphones)");
+  await ringTo(page, page.getByRole("radio", { name: /Two devices/ }));
+  await midi(page, ...BROWSE_PRESS);
+  await expect(cue).toBeVisible();
+  await ringTo(page, cue);
+  await expect(cue).toHaveValue("b2");
+  await midi(page, ...BROWSE_PRESS);
+  await expect(page.getByTestId("controller-nav-notice")).toContainText("Turn BROWSE to change it");
+  await midi(page, ...browseTurn(1));
+  await expect(cue).toHaveValue("c3");
+});
+
+test("Placement's Mission from the FLX4: the text box says it can wait, SHIFT + BROWSE skips, LOAD A starts Lesson 1", async ({ page }) => {
+  await fakeMidi(page, { controller: true });
+  await page.goto(`/?learner=${learner("flx4-placement")}&track=synthetic`);
+  const mission = page.getByLabel("Why do you want to DJ?");
+  await expect(mission).toBeFocused();
+  await expect(page.getByRole("button", { name: /Show me what you can do/ })).toContainText("LOAD A");
+  await midi(page, ...BROWSE_PRESS);
+  await expect(page.getByTestId("controller-nav-notice")).toContainText("It can wait: LOAD A goes on without it.");
+  await midi(page, ...SHIFT_BROWSE_PRESS);
+  const summary = page.getByRole("main", { name: "Placement summary" });
+  await expect(summary).toContainText("Next: Lesson 1");
+  await midi(page, ...LOAD_A);
+  await expect(page.locator("main.lesson h1")).toHaveText("Play a track out loud", { timeout: 20_000 });
+});
+
+test("Freestyle from the FLX4, the rekordbox way: BROWSE through the library, LOAD A / LOAD B load the track, a playing deck refuses", async ({ page }) => {
+  test.setTimeout(90_000);
+  await fakeMidi(page, { controller: true });
+  const learnerId = learner("flx4-freestyle");
+  await ensureProfile(page, learnerId);
+  await page.goto(`/?learner=${learnerId}&track=synthetic`);
+  await ringTo(page, page.getByRole("button", { name: "Freestyle" }));
+  await midi(page, ...BROWSE_PRESS);
+  await expect(page.locator("main.freestyle")).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+  await expect(page.getByTestId("flx4-library-hint")).toBeVisible();
+
+  // From nothing, the ring starts on the library's first track; each detent is the next track.
+  const rows = page.locator("li[data-library]");
+  const decks = page.getByRole("list", { name: "On the decks" });
+  await midi(page, ...browseTurn(1));
+  await expect(rows.nth(0)).toBeFocused();
+  const first = (await rows.nth(0).getAttribute("aria-label")) ?? "";
+  await midi(page, ...LOAD_A);
+  await expect(decks.locator('li[data-deck="A"]')).toContainText(first, { timeout: 20_000 });
+  await midi(page, ...browseTurn(1));
+  await expect(rows.nth(1)).toBeFocused();
+  const second = (await rows.nth(1).getAttribute("aria-label")) ?? "";
+  await midi(page, ...LOAD_B);
+  await expect(decks.locator('li[data-deck="B"]')).toContainText(second, { timeout: 20_000 });
+
+  // PLAY on deck A; then LOAD A refuses, as the screen's → A does.
+  await midi(page, [0x90, 0x0b, 0x7f], [0x90, 0x0b, 0x00]);
+  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing === true);
+  await midi(page, ...LOAD_A);
+  await expect(page.getByRole("alert")).toHaveText("Pause deck A first");
+  await expect(decks.locator('li[data-deck="A"]')).toContainText(first);
+
+  await midi(page, ...SHIFT_BROWSE_PRESS);
+  await expect(page.locator("main.home")).toBeVisible();
 });

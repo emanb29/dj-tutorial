@@ -4,6 +4,8 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ALL_LEDS, allLedsOff, CHECKLIST, describeInput, Flx4Decoder, ledMessages, midiConnection, physicalControlOf, type MidiStatus } from "@midi";
+import { CONTROLLER_KEYS, NAVIGATION_BUTTONS, pressName } from "../controller/flx4-keys.ts";
+import { ButtonHint } from "../controller/KeyHint.tsx";
 import { OutputPicker } from "./OutputPicker.tsx";
 import { PositionsCard } from "./PositionsCard.tsx";
 import { TimingCheck } from "./TimingCheck.tsx";
@@ -55,14 +57,29 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
   return (
     <main className="controller-page">
       <header className="controller-page-head">
-        <button type="button" className="btn btn-quiet" onClick={onBack}>
-          ← Lessons
+        <button type="button" className="btn btn-quiet" onClick={onBack} data-nav-back>
+          ← Lessons <ButtonHint k="Esc" />
         </button>
         <h1>Controller</h1>
       </header>
 
       <section aria-label="Connection" className="hw-card">
         <ConnectionStatus status={status} />
+      </section>
+
+      <section aria-label="Hardware keys" className="hw-card">
+        <h2>The app from the controller</h2>
+        <Flx4Legend />
+        <ul className="hw-keys">
+          <li>
+            <b>TAP</b> is <b>SHIFT + BEAT ▶</b> (TAP on the panel); also any pad until the Lessons hand you hot cues, and <b>BEAT ◀ / ▶</b> until they hand you Beat FX
+          </li>
+          <li>
+            <b>Hold BEAT SYNC</b> for MASTER TEMPO · <b>SHIFT + BEAT SYNC</b> changes the tempo range
+          </li>
+          <li>A control the Lesson has not opened yet says “Not yet” on screen. A dashed mark shows where a fader is until it meets the screen’s value.</li>
+          <li>Typing and picking a file need the keyboard, mouse or screen. So does starting the sound, once per visit: a browser rule.</li>
+        </ul>
       </section>
 
       <section aria-label="Sound output" className="hw-card">
@@ -123,23 +140,34 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
         <h2>Lights</h2>
         <LedTest connected={status.kind === "connected"} />
       </section>
-
-      <section aria-label="Hardware keys" className="hw-card">
-        <h2>In a Lesson</h2>
-        <ul className="hw-keys">
-          <li>
-            <b>LOAD</b> goes into the Check (Enter) · <b>SHIFT + LOAD</b> back to practice (P)
-          </li>
-          <li>
-            <b>TAP</b> is <b>SHIFT + BEAT ▶</b> (TAP on the panel) and the <b>BROWSE press</b>; also any pad until the Lessons hand you hot cues, and <b>BEAT ◀ / ▶</b> until they hand you Beat FX · <b>SHIFT + BROWSE press</b> is Ready (R)
-          </li>
-          <li>
-            <b>Hold BEAT SYNC</b> for MASTER TEMPO · <b>SHIFT + BEAT SYNC</b> changes the tempo range
-          </li>
-          <li>A control the Lesson has not opened yet says “Not yet” on screen. A dashed mark shows where a fader is until it meets the screen’s value.</li>
-        </ul>
-      </section>
     </main>
+  );
+}
+
+/** BROWSE and LOAD around the app, from the one table (flx4-keys.ts). */
+function Flx4Legend() {
+  const rows = [...NAVIGATION_BUTTONS, ...CONTROLLER_KEYS.map((entry) => ({ button: pressName(entry.press), does: entry.does, key: entry.key }))];
+  return (
+    <table className="hw-legend" aria-label="FLX4 buttons around the app">
+      <thead>
+        <tr>
+          <th scope="col">FLX4</th>
+          <th scope="col">Does</th>
+          <th scope="col">Key</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.button}>
+            <th scope="row">{row.button}</th>
+            <td>{row.does}</td>
+            <td>
+              <kbd>{row.key}</kbd>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

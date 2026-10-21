@@ -12,9 +12,11 @@ import { ControllerContext, type ControllerCaption, type ControllerContextValue,
 import { ControlButton } from "./ControlButton.tsx";
 import { Deck } from "./Deck.tsx";
 import { DeckReadout, PhaseStrip } from "./displays.tsx";
+import { pressedByController } from "./focus-navigation.ts";
 import { FrameLoop } from "./frame-loop.ts";
 import { HardwareBridge } from "./hardware.ts";
 import { isMacPlatform } from "./input-device.ts";
+import { useControllerConnected } from "./KeyHint.tsx";
 import { globalKeyAllowed, keyHintFor, type FocusedElement } from "./keymap.ts";
 import { KeyLegend } from "./KeyLegend.tsx";
 import { Mixer } from "./Mixer.tsx";
@@ -55,6 +57,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   const [legendOpen, setLegendOpen] = useState(defaultLegendOpen);
   const wording = useWording();
   const tapOnHardware = useTapOnHardware();
+  const controllerConnected = useControllerConnected();
 
   useEffect(() => {
     session.setUnlocks(concealed.size === 0 ? unlocks : new Set([...unlocks].filter((id) => !concealed.has(id))));
@@ -78,7 +81,8 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
       setLegendOpen((open) => !open);
     });
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!globalKeyAllowed(focusedElement(event.target), event.code, event.isComposing)) return;
+      // LOAD and BROWSE press the app's keys (Enter, R, P, N, Esc): never the decks' (N is a crossfader cut).
+      if (pressedByController(event) || !globalKeyAllowed(focusedElement(event.target), event.code, event.isComposing)) return;
       const { code, repeat, timeStamp, shiftKey, ctrlKey, metaKey, altKey } = event;
       if (session.keyDown({ code, repeat, timeStamp, shiftKey, ctrlKey, metaKey, altKey })) event.preventDefault();
     };
@@ -107,7 +111,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
   }, [session]);
 
   // Captions are authored with keys ("Press X"); on a touchscreen they name the control instead.
-  const captionMap = useMemo(() => new Map(captions.map((caption) => [caption.control, inputWording(caption.text, wording, tapOnHardware)])), [captions, wording, tapOnHardware]);
+  const captionMap = useMemo(() => new Map(captions.map((caption) => [caption.control, inputWording(caption.text, wording, tapOnHardware, controllerConnected)])), [captions, wording, tapOnHardware, controllerConnected]);
   const context = useMemo<ControllerContextValue>(
     () => ({ session, engine, frames, meters, pulse, captions: captionMap, unlocks, concealed, legendOpen }),
     [session, engine, frames, meters, pulse, captionMap, unlocks, concealed, legendOpen],
@@ -115,7 +119,7 @@ export function Controller({ engine, unlocks, pulse = null, captions = NO_CAPTIO
 
   return (
     <ControllerContext value={context}>
-      <div className="controller" data-legend-open={legendOpen} data-input={wording}>
+      <div className="controller" data-legend-open={legendOpen} data-input={wording} data-nav-skip>
         <header className="controller-display">
           <DeckReadout deck="A" />
           <div className="display-centre">

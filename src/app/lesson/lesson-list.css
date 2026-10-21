@@ -160,3 +160,10 @@ li[data-standing="lapsed"] .lesson-standing {
   font-size: var(--text-sm);
   font-weight: 650;
 }
+
+/* With the FLX4 connected: how to get around the list from it. */
+.lesson-list-flx4 {
+  margin: 0 0 var(--space-3);
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}

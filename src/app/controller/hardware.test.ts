@@ -155,10 +155,8 @@ function rig(unlocks: ReadonlySet<ControlId> = everything, options: Pick<Hardwar
   const session = new ControllerSession(engine, { unlocks, macPlatform: true, schedule });
   const stopSession = session.connect();
   const port = new FakePort();
-  const keys: string[] = [];
   const bridge = new HardwareBridge(session, engine, port, {
     schedule,
-    lessonKey: (code) => keys.push(code),
     tapJudged: options.tapJudged ?? (() => () => undefined),
     publishTap: options.publishTap ?? (() => undefined),
     positions: options.positions ?? new HardwarePositions(),
@@ -168,7 +166,6 @@ function rig(unlocks: ReadonlySet<ControlId> = everything, options: Pick<Hardwar
     session,
     sent,
     port,
-    keys,
     emit,
     detach: () => {
       detach();
@@ -245,10 +242,11 @@ describe("buttons go through the session as midi input, at the message's time", 
     expect(session.snapshot().shiftHeld.B).toBe(false);
   });
 
-  it("the BROWSE press is TAP", () => {
-    const { port, sent } = rig();
+  it("the BROWSE press is not TAP: it is the app's press (ControllerNavigation)", () => {
+    const { port, sent, session } = rig();
     port.midi([0x96, 0x41, 0x7f], 777);
-    expect(sent).toEqual([{ command: { control: "tap" }, input: { device: "midi", eventTimeMs: 777, gestureEnd: true } }]);
+    expect(sent).toEqual([]);
+    expect(session.snapshot().notYet).toBeNull();
   });
 
   it("HOT CUE pads set and trigger the engine's hot cues; SHIFT + pad clears", () => {
@@ -468,14 +466,15 @@ describe("TAP borrows the controls a Learner has not been handed yet", () => {
 });
 
 describe("Lesson keys from the hardware", () => {
-  it("LOAD is Enter, SHIFT + LOAD is P, SHIFT + BROWSE press is R", () => {
-    const { port, keys, sent } = rig();
+  it("LOAD and BROWSE are left to the app's navigation: the decks get nothing", () => {
+    const { port, sent } = rig();
     port.midi([0x96, 0x46, 0x7f]);
     port.midi([0x96, 0x46, 0x00]);
     port.midi([0x96, 0x47, 0x7f]);
     port.midi([0x96, 0x68, 0x7f]);
+    port.midi([0x96, 0x7a, 0x7f]);
     port.midi([0x96, 0x42, 0x7f]);
-    expect(keys).toEqual(["Enter", "Enter", "KeyP", "KeyR"]);
+    port.midi([0xb6, 0x40, 0x01]);
     expect(sent).toEqual([]);
   });
 });

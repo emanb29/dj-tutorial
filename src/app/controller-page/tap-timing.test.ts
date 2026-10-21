@@ -8,11 +8,12 @@ describe("the Timing check's taps", () => {
     expect(offsetFromClicks(2.17, 1, 0.6)).toBeCloseTo(-30);
   });
 
-  it("takes a pad, BEAT ◀ / ▶ and the BROWSE press as TAP, on press only, and not SHIFT + BROWSE (Ready)", () => {
+  it("takes a pad and BEAT ◀ / ▶ (SHIFT + BEAT ▶ too) as TAP, on press only, and not the BROWSE press (the app's press)", () => {
     expect(isTapPress({ kind: "pad", deck: "A", mode: "hot-cue", pad: 0, shift: false, pressed: true })).toBe(true);
     expect(isTapPress({ kind: "pad", deck: "A", mode: "hot-cue", pad: 0, shift: false, pressed: false })).toBe(false);
     expect(isTapPress({ kind: "button", control: "fx-beat-forward", deck: null, shift: false, pressed: true })).toBe(true);
-    expect(isTapPress({ kind: "button", control: "browse-press", deck: null, shift: false, pressed: true })).toBe(true);
+    expect(isTapPress({ kind: "button", control: "fx-beat-forward", deck: null, shift: true, pressed: true })).toBe(true);
+    expect(isTapPress({ kind: "button", control: "browse-press", deck: null, shift: false, pressed: true })).toBe(false);
     expect(isTapPress({ kind: "button", control: "browse-press", deck: null, shift: true, pressed: true })).toBe(false);
     expect(isTapPress({ kind: "button", control: "sync", deck: "A", shift: false, pressed: true })).toBe(false);
   });

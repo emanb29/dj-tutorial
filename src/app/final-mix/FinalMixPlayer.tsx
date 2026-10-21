@@ -10,6 +10,7 @@ import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult } from "@shared/check-result.ts";
 import { withFinalProject, withRekordboxChoice, withSkillProfile, type FinalProject, type RekordboxCardChoice, type LearnerRecord } from "@shared/learner.ts";
 import { ALL_CONTROL_IDS, Controller, inputWording, useWording, type ControlId } from "../controller/index.ts";
+import { KeyHint } from "../controller/KeyHint.tsx";
 import type { TrackPreference } from "../lesson/track-loader.ts";
 import { currentOutputPlan } from "../audio-output.ts";
 import type { SaveStatus } from "../save-queue.ts";
@@ -256,7 +257,10 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isTyping(event.target)) return;
-      if (event.code === "Escape") onExit();
+      if (event.code === "Escape") {
+        event.preventDefault();
+        onExit();
+      }
       if (event.code === "Enter" && phaseRef.current === "warm-up") {
         event.preventDefault();
         startSet();
@@ -376,8 +380,8 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
   return (
     <main className="lesson final-mix" data-phase={phase.kind} data-input={wording}>
       <header className="lesson-bar">
-        <button type="button" className="btn btn-quiet lesson-back" onClick={onExit}>
-          ← Lessons <kbd>Esc</kbd>
+        <button type="button" className="btn btn-quiet lesson-back" onClick={onExit} data-nav-back>
+          ← Lessons <KeyHint k="Esc" />
         </button>
         <h1>{FINAL_MIX.title}</h1>
       </header>

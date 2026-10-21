@@ -7,6 +7,8 @@
 // wording (a tablet with a keyboard), a finger on the screen switches to touch wording.
 
 import { useSyncExternalStore } from "react";
+import { buttonForKey } from "./flx4-keys.ts";
+import { pressedByController } from "./focus-navigation.ts";
 import { KEY_BINDINGS, type KeyBinding } from "./keymap.ts";
 
 export type Wording = "keys" | "touch";
@@ -84,14 +86,19 @@ const NUDGE_KEYS_B = "← →";
 const NUDGE_WORDS_B: TouchWords = { press: "Turn jog B", aside: null, bare: "jog B" };
 
 /** The Lesson's own Ready key (lesson-keys.ts, not a controller key): the Ready button on a touchscreen. */
+const READY_KEY = "R";
 const READY_WORDS: TouchWords = { press: "Tap Ready", aside: null, bare: "Ready" };
+/** The FLX4's Ready, from the one table of its keys (flx4-keys.ts). */
+const READY_BUTTON = buttonForKey(READY_KEY) ?? "";
+/** Ready on a touchscreen with the FLX4 connected: the screen's button and the hardware's. */
+const READY_WORDS_WITH_CONTROLLER: TouchWords = { press: `Tap Ready or press ${READY_BUTTON}`, aside: READY_BUTTON, bare: `Ready / ${READY_BUTTON}` };
 
 const WORDS_BY_LABEL: ReadonlyMap<string, TouchWords> = new Map([
   ...KEY_BINDINGS.flatMap((binding) => {
     const words = touchWords(binding);
     return words === null ? [] : [[binding.label, words] as const];
   }),
-  ["R", READY_WORDS] as const,
+  [READY_KEY, READY_WORDS] as const,
   [NUDGE_KEYS_B, NUDGE_WORDS_B] as const,
 ]);
 
@@ -107,30 +114,38 @@ const ASIDE = new RegExp(` \\((${anyLabel})\\)`, "g");
 // nor does the X of ½X (the loop's half).
 const BARE = new RegExp(`(?<![\\w(½])(${bareLabels.join("|")})(?![\\w)])`, "g");
 
-function wordsFor(label: string): TouchWords {
+function wordsFor(label: string, controller: boolean): TouchWords {
+  if (controller && label === READY_KEY) return READY_WORDS_WITH_CONTROLLER;
   const words = WORDS_BY_LABEL.get(label);
   if (words === undefined) throw new Error(`No touch wording for the key "${label}"; the patterns are built from the same map.`);
   return words;
 }
 
+// R with the FLX4 connected, in key wording: "then R / LOAD B", "Ready (R / LOAD B)".
+const READY_ASIDE = new RegExp(` \\(${READY_KEY}\\)`, "g");
+const READY_BARE = new RegExp(`(?<![\\w(½])${READY_KEY}(?![\\w)])`, "g");
+
 /**
  * A caption in the wording for the Learner's input: unchanged for keys, control names for touch. With a
  * controller connected, `tapOnHardware` names its TAP controls first: "Tap SHIFT + BEAT ▶ (TAP), any
- * pad or Space on every kick", "Tap every beat (SHIFT + BEAT ▶, any pad or Space)".
+ * pad or Space on every kick", "Tap every beat (SHIFT + BEAT ▶, any pad or Space)"; and with
+ * `controller` (the FLX4 is connected), the Lesson's R names its button too: "then R / LOAD B".
  */
-export function inputWording(text: string, wording: Wording, tapOnHardware: string | null = null): string {
+export function inputWording(text: string, wording: Wording, tapOnHardware: string | null = null, controller = false): string {
   const tapped =
     tapOnHardware === null
       ? text
       : text.replace(/\bTap Space\b/g, `Tap ${tapOnHardware} or Space`).replace(/ \(Space\)/g, ` (${tapOnHardware.replace(" (TAP)", "")} or Space)`);
-  if (wording === "keys") return tapped;
+  if (wording === "keys") {
+    return controller ? tapped.replace(READY_ASIDE, ` (${READY_KEY} / ${READY_BUTTON})`).replace(READY_BARE, `${READY_KEY} / ${READY_BUTTON}`) : tapped;
+  }
   return tapped
-    .replace(PRESS, (_match, label: string) => wordsFor(label).press)
+    .replace(PRESS, (_match, label: string) => wordsFor(label, controller).press)
     .replace(ASIDE, (_match, label: string) => {
-      const aside = wordsFor(label).aside;
+      const aside = wordsFor(label, controller).aside;
       return aside === null ? "" : ` (${aside})`;
     })
-    .replace(BARE, (_match, label: string) => wordsFor(label).bare);
+    .replace(BARE, (_match, label: string) => wordsFor(label, controller).bare);
 }
 
 export function startingWording(device: { readonly coarsePointer: boolean }): Wording {
@@ -152,8 +167,9 @@ function set(next: Wording): void {
 
 function attach(): () => void {
   const media = window.matchMedia(COARSE_POINTER);
-  const onKey = () => {
-    set("keys");
+  // A key the FLX4 pressed (LOAD, BROWSE) is not the keyboard: a phone keeps its touch wording.
+  const onKey = (event: KeyboardEvent) => {
+    if (!pressedByController(event)) set("keys");
   };
   const onPointer = (event: PointerEvent) => {
     if (event.pointerType === "touch") set("touch");

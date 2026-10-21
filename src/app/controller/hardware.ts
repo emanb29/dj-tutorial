@@ -7,13 +7,27 @@
 //
 // Mapping decisions beyond AlphaTheta's list (docs/research/flx4-midi.md):
 // - BEAT SYNC long press = MASTER TEMPO (the FLX4 has no MASTER TEMPO button); SHIFT + BEAT SYNC = tempo range.
-// - TAP: SHIFT + BEAT ▶ always (the panel prints TAP under BEAT ▶ as its SHIFT function), and the
-//   BROWSE press always. Tapping is a Lesson's ear-training input, so TAP also borrows controls the
-//   Learner has not been handed yet: any performance pad while the pads are locked (before hot cues),
-//   and plain BEAT ◀ / BEAT ▶ while Beat FX is locked. Never BEAT SYNC. Borrowed pads light while they
-//   are TAP, and the pad pressed blinks when its tap lands on the beat.
-// - LOAD = Enter (into the Check / again), SHIFT + LOAD = P (practice), SHIFT + BROWSE press = R (Ready):
-//   pressed as the Lesson keys, so Lessons have one path for them.
+// - TAP: SHIFT + BEAT ▶ always (the panel prints TAP under BEAT ▶ as its SHIFT function). Tapping is a
+//   Lesson's ear-training input, so TAP also borrows controls the Learner has not been handed yet: any
+//   performance pad while the pads are locked (before hot cues), and plain BEAT ◀ / BEAT ▶ while Beat FX
+//   is locked. Never BEAT SYNC. Borrowed pads light while they are TAP, and the pad pressed blinks when
+//   its tap lands on the beat.
+// - BROWSE and LOAD are not the decks': they move around the app and press its keys, on every page
+//   (src/app/ControllerNavigation.tsx; the table is in flx4-keys.ts). This bridge leaves them alone:
+//
+//   | FLX4                 | Does                                          | Keyboard  |
+//   | -------------------- | --------------------------------------------- | --------- |
+//   | BROWSE turn          | moves the ring between the page's buttons     | Tab       |
+//   | BROWSE press         | presses the button with the ring              | Space     |
+//   | SHIFT + BROWSE press | back: leaves the Lesson, closes, skips        | Esc       |
+//   | LOAD A               | go: into the Check, again, next, start;       | Enter     |
+//   |                      | Freestyle: loads the track with the ring on A |           |
+//   | LOAD B               | Ready; Freestyle: loads it onto B             | R         |
+//   | SHIFT + LOAD A       | practice                                      | P         |
+//   | SHIFT + LOAD B       | Not yet (Placement)                           | N         |
+//
+//   The BROWSE press was TAP too until it became the app's "press": one meaning per control, and TAP
+//   keeps the panel's own TAP and the borrowed pads and BEAT buttons.
 //
 // - LOOP IN, LOOP OUT, 4 BEAT/EXIT and CUE/LOOP CALL ◀ / ▶ (½X / 2X), as the on-screen loop buttons;
 //   LOOP IN lights while an in point waits for OUT, LOOP OUT while the deck loops. Their SHIFT layers
@@ -160,8 +174,6 @@ const LEDS: readonly LedId[] = [
 
 export interface HardwareBridgeOptions {
   readonly schedule?: Schedule;
-  /** Presses a Lesson key (Enter, KeyP, KeyR). Defaults to a key press on the window. */
-  readonly lessonKey?: (code: string) => void;
   /** Where judged taps are announced (on the beat or not). Defaults to the Lesson's announcements. */
   readonly tapJudged?: (listener: (onBeat: boolean) => void) => () => void;
   /** Where the hardware's TAP control is named for captions (null: none). Defaults to the shared one. */
@@ -177,17 +189,10 @@ const browserSchedule: Schedule = (run, delayMs) => {
   };
 };
 
-function pressLessonKey(code: string): void {
-  const key = code === "Enter" ? "Enter" : code.replace(/^Key/, "").toLowerCase();
-  window.dispatchEvent(new KeyboardEvent("keydown", { code, key }));
-  window.dispatchEvent(new KeyboardEvent("keyup", { code, key }));
-}
-
 export class HardwareBridge {
   private readonly decoder = new Flx4Decoder();
   private readonly takeover = new SoftTakeover();
   private readonly schedule: Schedule;
-  private readonly lessonKey: (code: string) => void;
   private readonly jogs: Readonly<Record<DeckId, JogDriver>>;
   /** Continuous controls the hardware has moved, whose pickup the screen may need to show. */
   private readonly moved = new Set<ContinuousControlId>();
@@ -212,7 +217,6 @@ export class HardwareBridge {
     options: HardwareBridgeOptions = {},
   ) {
     this.schedule = options.schedule ?? browserSchedule;
-    this.lessonKey = options.lessonKey ?? pressLessonKey;
     this.tapJudged = options.tapJudged ?? onTapJudged;
     this.publishTap = options.publishTap ?? publishTapOnHardware;
     this.positions = options.positions ?? hardwarePositions();
@@ -309,10 +313,6 @@ export class HardwareBridge {
     if (input.deck === null) {
       if (!input.pressed) return;
       switch (input.control) {
-        case "browse-press":
-          if (input.shift) this.lessonKey("KeyR");
-          else this.tapOrRefuse(timed);
-          return;
         case "fx-on":
           if (this.unlockedOrRefuse("beat-fx-on")) this.session.beatFxToggle(timed);
           return;
@@ -349,9 +349,6 @@ export class HardwareBridge {
           this.cueHeld[deck] = true;
           this.session.deckCue(deck, true, timed);
         }
-        return;
-      case "load":
-        if (input.pressed) this.lessonKey(input.shift ? "KeyP" : "Enter");
         return;
       default:
         break;

@@ -3,11 +3,11 @@
 
 import type { Flx4Input } from "@midi";
 
-/** The presses that are TAP in an early Lesson: any pad, BEAT ◀ / ▶, the BROWSE press (not SHIFT + BROWSE: Ready). */
+/** The presses that are TAP in an early Lesson: any pad, BEAT ◀ / ▶ (and SHIFT + BEAT ▶, the panel's TAP). Not BROWSE: it moves around the app. */
 export function isTapPress(input: Flx4Input): boolean {
   if (input.kind === "pad") return input.pressed;
   if (input.kind !== "button" || !input.pressed) return false;
-  return (input.control === "browse-press" && !input.shift) || input.control === "fx-beat-back" || input.control === "fx-beat-forward";
+  return input.control === "fx-beat-back" || input.control === "fx-beat-forward";
 }
 
 /** Milliseconds from the nearest click to a tap heard at `heardSec` (negative: early). */

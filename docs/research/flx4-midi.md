@@ -131,8 +131,9 @@ controller keeps its own pad mode and sends the mode's notes.
 - **TAP.** No TAP button, but the panel prints **TAP** under BEAT ▷ as its SHIFT function (and AUTO
   under BEAT ◁); rekordbox's hardware diagram lists SHIFT + BEAT ▷ as "BPM tap mode on" and SHIFT +
   channel CUE as "Tap BPM" [cdn.rekordbox.com DDJ-FLX4_Hardware_Diagram_en.pdf]. The app's TAP is
-  SHIFT + BEAT ▷ (`94 6B`) and the BROWSE press, always; plus any performance pad while the pads are
-  locked and plain BEAT ◁ / ▷ while Beat FX is locked (src/app/controller/hardware.ts).
+  SHIFT + BEAT ▷ (`94 6B`), always; plus any performance pad while the pads are
+  locked and plain BEAT ◁ / ▷ while Beat FX is locked (src/app/controller/hardware.ts). BROWSE and
+  LOAD move around the app and press its keys instead (src/app/controller/flx4-keys.ts).
 - **Positions on connect.** AlphaTheta's list (Ver 1.0, all five pages) has **no status request, no
   "send all controls" message and no SysEx at all**; its only notes (*1–*4) are about MIDI assign
   notation, vinyl mode, BEAT SYNC sending on release and the FX ON/OFF LED. Nothing says the unit

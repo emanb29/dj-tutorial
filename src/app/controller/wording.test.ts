@@ -72,4 +72,22 @@ describe("captions with a controller connected", () => {
     expect(inputWording("Tap every beat (Space)", "keys", "SHIFT + BEAT ▶ (TAP)")).toBe("Tap every beat (SHIFT + BEAT ▶ or Space)");
     expect(inputWording("Press X to play", "keys", "any pad")).toBe("Press X to play");
   });
+
+  it("name the FLX4's Ready (LOAD B) beside R, with keys and on a touchscreen", () => {
+    const keys = (text: string) => inputWording(text, "keys", null, true);
+    expect(keys("Set B to 126 BPM, then R")).toBe("Set B to 126 BPM, then R / LOAD B");
+    expect(keys("Both meters in the zone, then Ready (R)")).toBe("Both meters in the zone, then Ready (R / LOAD B)");
+    expect(keys("This one counts: trim A, R; trim B, R")).toBe("This one counts: trim A, R / LOAD B; trim B, R / LOAD B");
+    expect(keys("Cue 1 of 3: a 1, by ear. R when happy")).toBe("Cue 1 of 3: a 1, by ear. R / LOAD B when happy");
+    expect(keys("Pad 1: jog to the 1 (hold Z to check), Press 1, then R")).toBe("Pad 1: jog to the 1 (hold Z to check), Press 1, then R / LOAD B");
+    const touch = (text: string) => inputWording(text, "touch", null, true);
+    expect(touch("Set B to 126 BPM, then R")).toBe("Set B to 126 BPM, then Ready / LOAD B");
+    expect(touch("Both meters in the zone, then Ready (R)")).toBe("Both meters in the zone, then Ready (LOAD B)");
+    expect(touch("Press R")).toBe("Tap Ready or press LOAD B");
+  });
+
+  it("leave R alone without the FLX4, and words with an R in them always", () => {
+    expect(inputWording("Set B to the BPM, then R", "keys")).toBe("Set B to the BPM, then R");
+    expect(inputWording("Turn MASTER down. Ready? Right.", "keys", null, true)).toBe("Turn MASTER down. Ready? Right.");
+  });
 });

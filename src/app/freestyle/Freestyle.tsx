@@ -6,6 +6,8 @@ import { createAudioEngine, outputLine, type AudioEngine } from "@audio";
 import { midiConnection } from "@midi";
 import type { DeckId } from "@shared/attempt.ts";
 import { ALL_CONTROL_IDS, Controller, type ControlId } from "../controller/index.ts";
+import { FLX4_LOAD_EVENT, type Flx4LoadDetail } from "../controller/focus-navigation.ts";
+import { KeyHint, useControllerConnected } from "../controller/KeyHint.tsx";
 import { currentOutputPlan } from "../audio-output.ts";
 import { listLibrary, type Library, type LibraryItem, type PreparedTrack } from "../final-mix/library.ts";
 import type { TrackPreference } from "../lesson/track-loader.ts";
@@ -49,6 +51,7 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
   /** Tracks already prepared (grid found), so loading one again skips the analysis. */
   const prepared = useRef(new Map<string, PreparedTrack>());
   const abort = useRef(new AbortController());
+  const controllerConnected = useControllerConnected();
 
   // The engine and the library, once per visit.
   useEffect(() => {
@@ -124,10 +127,12 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
     };
   }, [engine, session]);
 
-  // Escape leaves.
+  // Escape leaves (handled here, so the FLX4's SHIFT + BROWSE does nothing more with it).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.code === "Escape" && !isTyping(event.target)) onExit();
+      if (event.code !== "Escape" || isTyping(event.target)) return;
+      event.preventDefault();
+      onExit();
     };
     window.addEventListener("keydown", onKey);
     return () => {
@@ -160,13 +165,41 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
   );
 
   const shown = items.filter((item) => `${item.title} ${item.artist} ${item.genre ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase()));
+
+  // The FLX4, the rekordbox way: BROWSE turns the ring through the tracks, LOAD A / LOAD B load the one
+  // with the ring. Here LOAD always loads (never Enter or R); a playing deck refuses, as on screen.
+  const loadWith = useRef({ shown, loadOnto, session, preparing });
+  useEffect(() => {
+    loadWith.current = { shown, loadOnto, session, preparing };
+  });
+  useEffect(() => {
+    const onLoad = (event: Event) => {
+      event.preventDefault();
+      const { deck } = (event as CustomEvent<Flx4LoadDetail>).detail;
+      const current = loadWith.current;
+      if (current.session === null || current.preparing !== null) return;
+      const row = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>("[data-library]") : null;
+      const item = current.shown.find((candidate) => candidate.key === row?.dataset["library"]);
+      if (item === undefined) {
+        setProblem(`Turn BROWSE to a track first, then LOAD ${deck}.`);
+        return;
+      }
+      const blocker = current.session.loadBlocker(deck);
+      if (blocker !== null) setProblem(blocker);
+      else current.loadOnto(item, deck);
+    };
+    window.addEventListener(FLX4_LOAD_EVENT, onLoad);
+    return () => {
+      window.removeEventListener(FLX4_LOAD_EVENT, onLoad);
+    };
+  }, []);
   const caption = status.kind === "starting" ? status.line : status.kind === "failed" ? status.message : "Freestyle: load any track, mix as you like. Nothing is graded.";
 
   return (
     <main className="lesson final-mix freestyle" data-phase={status.kind}>
       <header className="lesson-bar">
-        <button type="button" className="btn btn-quiet lesson-back" onClick={onExit}>
-          ← Lessons <kbd>Esc</kbd>
+        <button type="button" className="btn btn-quiet lesson-back" onClick={onExit} data-nav-back>
+          ← Lessons <KeyHint k="Esc" />
         </button>
         <h1>Freestyle</h1>
       </header>
@@ -226,9 +259,15 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
               </p>
             )}
             {shown.length === 0 ? <p className="set-empty">No tracks here yet. Add your own files.</p> : null}
-            <ul>
+            {controllerConnected ? (
+              <p className="set-preparing" data-testid="flx4-library-hint">
+                FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd>
+              </p>
+            ) : null}
+            {/* Each track is one stop for BROWSE (its → A / → B are for the screen; LOAD is the FLX4's). */}
+            <ul data-nav-start>
               {shown.map((item) => (
-                <li key={item.key} data-library={item.key}>
+                <li key={item.key} data-library={item.key} tabIndex={0} aria-label={item.title}>
                   <span className="set-title">
                     {item.title}
                     <small>
@@ -243,6 +282,7 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
                         type="button"
                         className="btn"
                         aria-label={`Load ${item.title} onto deck ${deck}`}
+                        data-nav-skip
                         title={blocker ?? `Load onto deck ${deck}`}
                         disabled={blocker !== null || preparing !== null}
                         onClick={() => {

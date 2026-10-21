@@ -61,7 +61,7 @@ describe("blend-by-ear with the FLX4", () => {
     const controller = new ControllerSession(run.engine, { unlocks: new Set(ALL_CONTROL_IDS), macPlatform: true, schedule: () => () => undefined });
     controller.connect();
     const port = new Port();
-    const detach = new HardwareBridge(controller, run.engine, port, { schedule: () => () => undefined, lessonKey: () => undefined, positions: { get: () => null } }).attach();
+    const detach = new HardwareBridge(controller, run.engine, port, { schedule: () => () => undefined, positions: { get: () => null } }).attach();
     current = { run, detach };
     const lowB = () => run.engine.mixerState().channels.B["eq-low"];
     const waiting = () => controller.snapshot().pickup["B.eq-low"];

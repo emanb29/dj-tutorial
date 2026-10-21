@@ -52,7 +52,7 @@ export function HeadphonesGate({ context, onPassed }: HeadphonesGateProps) {
   }, [step.kind, onPassed]);
 
   return (
-    <section className="headphones-gate lesson-overlay" aria-label="Headphones check" data-step={step.kind}>
+    <section className="headphones-gate lesson-overlay" aria-label="Headphones check" data-step={step.kind} data-nav-start>
       {step.kind === "plug-in" ? (
         <>
           <h2>Headphones on</h2>

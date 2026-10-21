@@ -479,8 +479,18 @@
    pinned at the top. Key caps mean nothing without a keyboard: touch shows buttons instead. */
 
 .lesson[data-input="touch"] kbd,
+.lesson[data-input="touch"] .key-or,
 .lesson[data-input="touch"] .lesson-hint {
   display: none;
+}
+
+/* A phone with the FLX4: the hardware's button still shows ("LOAD A for the Check"). */
+.lesson[data-input="touch"] kbd.hw-key {
+  display: inline-block;
+}
+
+.lesson[data-input="touch"] .lesson-hint:has(.hw-key) {
+  display: inline;
 }
 
 .lesson-touch-go {

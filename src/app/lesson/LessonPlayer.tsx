@@ -34,6 +34,7 @@ import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { withHeadphonesChecked, withRekordboxChoice, withSkillProfile, type LearnerRecord } from "@shared/learner.ts";
 import { Controller } from "../controller/Controller.tsx";
 import type { ControllerCaption } from "../controller/context.tsx";
+import { KeyHint, useControllerConnected } from "../controller/KeyHint.tsx";
 import { announceTapJudged, useTapOnHardware } from "../controller/tap-feedback.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
 import { currentOutputPlan } from "../audio-output.ts";
@@ -144,6 +145,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   const { phase, margins } = state;
   const wording = useWording();
   const tapOnHardware = useTapOnHardware();
+  const controllerConnected = useControllerConnected();
   // The first tap Lesson offers the Controller page's Timing check, once per browser (read at mount only).
   const [timingOffer, setTimingOffer] = useState(() => listed.unlocks.includes("tap") && !timingCheckOffered() && !anyTimingStored());
   useEffect(() => {
@@ -395,7 +397,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       const node = cueLine.current;
       if (node !== null) {
         const cue = session.checkCue();
-        const text = inputWording(cue?.caption ?? definition.checkCaption, wording, tapOnHardware);
+        const text = inputWording(cue?.caption ?? definition.checkCaption, wording, tapOnHardware, controllerConnected);
         // Written only on change: the checkpoint tick's animation restarts when its attribute flips.
         if (node.textContent !== text) node.textContent = text;
         const checkpoint = String(cue?.checkpoint === true);
@@ -408,7 +410,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [session, attempt, definition, wording, tapOnHardware]);
+  }, [session, attempt, definition, wording, tapOnHardware, controllerConnected]);
 
   // Lesson keys: Enter = into the Check (again), P = practice, Escape = back to the list, 1–8 = answers.
   const answering = phase.kind === "answering" ? phase.answers : null;
@@ -444,6 +446,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       if (event.code === "Enter") event.preventDefault();
       const key = lessonKey(event, { answering: answering !== null, previewing: session?.previewingPhrase() != null });
       if (key === null) return;
+      // Handled here: the FLX4's navigation (ControllerNavigation) then does nothing more with it.
+      event.preventDefault();
       switch (key.kind) {
         case "check":
           if (afterRun) checkAgain();
@@ -498,11 +502,17 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   return (
     <main className="lesson" data-phase={phase.kind} data-input={wording}>
       <header className="lesson-bar">
-        <button type="button" className="btn btn-quiet lesson-back" onClick={onExit}>
-          ← Lessons <kbd>Esc</kbd>
+        <button type="button" className="btn btn-quiet lesson-back" onClick={onExit} data-nav-back>
+          ← Lessons <KeyHint k="Esc" />
         </button>
         <h1>{definition.title}</h1>
-        {audioRunning ? null : <span className="lesson-audio-off">{wording === "touch" ? "Tap to start the sound" : "Click or press a key to start the sound"}</span>}
+        {audioRunning ? null : (
+          <span className="lesson-audio-off">
+            {wording === "touch" ? "Tap to start the sound" : "Click or press a key to start the sound"}
+            {/* Browsers wake audio only for a click, a tap or a key: a MIDI press is none of them. */}
+            {controllerConnected ? " (once: the browser won't let the FLX4 start it)" : null}
+          </span>
+        )}
         {timingOffer ? (
           <span className="lesson-timing-offer">
             <a href="/controller#timing-check">Timing check (20 s)</a> fits tap grading to your setup
@@ -552,15 +562,15 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             taps={taps}
             showBeat={phase.kind !== "check"}
             practice={phase.kind === "practice" ? phase : null}
-            line={inPractice ? (drill.line ?? cueLadderLine(phase)) : null}
-            hint={cueHint === null ? null : inputWording(cueHint, wording, tapOnHardware)}
+            line={inPractice ? (drill.line === null ? cueLadderLine(phase) : inputWording(drill.line, wording, tapOnHardware, controllerConnected)) : null}
+            hint={cueHint === null ? null : inputWording(cueHint, wording, tapOnHardware, controllerConnected)}
           />
         )}
       </div>
 
       <div className="lesson-board">
         {phase.kind === "answering" ? (
-          <section className="lesson-questions lesson-overlay" aria-label="Questions">
+          <section className="lesson-questions lesson-overlay" aria-label="Questions" data-nav-start>
             {definition.questions.map((question) => (
               <div key={question.id} className="lesson-question" data-answered={question.id in phase.answers}>
                 <span>{question.caption}</span>
@@ -706,7 +716,8 @@ interface CaptionProps {
 function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, graded }: CaptionProps) {
   const wording = useWording();
   const tapOnHardware = useTapOnHardware();
-  const say = (text: string | undefined) => (text === undefined ? undefined : inputWording(text, wording, tapOnHardware));
+  const controllerConnected = useControllerConnected();
+  const say = (text: string | undefined) => (text === undefined ? undefined : inputWording(text, wording, tapOnHardware, controllerConnected));
   switch (phase.kind) {
     case "loading":
       return <span>{setupStatus ?? "Getting the deck ready…"}</span>;
@@ -731,7 +742,7 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
               </span>
             )}
             <span className="lesson-hint">
-              <kbd>Enter</kbd> {phase.ready ? "to go" : "for the Check"}
+              <KeyHint k="Enter" /> {phase.ready ? "to go" : "for the Check"}
             </span>
             {phase.ready ? (
               <span className="lesson-graded" data-testid="graded-line">
@@ -748,7 +759,7 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
             {say(definition.checkCaption)}
           </span>
           <span className="lesson-hint">
-            <kbd>Enter</kbd> restarts
+            <KeyHint k="Enter" /> restarts
           </span>
           <span className="lesson-graded" data-testid="graded-line">
             {graded}
@@ -769,6 +780,7 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
         <span className="lesson-do">
           {question.caption}
           {wording === "touch" ? null : <span className="lesson-hint">({keys})</span>}
+          {controllerConnected ? <span className="lesson-hint">FLX4: turn BROWSE to an answer, press it</span> : null}
         </span>
       );
     }
@@ -780,7 +792,7 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
         <span className="lesson-do">
           {phase.kind === "result" && phase.result.outcome.kind === "passed" ? "Passed." : "Again?"}
           <span className="lesson-hint">
-            <kbd>Enter</kbd> go · <kbd>P</kbd> practice
+            <KeyHint k="Enter" /> go · <KeyHint k="P" /> practice
           </span>
         </span>
       );

@@ -96,6 +96,31 @@
   font-family: var(--font-mono);
 }
 
+.hw-legend {
+  width: 100%;
+  margin: 0 0 var(--space-3);
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.hw-legend th,
+.hw-legend td {
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  border-bottom: 1px solid var(--panel-edge);
+  text-align: left;
+  vertical-align: top;
+}
+
+.hw-legend thead th {
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+
+.hw-legend tbody th {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
 .hw-keys {
   margin: 0;
   padding-left: var(--space-4);

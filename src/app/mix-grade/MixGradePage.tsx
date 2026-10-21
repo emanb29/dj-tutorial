@@ -7,6 +7,7 @@ import { checkLineRequest, NO_LINE_FACTS } from "@lessons";
 import type { CheckResult } from "@shared/check-result.ts";
 import { withOutsidePractice, type LearnerRecord } from "@shared/learner.ts";
 import { MIX_CHECK_IDS } from "@shared/outside-practice.ts";
+import { ButtonHint, useControllerConnected } from "../controller/KeyHint.tsx";
 import { coachLine } from "../lesson/api-client.ts";
 import type { SaveStatus } from "../save-queue.ts";
 import { decodeMix, fileProblemText } from "./decode.ts";
@@ -37,6 +38,7 @@ interface MixGradePageProps {
 }
 
 export function MixGradePage({ learner, onLearnerChange, saveStatus, onRetrySave, onExit }: MixGradePageProps) {
+  const controllerConnected = useControllerConnected();
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const abort = useRef<AbortController | null>(null);
   // Read when a grading finishes, not a dependency: a re-saved record must not restart anything.
@@ -97,8 +99,8 @@ export function MixGradePage({ learner, onLearnerChange, saveStatus, onRetrySave
   return (
     <main className="mix-page">
       <header className="mix-head">
-        <button type="button" className="btn btn-quiet" onClick={onExit}>
-          ← Lessons
+        <button type="button" className="btn btn-quiet" onClick={onExit} data-nav-back>
+          ← Lessons <ButtonHint k="Esc" />
         </button>
         <h1>Grade a mix you recorded</h1>
       </header>
@@ -110,6 +112,7 @@ export function MixGradePage({ learner, onLearnerChange, saveStatus, onRetrySave
         <section className="mix-pick" aria-label="Pick a recording">
           <p className="mix-caption">Any DJ software · your own tracks</p>
           <p className="mix-caption mix-limits">{MIX_LIMITS_CAPTION}</p>
+          {controllerConnected ? <p className="mix-caption">Picking the file needs the mouse, keyboard or screen: the FLX4 can't open your files.</p> : null}
           {phase.kind === "working" ? (
             <div className="mix-working" role="status">
               <span>{STAGE_WORDS[phase.stage]}</span>

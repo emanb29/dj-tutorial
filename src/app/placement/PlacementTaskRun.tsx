@@ -11,6 +11,7 @@ import { withHeadphonesChecked, type LearnerRecord } from "@shared/learner.ts";
 import { currentOutputPlan } from "../audio-output.ts";
 import { timingCorrectionMs } from "../timing-offset.ts";
 import { Controller } from "../controller/Controller.tsx";
+import { useControllerConnected } from "../controller/KeyHint.tsx";
 import { useTapOnHardware } from "../controller/tap-feedback.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
 import { needsHeadphonesCheck } from "../lesson/headphones-check.ts";
@@ -46,6 +47,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
   const cueLine = useRef<HTMLSpanElement>(null);
   const wording = useWording();
   const tapOnHardware = useTapOnHardware();
+  const controllerConnected = useControllerConnected();
   useEffect(() => {
     learnerRef.current = learner;
     phaseRef.current = phase;
@@ -169,7 +171,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
     let frame = requestAnimationFrame(function draw() {
       const node = cueLine.current;
       if (node !== null) {
-        const text = inputWording(setup.session.checkCue()?.caption ?? definition.caption, wording, tapOnHardware);
+        const text = inputWording(setup.session.checkCue()?.caption ?? definition.caption, wording, tapOnHardware, controllerConnected);
         if (node.textContent !== text) node.textContent = text;
       }
       frame = requestAnimationFrame(draw);
@@ -177,7 +179,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [setup, phase, definition, wording, tapOnHardware]);
+  }, [setup, phase, definition, wording, tapOnHardware, controllerConnected]);
 
   const question = definition.questions.find((candidate) => !(candidate.id in answers));
   const answer = (value: number) => {
@@ -210,7 +212,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
           {phase === "check" ? (
             <span className="lesson-do" data-testid="check-cue">
               <span ref={cueLine} className="lesson-cue" data-checkpoint="false">
-                {inputWording(definition.caption, wording, tapOnHardware)}
+                {inputWording(definition.caption, wording, tapOnHardware, controllerConnected)}
               </span>
             </span>
           ) : (

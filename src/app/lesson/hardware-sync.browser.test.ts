@@ -325,7 +325,7 @@ describe("the FLX4's MIDI against a Lesson set-up", () => {
     const run = await harness("beats-and-bars", liveHardwareView(port, positions));
     const controller = new ControllerSession(run.engine, { unlocks: new Set(ALL_CONTROL_IDS), macPlatform: true, schedule: () => () => undefined });
     controller.connect();
-    const detach = new HardwareBridge(controller, run.engine, port, { schedule: () => () => undefined, lessonKey: () => undefined, positions }).attach();
+    const detach = new HardwareBridge(controller, run.engine, port, { schedule: () => () => undefined, positions }).attach();
     try {
       run.session.preparePractice();
       await until(() => run.engine.deckState("A").playing, "practice to play");

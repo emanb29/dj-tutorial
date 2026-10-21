@@ -49,7 +49,7 @@ async function rig(monitor?: MonitorOutput): Promise<{ context: OfflineAudioCont
   const session = new ControllerSession(engine, { unlocks: new Set(ALL_CONTROL_IDS), macPlatform: true, schedule: () => () => undefined });
   session.connect();
   const port = new Port();
-  new HardwareBridge(session, engine, port, { schedule: () => () => undefined, lessonKey: () => undefined }).attach();
+  new HardwareBridge(session, engine, port, { schedule: () => () => undefined }).attach();
   const recorder = new AttemptRecorder(engine);
   return { context, engine, port, recorder, session };
 }
@@ -174,7 +174,7 @@ describe("the FLX4 through the session into a real engine", () => {
     expect(recorder.start()).toEqual({ ok: true });
     const steps = [
       at(context, 0.5, () => {
-        port.midi([0x96, 0x41, 0x7f], 0.4321);
+        port.midi([0x94, 0x6b, 0x7f], 0.4321);
         session.keyDown({ code: "Space", repeat: false, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, timeStamp: ORIGIN_MS + 432.1 });
       }),
     ];

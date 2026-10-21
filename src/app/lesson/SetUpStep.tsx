@@ -4,6 +4,7 @@
 // items. It goes on by itself once all have ticked and everything the caption asks is done ("All set"),
 // where deck A's looped phrase comes round; R goes at once, Skip goes without the rest.
 import { useSyncExternalStore } from "react";
+import { KeyHint } from "../controller/KeyHint.tsx";
 import { matchLine } from "./hardware-sync.ts";
 import type { LessonSession } from "./lesson-session.ts";
 
@@ -19,9 +20,16 @@ export function SetUpStep({ session }: { readonly session: LessonSession }) {
   // A set-up step with nothing to match shows only its caption, in the Lesson's caption line.
   if (pending === null || pending.items.length === 0) return null;
   return (
-    <section className="set-up-step lesson-overlay" aria-label="Match your controller">
+    <section className="set-up-step lesson-overlay" aria-label="Match your controller" data-nav-start>
       <h2>Match your controller</h2>
-      {pending.caption === null ? null : <p className="set-up-caption">{pending.caption}</p>}
+      {pending.caption === null ? null : (
+        <p className="set-up-caption">
+          {pending.caption}
+          <span className="lesson-hint">
+            All ticked: Ready <KeyHint k="R" /> goes at once
+          </span>
+        </p>
+      )}
       <ul>
         {pending.items.map((item) => (
           <li key={item.key} data-state={item.state}>

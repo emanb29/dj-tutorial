@@ -24,6 +24,7 @@ import type { LearnerRecord } from "@shared/learner.ts";
 import { MISSION_MAX_CHARS } from "@shared/mission.ts";
 import type { PlacementEndReason, PlacementResult, PlacementTaskRecord } from "@shared/placement.ts";
 import { useWording } from "../controller/wording.ts";
+import { ButtonHint, KeyHint } from "../controller/KeyHint.tsx";
 import { loadLessonTrack, type ReadyTrack, type TrackPreference } from "../lesson/track-loader.ts";
 import { placementKey } from "./placement-keys.ts";
 import { PlacementTaskRun } from "./PlacementTaskRun.tsx";
@@ -201,7 +202,7 @@ export function Placement({ learner, run, trackPreference, onLearnerChange, onFi
     <main className="lesson placement" data-phase={screen.kind} data-task={screen.kind === "task" ? screen.task.lessonId : undefined} data-input={wording}>
       <header className="lesson-bar">
         <button type="button" className="btn btn-quiet lesson-back" onClick={skipRest}>
-          Skip the rest <kbd>Esc</kbd>
+          Skip the rest <KeyHint k="Esc" />
         </button>
         <h1>
           Show me what you can do <span className="placement-count">{String(screen.number)}</span>
@@ -214,7 +215,7 @@ export function Placement({ learner, run, trackPreference, onLearnerChange, onFi
               onOutcome({ kind: "notYet" });
             }}
           >
-            Not yet <kbd>N</kbd>
+            Not yet <KeyHint k="N" />
           </button>
         ) : null}
       </header>
@@ -271,6 +272,7 @@ function MissionScreen({ mission, onMission, onGo, onSkip, retake }: MissionScre
         </label>
         <input
           id="mission"
+          data-nav-typing="Typing needs the keyboard or the screen. It can wait: LOAD A goes on without it."
           type="text"
           autoFocus
           maxLength={MISSION_MAX_CHARS}
@@ -289,10 +291,10 @@ function MissionScreen({ mission, onMission, onGo, onSkip, retake }: MissionScre
         <p className="placement-footnote">{MISSION_FOOTNOTE}</p>
         <div className="placement-actions">
           <button type="submit" className="btn btn-primary">
-            Show me what you can do <kbd>Enter</kbd>
+            Show me what you can do <KeyHint k="Enter" />
           </button>
           <button type="button" className="btn btn-quiet" onClick={onSkip}>
-            Start at Lesson 1 <kbd>Esc</kbd>
+            Start at Lesson 1 <KeyHint k="Esc" />
           </button>
         </div>
       </form>
@@ -317,7 +319,7 @@ function TaskCard({ record, check, passLine, onNext }: { readonly record: Placem
         <p>{passed ? passLine : "That one's in the Lessons"}</p>
         {worst === null ? null : <p className="placement-worst">{describeCriterion(worst)}</p>}
         <button type="button" className="btn btn-primary" autoFocus onClick={onNext}>
-          Next {wording === "touch" ? null : <kbd>any key</kbd>}
+          Next {wording === "touch" ? null : <kbd>any key</kbd>} <ButtonHint k="Enter" />
         </button>
       </section>
     </div>
@@ -350,7 +352,7 @@ function SummaryScreen({ credited, startAt, onStart, onList }: SummaryScreenProp
       </p>
       <div className="placement-actions">
         <button type="button" className="btn btn-primary" autoFocus onClick={onStart}>
-          {built ? `Start Lesson ${String(number)}` : "See your Lessons"} <kbd>Enter</kbd>
+          {built ? `Start Lesson ${String(number)}` : "See your Lessons"} <KeyHint k="Enter" />
         </button>
         {built ? (
           <button type="button" className="btn btn-quiet" onClick={onList}>

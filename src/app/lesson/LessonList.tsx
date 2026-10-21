@@ -4,6 +4,7 @@ import { lessonRetention } from "@checks";
 import { COURSE, hasPlacement, startLesson, type CourseLessonId } from "@lessons";
 import { catalogueIndex, lessonById } from "@shared/catalogue.ts";
 import type { LearnerRecord } from "@shared/learner.ts";
+import { ButtonHint, useControllerConnected } from "../controller/KeyHint.tsx";
 import "./lesson-list.css";
 
 export type LessonStanding = "locked" | "ready" | "passed" | "retained" | "lapsed";
@@ -40,6 +41,7 @@ interface LessonListProps {
 
 export function LessonList({ learner, offline, onStart, onRetakePlacement, onGradeMix, onFreestyle }: LessonListProps) {
   const startHere = startLesson(learner.skillProfile);
+  const controllerConnected = useControllerConnected();
   return (
     <section className="lesson-list" aria-label="Lessons">
       {offline === null ? null : (
@@ -58,6 +60,11 @@ export function LessonList({ learner, offline, onStart, onRetakePlacement, onGra
           Freestyle
         </button>
       </p>
+      {controllerConnected ? (
+        <p className="lesson-list-flx4" data-testid="flx4-hint">
+          FLX4: turn BROWSE to a Lesson, press it · <ButtonHint k="Enter" /> starts Lesson {catalogueIndex(startHere) + 1} ({lessonById(startHere).title})
+        </p>
+      ) : null}
       <ol>
         {COURSE.map((lesson) => {
           const standing = lessonStanding(learner, lesson.id);
@@ -72,6 +79,7 @@ export function LessonList({ learner, offline, onStart, onRetakePlacement, onGra
               ) : (
                 <button
                   type="button"
+                  data-nav-default={lesson.id === startHere || undefined}
                   className={standing === "ready" ? "btn btn-primary" : "btn"}
                   onClick={() => {
                     onStart(lesson.id);

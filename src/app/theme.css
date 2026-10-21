@@ -66,6 +66,43 @@ kbd {
   font: 600 0.7em / 1 var(--font-mono);
 }
 
+/* The FLX4's button beside a key ("Enter / LOAD A"): the controller's colour, so it reads as hardware. */
+kbd.hw-key {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The ring the FLX4's BROWSE moves (src/app/ControllerNavigation.tsx): large, so it is seen from the
+   controller, on a phone too. While BROWSE changes a list's or slider's value it turns CUE orange. */
+:root[data-controller-nav] :focus,
+:root[data-controller-nav] label:has(> input[type="file"]:focus) {
+  outline: 4px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 9px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+:root[data-controller-changing] :focus {
+  outline-color: var(--cue);
+}
+
+/* "The controller can't do that here": one line at the bottom, above everything. */
+.controller-nav-notice {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
+  z-index: 100;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  background: var(--panel-raised);
+  font-size: var(--text-md);
+  text-align: center;
+}
+
 /* Shell messages: a problem the Learner should see, and the wait while a Lesson opens. */
 .lesson-problem {
   margin: var(--space-4);

@@ -9,6 +9,7 @@ import { lessonById } from "@shared/catalogue.ts";
 import { RECENT_LINES_MAX } from "@shared/coach-contract.ts";
 import type { MissionTag } from "@shared/mission.ts";
 import { inputWording, useWording } from "../controller/wording.ts";
+import { KeyHint } from "../controller/KeyHint.tsx";
 import type { RekordboxCardChoice, RekordboxCardId } from "@shared/learner.ts";
 import { RekordboxCard } from "../rekordbox/RekordboxCard.tsx";
 import type { RekordboxCard as RekordboxCardContent } from "../rekordbox/rekordbox-steps.ts";
@@ -58,12 +59,12 @@ export function ResultCard(props: ResultCardProps) {
 
 function Actions({ onRetry, onPractice }: { readonly onRetry: () => void; readonly onPractice: () => void }) {
   return (
-    <div className="result-actions">
+    <div className="result-actions" data-nav-start>
       <button type="button" className="btn btn-primary" onClick={onRetry}>
-        Go again <kbd>Enter</kbd>
+        Go again <KeyHint k="Enter" />
       </button>
       <button type="button" className="btn" onClick={onPractice}>
-        Practice <kbd>P</kbd>
+        Practice <KeyHint k="P" />
       </button>
     </div>
   );
