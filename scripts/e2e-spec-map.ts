@@ -81,6 +81,8 @@ export const SPEC_RULES: readonly SpecRule[] = [
   { paths: ["src/app/placement/**", "src/lessons/placement*.ts"], specs: ["e2e/placement.spec.ts"] },
   // Grading a mix recorded elsewhere (ISS-96): its page and the mix grader; the home list links to it.
   { paths: ["src/app/mix-grade/**", "src/analysis/mix/**"], specs: ["e2e/mix-upload.spec.ts"] },
+  // Freestyle: both decks and the library, no grading; it shares the set's library (final-mix/library.ts).
+  { paths: ["src/app/freestyle/**", "src/app/final-mix/library.ts"], specs: ["e2e/freestyle.spec.ts"] },
   { paths: ["src/app/playground/**"], specs: ["e2e/controller.spec.ts", "e2e/mobile.spec.ts"] },
   // The DDJ-FLX4: the MIDI module and the Controller page (src/app/controller/hardware.ts stays under the shared controller rule).
   { paths: ["src/midi/**", "src/app/controller-page/**"], specs: ["e2e/hardware.spec.ts"] },

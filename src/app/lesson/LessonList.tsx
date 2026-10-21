@@ -34,9 +34,11 @@ interface LessonListProps {
   readonly onRetakePlacement: () => void;
   /** "Grade a mix you recorded": outside practice, open from the start. */
   readonly onGradeMix: () => void;
+  /** Freestyle: both decks and the library, no grading; open from the start. */
+  readonly onFreestyle: () => void;
 }
 
-export function LessonList({ learner, offline, onStart, onRetakePlacement, onGradeMix }: LessonListProps) {
+export function LessonList({ learner, offline, onStart, onRetakePlacement, onGradeMix, onFreestyle }: LessonListProps) {
   const startHere = startLesson(learner.skillProfile);
   return (
     <section className="lesson-list" aria-label="Lessons">
@@ -51,6 +53,9 @@ export function LessonList({ learner, offline, onStart, onRetakePlacement, onGra
         </button>
         <button type="button" className="btn btn-quiet" onClick={onGradeMix}>
           Grade a mix you recorded
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={onFreestyle}>
+          Freestyle
         </button>
       </p>
       <ol>

@@ -20,6 +20,8 @@ const FinalMixPlayer = lazy(() => import("./final-mix/FinalMixPlayer.tsx").then(
 const ControllerPage = lazy(() => import("./controller-page/ControllerPage.tsx").then((module) => ({ default: module.ControllerPage })));
 // Grading a mix recorded elsewhere: the mix worker and its page, its own chunk.
 const MixGradePage = lazy(() => import("./mix-grade/MixGradePage.tsx").then((module) => ({ default: module.MixGradePage })));
+// Freestyle: both decks, every control, the library, no grading. Its own chunk.
+const Freestyle = lazy(() => import("./freestyle/Freestyle.tsx").then((module) => ({ default: module.Freestyle })));
 const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
@@ -45,6 +47,8 @@ const FINAL_MIX_PATH = "/lesson/final-mix";
 export const CONTROLLER_PAGE_PATH = "/controller";
 /** "Grade a mix you recorded" (ISS-96), from the Lesson list. */
 export const MIX_GRADE_PATH = "/mix";
+/** Freestyle (a small rekordbox), from the Lesson list: no Lesson, no grading. */
+export const FREESTYLE_PATH = "/freestyle";
 /** Re-taking Placement, from the Lesson list. A first run (no profile yet) shows it at "/". */
 export const PLACEMENT_PATH = "/placement";
 
@@ -185,6 +189,9 @@ export function App() {
   const gradeMix = useCallback(() => {
     navigate(MIX_GRADE_PATH);
   }, [navigate]);
+  const freestyle = useCallback(() => {
+    navigate(FREESTYLE_PATH);
+  }, [navigate]);
 
   if (playgroundEnabled({ pathname: path, search: window.location.search }, import.meta.env.DEV)) {
     return (
@@ -235,6 +242,14 @@ export function App() {
     );
   }
 
+  if (path.replace(/\/$/, "") === FREESTYLE_PATH) {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening Freestyle…</p>}>
+        <Freestyle trackPreference={options.trackPreference} onExit={exit} />
+      </Suspense>
+    );
+  }
+
   if (path.replace(/\/$/, "") === MIX_GRADE_PATH && learner.kind === "ready") {
     return (
       <Suspense fallback={<p className="lesson-loading">Opening the mix grader…</p>}>
@@ -279,7 +294,7 @@ export function App() {
         </a>
         <HealthIndicator />
       </header>
-      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} onGradeMix={gradeMix} /> : <p>Loading your progress…</p>}
+      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} onGradeMix={gradeMix} onFreestyle={freestyle} /> : <p>Loading your progress…</p>}
     </main>
   );
 }
