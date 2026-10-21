@@ -25,8 +25,9 @@ export default defineConfig({
     allowedHosts,
     headers: crossOriginIsolationHeaders,
     proxy,
-    // Keep Vite from scanning or watching the throwaway prototypes and spikes.
-    watch: { ignored: ["**/prototypes/**", "**/spikes/**"] },
+    // Keep Vite from scanning or watching the throwaway prototypes and spikes, and the agents'
+    // worktrees under .claude/: a new worktree's tsconfig.json made Vite fully reload the open app.
+    watch: { ignored: ["**/prototypes/**", "**/spikes/**", "**/.claude/**"] },
   },
   preview: {
     host: "127.0.0.1",
