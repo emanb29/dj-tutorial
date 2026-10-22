@@ -80,3 +80,22 @@
   margin-top: var(--space-4);
   font-size: var(--text-sm);
 }
+
+/* tempo-fader's ear round (EarRound.tsx): the line on the last answer, the count, ■ Stop. */
+.ear-round .lesson-hint {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.ear-round-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.5em;
+  margin-top: var(--space-3);
+}
+
+.ear-round-line {
+  font-weight: 650;
+}

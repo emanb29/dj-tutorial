@@ -402,6 +402,7 @@ export class LessonSession {
       case "tempo-range":
       case "master-tempo":
         this.observe({ kind: "touch", control: `${command.deck}.${command.control}` });
+        if (command.control === "tempo") this.observe({ kind: "tempo", deck: command.deck, percent: (this.engine.deckState(command.deck).tempoRate - 1) * 100 });
         if (command.control === "tempo" && this.pendingSetUp === null) this.drill?.tempoMoved(command.deck);
         return;
       case "eq-low":
@@ -1483,9 +1484,19 @@ export class LessonSession {
    * question without a clip stops any clip playing.
    */
   playClip(questionId: string): void {
-    const clip = this.clipFor(questionId);
+    this.playListeningClip(this.clipFor(questionId));
+  }
+
+  /**
+   * Plays `clip` on a loop, as a question's clip plays (null stops any clip). Practice uses it too
+   * (tempo-fader's ear round, `LessonDefinition.practiceClip`): practice's own playing stops, and the
+   * decks stay paused after `stopListening` until practice or the Check starts again. Nothing is graded.
+   */
+  playListeningClip(clip: ListeningClip | null): void {
     this.stopClip();
     if (clip === null || this.onDeck[clip.deck] === null) return;
+    this.stopPreview();
+    this.stopWatching();
     this.clip = clip;
     const track = trackOnDeck(this.track, clip.deck);
     const fastFrom = clip.pos + clip.leadBars * 4 * beatSecOf(track);
@@ -1595,6 +1606,11 @@ export class LessonSession {
   /** The clip playing now, if any (end-to-end tests read which Master Tempo it has). */
   playingClip(): ListeningClip | null {
     return this.clip;
+  }
+
+  /** Stops the clip playing (the ear round's ■ Stop, or its panel closing); the decks stay paused. */
+  stopListening(): void {
+    this.stopClip();
   }
 
   private stopClip(): void {

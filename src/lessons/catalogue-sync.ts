@@ -33,6 +33,11 @@ const ON_OFF: CheckQuestion["choices"] = [
   { label: "Off", value: 0 },
 ];
 const CLIP_IDS = ["clip-1", "clip-2"] as const;
+/**
+ * The hook's first step waits for B this much faster (2/3 of the ±6% range): about a semitone higher
+ * with Master Tempo off, enough to hear the pitch drop back when it goes on. A nudge is not.
+ */
+const HOOK_FAST_PERCENT = 4;
 
 /** A BPM as the display shows it: one decimal. */
 const bpmText = (bpm: number) => bpm.toFixed(1);
@@ -65,11 +70,16 @@ const tempoFader: LessonDefinition = {
   gradeFromOwnCue: true,
   trackProblems: tooShort,
   hook: [
-    { caption: "Slide TEMPO B", control: "B.tempo", trigger: { kind: "touch", control: "B.tempo" }, named: "TEMPO: faster or slower. The BPM shows it.", reveals: ["B.bpm"] },
-    { caption: "Hold BEAT SYNC B: Master Tempo", control: "B.master-tempo", trigger: { kind: "touch", control: "B.master-tempo" }, named: "Master Tempo on: new speed, same pitch." },
+    // Master Tempo off (the practice set-up): faster is higher too, as a record sped up. Then on, still
+    // fast: the pitch drops back. AlphaTheta's own words: "Adjusting the playback speed without
+    // changing the pitch (Master Tempo)", XDJ-AZ manual,
+    // https://downloads.support.alphatheta.com/manuals/all-in-one-dj-systems/XDJ-AZ/XDJ-AZ_DRI1936C_manual_EN.pdf
+    { caption: "Slide TEMPO B near +: faster", control: "B.tempo", trigger: { kind: "tempo-up", deck: "B", percent: HOOK_FAST_PERCENT }, named: "TEMPO: faster, and higher. The BPM shows it.", reveals: ["B.bpm"] },
+    { caption: "Hold BEAT SYNC B: Master Tempo", control: "B.master-tempo", trigger: { kind: "touch", control: "B.master-tempo" }, named: "Master Tempo on: still fast, back in key." },
     { caption: "Tap ±6% on B: the range", control: "B.tempo-range", trigger: { kind: "touch", control: "B.tempo-range" }, named: "Range: ±6% is fine, ±16% is wide." },
   ],
   practice: { caption: "Set B to the BPM, then R", rep: "tempo-set", window: 3, needed: 2 },
+  practiceClip: (track, masterTempo) => masterTempoClip(tempoDecks(track).A.pos, masterTempo),
   practiceTargetBpm: (track) => roundBpm(track.grid.bpm + PRACTICE_OFFSET_BPM),
   practiceCaptionFor: (track) => `Set B to ${bpmText(roundBpm(track.grid.bpm + PRACTICE_OFFSET_BPM))} BPM, then R`,
   checkCaption: "This one counts: three BPMs, then two clips",
@@ -90,20 +100,23 @@ const tempoFader: LessonDefinition = {
   },
 };
 
+/** A Master Tempo clip on B from `pos`: 2 bars at the track's tempo, then 2 bars 8% faster. */
+const masterTempoClip = (pos: number, masterTempo: boolean): ListeningClip => ({
+  deck: "B",
+  pos,
+  leadBars: CLIP_LEAD_BARS,
+  bars: CLIP_FAST_BARS,
+  tempo: CLIP_TEMPO,
+  rangePercent: CLIP_RANGE,
+  masterTempo,
+});
+
 /** The tempo-fader Check: three BPMs, then (`withClips`) the two Master Tempo clips. */
 function tempoPlan(track: LessonTrack, attempt: number, withClips: boolean): CheckPlan {
   const decks = tempoDecks(track);
   const [first, second, third] = tempoTargets(track).map(bpmText);
   const pattern = CLIP_PATTERNS[(attempt - 1) % CLIP_PATTERNS.length] ?? CLIP_PATTERNS[0] ?? [true, false];
-  const clip = (masterTempo: boolean): ListeningClip => ({
-    deck: "B",
-    pos: decks.A.pos,
-    leadBars: CLIP_LEAD_BARS,
-    bars: CLIP_FAST_BARS,
-    tempo: CLIP_TEMPO,
-    rangePercent: CLIP_RANGE,
-    masterTempo,
-  });
+  const clip = (masterTempo: boolean) => masterTempoClip(decks.A.pos, masterTempo);
   return {
     startPos: decks.A.pos,
     autoPlay: false,
@@ -135,6 +148,8 @@ export function withoutMasterTempo<Definition extends LessonDefinition>(definiti
   if (definition.id !== "tempo-fader") return definition;
   return {
     ...definition,
+    // No Master Tempo, no clips to practise by ear either.
+    practiceClip: undefined,
     hook: definition.hook.filter((step) => !step.control.endsWith(".master-tempo")),
     questions: [],
     checkCaption: "This one counts: three BPMs",

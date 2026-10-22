@@ -129,6 +129,8 @@ export function triggerStep(trigger: HookTrigger, observation: Observation): 1 |
       return observation.kind === "fader" && observation.deck === (trigger.deck ?? "A") && observation.value <= FADER_DOWN ? 1 : 0;
     case "touch":
       return observation.kind === "touch" && observation.control === trigger.control ? 1 : 0;
+    case "tempo-up":
+      return observation.kind === "tempo" && observation.deck === trigger.deck && observation.percent >= trigger.percent - 1e-9 ? 1 : 0;
     case "cue-on":
       return observation.kind === "headphone-cue" && observation.deck === trigger.deck && observation.on ? 1 : 0;
     case "in-zone":

@@ -79,6 +79,8 @@ export type Observation =
   | { readonly kind: "eq-return"; readonly deck: DeckId; readonly onPhrase: boolean }
   /** The crossfader moved: 0 = full A … 1 = full B. */
   | { readonly kind: "crossfader"; readonly value: number }
+  /** A deck's tempo fader moved: how much faster than the track it now plays, percent (negative = slower). */
+  | { readonly kind: "tempo"; readonly deck: DeckId; readonly percent: number }
   /** tempo-fader practice: Ready (R) with deck B's BPM on the target or not. */
   | { readonly kind: "tempo-set"; readonly onTarget: boolean }
   /** The CFX knob moved: −1 (full low-pass) … 0 (off) … +1 (full high-pass). */
@@ -125,6 +127,8 @@ export type HookTrigger =
   | { readonly kind: "downbeat-taps"; readonly count: number }
   | { readonly kind: "phrase-taps"; readonly count: number }
   | { readonly kind: "touch"; readonly control: ControlId }
+  /** The deck's tempo fader at `percent` faster or more (tempo-fader: fast enough to hear the pitch rise). */
+  | { readonly kind: "tempo-up"; readonly deck: DeckId; readonly percent: number }
   | { readonly kind: "cue-on"; readonly deck: DeckId }
   /** The deck's level reading lands in the gain-staging zone. */
   | { readonly kind: "in-zone"; readonly deck: DeckId }
@@ -477,6 +481,11 @@ export interface LessonDefinition {
   readonly gradeFromOwnCue?: true;
   /** The practice caption for this track, when it names a value of the track (tempo-fader's target BPM). */
   readonly practiceCaptionFor?: (track: LessonTrack) => string;
+  /**
+   * tempo-fader practice, once it is ready: the Check's listening clip with Master Tempo on or off, to
+   * play labelled (Off, On) and as an unscored mystery (ear-round.ts) before the Check asks.
+   */
+  readonly practiceClip?: ((track: LessonTrack, masterTempo: boolean) => ListeningClip) | undefined;
   /** tempo-fader practice: the BPM deck B is set to before each Ready. */
   readonly practiceTargetBpm?: (track: LessonTrack) => number;
   /** Can this Lesson run on this track (e.g. phrases needs a named breakdown and drop)? */

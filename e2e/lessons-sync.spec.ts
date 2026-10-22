@@ -24,16 +24,23 @@ test("tempo-fader: three BPMs set and confirmed with Ready, then both Master Tem
   await seedPassed(page, learnerId, ["deck-basics"]);
   await openLesson(page, learnerId, "tempo-fader");
 
-  // The hook: TEMPO B, then Master Tempo B (BEAT SYNC held, as on the FLX4), then the range. B plays from the start.
-  await expect(caption(page)).toContainText("Slide TEMPO B");
+  // The hook: TEMPO B fast (higher, Master Tempo off), then Master Tempo B (BEAT SYNC held, as on the
+  // FLX4), then the range. B plays from the start.
+  await expect(caption(page)).toContainText("Slide TEMPO B near +: faster");
   await expect(page.locator('[data-control="B.bpm"]')).toHaveAttribute("data-locked", "false");
+  // A nudge is too little to hear the pitch rise: the step waits for 4% faster or more.
   await command(page, { control: "tempo", deck: "B", value: 0.2 });
+  await page.waitForTimeout(300);
+  await expect(caption(page)).toContainText("Slide TEMPO B near +: faster");
+  await command(page, { control: "tempo", deck: "B", value: 0.8 });
+  await expect(caption(page)).toContainText("TEMPO: faster, and higher.");
   await expect(caption(page)).toContainText("Hold BEAT SYNC B: Master Tempo");
   const syncB = page.getByRole("button", { name: /Deck B beat sync/ });
   await syncB.hover();
   await page.mouse.down();
   await expect(page.getByTestId("master-tempo-lamp-B")).toHaveAttribute("data-on", "true");
   await page.mouse.up();
+  await expect(caption(page)).toContainText("Master Tempo on: still fast, back in key.");
   await expect(caption(page)).toContainText("Tap ±6% on B");
   await page.getByRole("button", { name: /Deck B tempo range/ }).click();
   await expect(caption(page)).toContainText("Set B to 126.0 BPM, then R");
@@ -83,12 +90,23 @@ test("tempo-fader where Master Tempo cannot load: no MASTER TEMPO step, no clip 
   await openLesson(page, learnerId, "tempo-fader");
   expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").masterTempoAvailability?.available)).toBe(false);
 
-  await expect(caption(page)).toContainText("Slide TEMPO B");
-  await command(page, { control: "tempo", deck: "B", value: 0.2 });
+  await expect(caption(page)).toContainText("Slide TEMPO B near +: faster");
+  await command(page, { control: "tempo", deck: "B", value: 0.8 });
   await expect(caption(page)).toContainText("Tap ±6% on B");
   await page.getByRole("button", { name: /Deck B tempo range/ }).click();
   // Practice says why there will be no clips.
   await expect(caption(page)).toContainText("Set B to 126.0 BPM, then R · Master Tempo can't load here, so no clips");
+
+  // Practice ready: no ear round without Master Tempo.
+  // Each Ready puts B's tempo back to centre for the next rep.
+  for (let rep = 0; rep < 2; rep += 1) {
+    await command(page, { control: "tempo", deck: "B", value: faderFor(126) });
+    await expect(page.locator('[data-control="B.bpm"] .readout-number')).toHaveText("126.0");
+    await page.waitForTimeout(300);
+    await page.keyboard.press("KeyR");
+  }
+  await expect(caption(page)).toContainText("Ready? This one counts.");
+  await expect(page.getByTestId("ear-round")).toHaveCount(0);
 
   await page.keyboard.press("Enter");
   for (const bpm of [127, 121.5, 125.5]) {
@@ -104,6 +122,71 @@ test("tempo-fader where Master Tempo cannot load: no MASTER TEMPO step, no clip 
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
   await expect(card).toContainText(/BPMs: worst 0\.0\d BPM off/);
   await expect(card).not.toContainText("Master Tempo clips");
+});
+
+test("tempo-fader practice: once the BPMs are ready, Off and On clips to compare and an unscored mystery with a line on each answer", async ({ page }) => {
+  test.setTimeout(90_000);
+  const learnerId = learner("tempo-ear");
+  await seedPassed(page, learnerId, ["deck-basics"]);
+  await openLesson(page, learnerId, "tempo-fader");
+  await expect(caption(page)).toContainText("Slide TEMPO B near +: faster");
+  await command(page, { control: "tempo", deck: "B", value: 0.8 });
+  await expect(caption(page)).toContainText("Hold BEAT SYNC B: Master Tempo");
+  await page.getByRole("button", { name: /Deck B beat sync/ }).hover();
+  await page.mouse.down();
+  await expect(page.getByTestId("master-tempo-lamp-B")).toHaveAttribute("data-on", "true");
+  await page.mouse.up();
+  await page.getByRole("button", { name: /Deck B tempo range/ }).click();
+  await expect(caption(page)).toContainText("Set B to 126.0 BPM, then R");
+  await expect(page.getByTestId("ear-round")).toHaveCount(0);
+
+  // Two Readies on 126.0 BPM: practice is ready, and asks for the ear round before the Check.
+  // Each Ready puts B's tempo back to centre for the next rep.
+  for (let rep = 0; rep < 2; rep += 1) {
+    await command(page, { control: "tempo", deck: "B", value: faderFor(126) });
+    await expect(page.locator('[data-control="B.bpm"] .readout-number')).toHaveText("126.0");
+    await page.waitForTimeout(300);
+    await page.keyboard.press("KeyR");
+  }
+  await expect(caption(page)).toContainText("By ear first: Off, On, then try one.");
+  const round = page.getByTestId("ear-round");
+  await expect(round).toContainText("Master Tempo keeps the key: vocals sound natural.");
+  const clip = async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.clip?.() ?? null);
+
+  // Labelled clips: the Check's own clip, Master Tempo as named.
+  for (const [label, masterTempo] of [["▶ Off", false], ["▶ On", true]] as const) {
+    await round.getByRole("button", { name: label }).click();
+    await expect.poll(async () => (await clip())?.masterTempo).toBe(masterTempo);
+    await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").playing)).toBe(true);
+  }
+
+  // The mystery: no answer before it plays; while it plays the controller does not give it away.
+  const tryOne = round.getByRole("group", { name: "Try one: on or off?" });
+  await expect(tryOne.getByRole("button", { name: "On", exact: true })).toBeDisabled();
+  await tryOne.getByRole("button", { name: "▶ Mystery" }).click();
+  await expect.poll(async () => (await clip())?.masterTempo).not.toBeUndefined();
+  await expect(page.getByTestId("master-tempo-lamp-B")).toHaveAttribute("data-on", "false");
+  await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-locked", "true");
+  const first = (await clip())?.masterTempo === true;
+  await tryOne.getByRole("button", { name: first ? "On" : "Off", exact: true }).click();
+  await expect(page.getByTestId("ear-round-line")).toHaveText(first ? "Right: On. Faster, same note." : "Right: Off. Faster, and higher.");
+  await expect(round).toContainText("1 of 1 right");
+  await expect.poll(clip).toBeNull();
+
+  // A wrong answer says what it was.
+  await tryOne.getByRole("button", { name: "▶ Mystery" }).click();
+  await expect.poll(async () => (await clip())?.masterTempo).not.toBeUndefined();
+  const second = (await clip())?.masterTempo === true;
+  await tryOne.getByRole("button", { name: second ? "Off" : "On", exact: true }).click();
+  await expect(page.getByTestId("ear-round-line")).toHaveText(second ? "That was On: faster, same note." : "That was Off: faster, and higher.");
+  await expect(round).toContainText("1 of 2 right");
+
+  // Enter goes on to the Check, as ever: the round closes, and the Check sets the decks up again.
+  await round.getByRole("button", { name: "▶ On" }).click();
+  await page.keyboard.press("Enter");
+  await expect(round).toHaveCount(0);
+  await expect(page.locator(".lesson-cue")).toHaveText("Set B to 127.0 BPM, then R");
+  await expect.poll(clip).toBeNull();
 });
 
 /** One fader dragged from `from` to `to` over half a beat, starting on `beat` (a trackpad drag in steps). */

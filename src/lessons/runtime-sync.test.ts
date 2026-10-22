@@ -57,14 +57,13 @@ const graded = (outcome: CheckResult): LessonEvent => ({
 describe("tempo-fader", () => {
   const definition = lessonDefinition("tempo-fader");
 
-  it("steps through TEMPO B, MASTER TEMPO B and the range, by touching each", () => {
-    const state = run(definition, [
-      ready,
-      seen({ kind: "touch", control: "A.tempo" }),
-      seen({ kind: "touch", control: "B.tempo" }),
-      seen({ kind: "touch", control: "B.master-tempo" }),
-      seen({ kind: "touch", control: "B.tempo-range" }),
-    ]);
+  it("steps through TEMPO B (made fast, to hear it go higher), MASTER TEMPO B and the range", () => {
+    const hooked = run(definition, [ready, seen({ kind: "touch", control: "B.tempo" }), seen({ kind: "tempo", deck: "A", percent: 6 })]);
+    // A nudge is not enough to hear the pitch rise: the first step waits for B 4% faster or more.
+    expect(run(definition, [seen({ kind: "tempo", deck: "B", percent: 1.2 }), seen({ kind: "tempo", deck: "B", percent: -5 })], hooked).phase).toMatchObject({ kind: "hook", step: 0 });
+    const fast = run(definition, [seen({ kind: "tempo", deck: "B", percent: 4 })], hooked);
+    expect(fast.phase).toMatchObject({ kind: "hook", step: 1, named: "TEMPO: faster, and higher. The BPM shows it." });
+    const state = run(definition, [seen({ kind: "touch", control: "B.master-tempo" }), seen({ kind: "touch", control: "B.tempo-range" })], fast);
     expect(state.phase).toMatchObject({ kind: "practice", named: "Range: ±6% is fine, ±16% is wide." });
   });
 

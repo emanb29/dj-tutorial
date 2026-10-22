@@ -505,10 +505,10 @@ test.describe("Lessons 8–11 on a phone (412×915, touch)", () => {
   test("tempo-fader: TEMPO B and its BPM on screen, Ready in practice and the Check, On/Off answers", async ({ page }) => {
     test.setTimeout(90_000);
     await openLesson(page, "tempo-fader", { touch: true, passed: ["deck-basics"] });
-    await expect(caption(page).locator(".lesson-do")).toHaveText("Slide TEMPO B");
+    await expect(caption(page).locator(".lesson-do")).toHaveText("Slide TEMPO B near +: faster");
     await expectFingerSized(page, page.locator("section.deck-B").getByRole("slider", { name: "TEMPO" }));
     await expect(page.locator('[data-control="B.bpm"]')).toBeInViewport();
-    await command(page, { control: "tempo", deck: "B", value: 0.1 });
+    await command(page, { control: "tempo", deck: "B", value: 0.8 });
     await expect(caption(page)).toContainText("Hold BEAT SYNC B: Master Tempo");
     const syncB = page.getByRole("button", { name: /Deck B beat sync/ });
     await expectFingerSized(page, syncB);

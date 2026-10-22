@@ -134,6 +134,25 @@ describe("tempo-fader", () => {
     expect(definition.practiceCaptionFor?.(track)).toBe("Set B to 126.0 BPM, then R");
   });
 
+  it("lets B be heard fast with Master Tempo off, then on, in the hook", () => {
+    expect(definition.hook.map((step) => step.trigger)).toEqual([
+      { kind: "tempo-up", deck: "B", percent: 4 },
+      { kind: "touch", control: "B.master-tempo" },
+      { kind: "touch", control: "B.tempo-range" },
+    ]);
+    expect(definition.hook[0]?.caption).toBe("Slide TEMPO B near +: faster");
+    expect(definition.hook[1]?.named).toBe("Master Tempo on: still fast, back in key.");
+  });
+
+  it("offers the Check's own clips, Off and On, to practise by ear before the Check", () => {
+    const clips = definition.planCheck(track, 1).clips ?? {};
+    const asked = Object.values(clips);
+    for (const masterTempo of [false, true]) {
+      const clip = definition.practiceClip?.(track, masterTempo);
+      expect(clip).toEqual({ ...asked[0], masterTempo });
+    }
+  });
+
   it("changes which clip has Master Tempo on from one attempt to the next", () => {
     const patterns = [1, 2, 3, 4].map((attemptNumber) => {
       const clips = definition.planCheck(track, attemptNumber).clips ?? {};
@@ -182,6 +201,7 @@ describe("tempo-fader", () => {
     expect(bare.readyCues).toEqual(["Set B to 127.0 BPM, then R", "Now 121.5 BPM, then R", "Last one: 125.5 BPM, then R"]);
     expect(missing.questions).toEqual([]);
     expect(missing.hook.map((step) => step.control)).toEqual(["B.tempo", "B.tempo-range"]);
+    expect(missing.practiceClip).toBeUndefined();
     expect(missing.practiceCaptionFor?.(track)).toBe("Set B to 126.0 BPM, then R · Master Tempo can't load here, so no clips");
     // Never graded against a Master Tempo state the audio did not have: the ear part is not applicable.
     const result = grade(missing, bare, tempoAttempt(targets, {}), CUED + 31);

@@ -47,6 +47,7 @@ import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
 import { PhraseCounter } from "./PhraseCounter.tsx";
 import { PhrasePlayButton, PhrasePreviewBar } from "./PhrasePreview.tsx";
+import { EarRound } from "./EarRound.tsx";
 import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
 import { lessonCardFor } from "../rekordbox/rekordbox-steps.ts";
 import { practiceSetUp } from "./practice-set-up.ts";
@@ -425,7 +426,10 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   }, [session, answering]);
   // While a clip plays, its deck's tempo controls are held locked and unlit: MASTER TEMPO lit (or a
   // press to compare) would give the answer away.
-  const clipDeck = session === null || asking === null ? null : (session.clipFor(asking)?.deck ?? null);
+  // tempo-fader's ear round, once practice is ready: its clips hide the same controls.
+  const [earClipDeck, setEarClipDeck] = useState<DeckId | null>(null);
+  const earRound = phase.kind === "practice" && phase.ready && definition.practiceClip !== undefined && session !== null;
+  const clipDeck = session === null || asking === null ? (earRound ? earClipDeck : null) : (session.clipFor(asking)?.deck ?? null);
   const concealed = useMemo<ReadonlySet<ControlId>>(
     () => {
       const clip = clipDeck === null ? [] : CLIP_CONCEALED.map((part) => `${clipDeck}.${part}` as const);
@@ -548,6 +552,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             phase={phase}
             definition={definition}
             graded={graded}
+            earRound={earRound}
             practiceCaption={setUpCaption ?? (session === null ? definition.practice.caption : (definition.practiceCaptionFor?.(session.track) ?? definition.practice.caption))}
             setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null}
             cueLine={cueLine}
@@ -596,6 +601,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             {session !== null && definition.questions.some((question) => question.previews === "phrases") ? <PhrasePreviewBar session={session} /> : null}
           </section>
         ) : null}
+
+        {earRound ? <EarRound session={session} track={session.track} clip={definition.practiceClip} onPlaying={setEarClipDeck} /> : null}
 
         {session === null ? null : <SetUpStep session={session} />}
 
@@ -710,10 +717,12 @@ interface CaptionProps {
   readonly cueLine: RefObject<HTMLSpanElement | null>;
   /** "Graded: …": every criterion the Check can fail on. */
   readonly graded: string;
+  /** Practice is ready and the ear round shows (tempo-fader): the caption asks for it. */
+  readonly earRound?: boolean;
 }
 
 /** One line: what to do now. The concept just named sits before it, smaller. */
-function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, graded }: CaptionProps) {
+function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, graded, earRound = false }: CaptionProps) {
   const wording = useWording();
   const tapOnHardware = useTapOnHardware();
   const controllerConnected = useControllerConnected();
@@ -735,7 +744,7 @@ function Caption({ phase, definition, practiceCaption, setupStatus, cueLine, gra
         <>
           {phase.named === null ? null : <span className="lesson-named">{phase.named}</span>}
           <span className="lesson-do">
-            {phase.ready ? "Ready? This one counts." : say(practiceCaption)}
+            {phase.ready ? (earRound ? "By ear first: Off, On, then try one." : "Ready? This one counts.") : say(practiceCaption)}
             {phase.ready || phase.cueLadder === null ? null : (
               <span className="lesson-target" data-testid="cue-target">
                 {cueTargetLine(phase.cueLadder)}
