@@ -164,7 +164,11 @@ function disabledStretch(): StretchNodes {
 }
 
 async function loadStretchNodes(context: BaseAudioContext): Promise<StretchNodes> {
-  const create = () => SignalsmithStretch(context, { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+  // One input, left unconnected (the stretcher plays the buffers it is given). With no input at all, the
+  // worklet is silent in a running AudioContext in Chromium, though an offline render plays it
+  // (master-tempo-realtime.browser.test.ts). An unconnected input has no channels, so it never takes
+  // the stretcher's live-input path.
+  const create = () => SignalsmithStretch(context, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
   try {
     const [a, b] = await Promise.all([create(), create()]);
     const latencySec = Math.max(await a.latency(), await b.latency());
