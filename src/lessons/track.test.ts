@@ -47,6 +47,21 @@ describe("lessonTrackFromKnownGrid (an Original)", () => {
   });
 });
 
+describe("lessonTrackFromKnownGrid (a grid set in rekordbox)", () => {
+  // Bar 1 is the grid's second beat (downbeatPhase 1): phrases count from there, 8 bars each.
+  const track = lessonTrackFromKnownGrid(
+    { id: "local-file:a", title: "Brothers", attribution: { text: "your file", url: null } },
+    { origin: "rekordbox", bpm: 120, durationSec: 40, firstBeatSec: 0.1, downbeatPhase: 1, beatGrid: [], phrases: [] },
+  );
+
+  it("grades on rekordbox's grid, phrases aligned to its bar 1, and is the Learner's own track, not an Original", () => {
+    expect(track.grid).toEqual({ bpm: 120, firstBeat: 0.1, downbeatIndex: 1, rmsResidualMs: 0 });
+    expect(track.phraseStarts).toEqual([0.6, 16.6, 32.6]);
+    expect(track.sections).toEqual([]);
+    expect(track.source).toBe("starter-pack");
+  });
+});
+
 describe("lessonTrackFromAnalysis (a starter-pack track)", () => {
   const base = {
     bpm: 125,

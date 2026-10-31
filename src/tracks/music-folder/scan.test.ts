@@ -20,7 +20,18 @@ describe("scanFolder", () => {
 
     expect(files.map((file) => file.path).toSorted()).toEqual(["Music/House/Deep/c.wav", "Music/House/b.flac", "Music/a.mp3"]);
     expect(files.find((file) => file.name === "a.mp3")).toMatchObject({ size: 4, lastModified: 1_700_000_000_000 });
-    expect(summary).toEqual({ files: 3, skipped: 0, truncated: false });
+    expect(summary).toEqual({ files: 3, skipped: 0, truncated: false, xml: [] });
+  });
+
+  it("notes .xml files (a rekordbox collection may be one) without counting them as tracks", async () => {
+    const folder = fakeFolder("Music", { "a.mp3": "a", "rekordbox.xml": "<DJ_PLAYLISTS/>", "DJ/Export.XML": "x", ".hidden.xml": "x" });
+
+    const { files, summary } = await scanAll(folder);
+
+    expect(files.map((file) => file.name)).toEqual(["a.mp3"]);
+    expect(summary.files).toBe(1);
+    expect(summary.xml.map((file) => file.path).toSorted()).toEqual(["Music/DJ/Export.XML", "Music/rekordbox.xml"]);
+    expect(summary.xml.find((file) => file.name === "rekordbox.xml")).toMatchObject({ size: 15 });
   });
 
   it("opens only audio files, and skips hidden ones such as macOS's ._ copies", async () => {

@@ -24,7 +24,7 @@ export function scanInWorker(root: DirectoryHandleLike, options: ScanOptions): P
     };
     const aborted = () => {
       finish();
-      resolve({ files: 0, skipped: 0, truncated: false });
+      resolve({ files: 0, skipped: 0, truncated: false, xml: [] });
     };
     options.signal?.addEventListener("abort", aborted);
     worker.onmessage = (event: MessageEvent<ScanReply>) => {

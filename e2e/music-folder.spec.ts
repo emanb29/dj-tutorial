@@ -115,6 +115,48 @@ test("pick a music folder: its tracks fill Freestyle's library, and a rescan fin
   await expect(folderPanel(page).getByRole("status")).toContainText("2 with no BPM", { timeout: 60_000 });
 });
 
+// A hand-written rekordbox collection (File → Export Collection in xml format): one track the
+// stubbed folder has, one it does not. rekordbox's BPM (123.50) is not one the app would guess.
+const REKORDBOX_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="7.0.0" Company="AlphaTheta"/>
+  <COLLECTION Entries="2">
+    <TRACK TrackID="1" Name="Brothers (Club Mix)" Artist="Kay Grove" Genre="Deep House" AverageBpm="123.50" Tonality="Am" Rating="204"
+      Location="file://localhost/Users/dj/Music/House/Kay%20Grove%20-%20Brothers.mp3">
+      <TEMPO Inizio="0.120" Bpm="123.50" Metro="4/4" Battito="1"/>
+      <POSITION_MARK Name="Drop" Type="0" Start="30.0" Num="0"/>
+    </TRACK>
+    <TRACK TrackID="2" Name="Not here" Location="file://localhost/Users/dj/Desktop/elsewhere.mp3"/>
+  </COLLECTION>
+</DJ_PLAYLISTS>`;
+
+test("a rekordbox.xml in the music folder: the card says how many tracks it matched, and Freestyle lists rekordbox's BPM and key", async ({ page }) => {
+  test.setTimeout(120_000);
+  const id = learner("music-rekordbox");
+  await stubPicker(page, { "House/Kay Grove - Brothers.mp3": "not music", "Other - Track.mp3": "not music", "rekordbox.xml": REKORDBOX_XML });
+  await ensureProfile(page, id);
+
+  await page.goto(`/controller?learner=${id}`);
+  const setting = page.getByRole("region", { name: "Music folder" });
+  await expect(setting.getByRole("button", { name: "Use rekordbox.xml" })).toBeVisible();
+  await expect(setting).toContainText("Export Collection in xml format");
+  await setting.getByRole("button", { name: "Pick a folder" }).click();
+  await expect(setting.getByRole("status")).toContainText("“Music”: 2 tracks");
+  await expect(setting.getByTestId("rekordbox-status")).toHaveText("rekordbox: matched 1 of 2");
+
+  await page.goto(`/?learner=${id}&track=synthetic`);
+  await page.getByRole("button", { name: "Freestyle" }).click();
+  await expect(page.locator("main.freestyle")).toHaveAttribute("data-phase", "ready");
+  const library = page.getByRole("region", { name: "Library" });
+  await library.getByRole("button", { name: "Pick a folder" }).click();
+  const brothers = library.getByRole("listitem", { name: "Brothers (Club Mix)" });
+  await expect(brothers).toContainText("123.5 BPM");
+  await expect(brothers).toContainText("8A");
+  await expect(brothers).toContainText("Kay Grove");
+  await expect(library.getByRole("listitem", { name: "Track" })).toContainText("Other");
+  await expect(folderPanel(page).getByTestId("rekordbox-status")).toHaveText("rekordbox: matched 1 of 2");
+});
+
 test("without a folder picker (Android Chrome), a folder is imported once and the page says it is not watched", async ({ page }) => {
   const id = learner("music-import");
   await page.addInitScript(() => {

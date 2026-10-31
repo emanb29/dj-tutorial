@@ -15,12 +15,19 @@
  * - Without a folder picker (Android Chrome), `importFiles` takes a `webkitdirectory` input's files
  *   once; there is nothing to watch, so a new track needs another import.
  *
+ * rekordbox (../rekordbox): with `rekordbox`, a collection picked once, or a rekordbox.xml the scan
+ * finds in the folder, gives the files it knows rekordbox's tags, BPM, key and cues; loading one
+ * returns rekordbox's grid (where it is one tempo in 4/4) in place of the analysis's guess.
+ *
  * The folder's handle is remembered (HandleStore). On a later visit `start()` reads it again only
  * if the browser still allows it; otherwise `access` is "needs-permission" and `allowAccess()`,
  * from a click, asks. Local tracks are not shareable: their licence is unknown.
  */
 import { abortedError, decodeAndHash, matchesQuery, type AudioDecoder } from "../load-audio.ts";
 import { isAudioFile, memoryHandleStore, trackForFile, type DirectoryHandleLike, type HandleStore } from "../local-files.ts";
+import { camelotFromTonality, knownGridFromRekordbox, rekordboxGrid } from "../rekordbox/grid.ts";
+import type { RekordboxLink, RekordboxStatus, XmlCandidate } from "../rekordbox/rekordbox-link.ts";
+import type { RekordboxTrack } from "../rekordbox/xml.ts";
 import type { LoadedTrack, Result, Track, TrackError, TrackSource } from "../types.ts";
 import { entryKey, memoryEntryCache, type EntryCache, type EntryRecord } from "./entry-cache.ts";
 import { createPullWorker } from "./pull-worker.ts";
@@ -48,7 +55,12 @@ export interface MusicFolderOptions {
   readonly watch: WatchFolder;
   /** Listeners hear about changes at most this often (default 250 ms), so a big scan does not re-render per file. */
   readonly notifyEveryMs?: number;
+  /** The Learner's rekordbox collection; the scan offers it the folder's .xml files. */
+  readonly rekordbox?: RekordboxLink;
 }
+
+/** rekordbox's part of the snapshot: the collection's status, and how many folder tracks it knows. */
+export type MusicFolderRekordbox = RekordboxStatus & { readonly matched: number };
 
 export type FolderAccess = "none" | "needs-permission" | "granted" | "imported";
 
@@ -73,6 +85,8 @@ export interface MusicFolderSnapshot {
   /** Whether the last scan stopped at the file limit. */
   readonly truncated: boolean;
   readonly problem: TrackError | null;
+  /** Null when the folder has no rekordbox link. */
+  readonly rekordbox: MusicFolderRekordbox | null;
 }
 
 export type FolderOutcome = { readonly ok: true } | { readonly ok: false; readonly error: TrackError };
@@ -80,6 +94,8 @@ export type FolderOutcome = { readonly ok: true } | { readonly ok: false; readon
 export interface MusicFolder {
   readonly subscribe: (listener: () => void) => () => void;
   readonly snapshot: () => MusicFolderSnapshot;
+  /** The rekordbox collection linked to this folder (pick a file, forget it); null without one. */
+  readonly rekordbox: RekordboxLink | null;
   /** The library's tracks, in the order they were found. */
   tracks(): readonly Track[];
   /** Re-opens the remembered folder if the browser still allows it. Asks nothing. */
@@ -114,6 +130,11 @@ interface Entry {
   readonly key: string;
   readonly stamp: FileStamp;
   readonly read: () => Promise<File>;
+  /** What the file name and the analysis say. */
+  base: Track;
+  /** The rekordbox entry for this file, when the collection has one. */
+  linked: RekordboxTrack | null;
+  /** `base` with rekordbox's tags over it: what the library shows. */
   track: Track;
   state: EntryState;
 }
@@ -143,12 +164,38 @@ const NEEDS_GESTURE: TrackError = {
 
 const isDomError = (error: unknown, ...names: readonly string[]) => error instanceof DOMException && names.includes(error.name);
 
+const filled = (text: string) => text.trim() !== "";
+
+/** A file's track with what rekordbox knows over it: the Learner's own tags, BPM and key there win. */
+function withRekordbox(base: Track, linked: RekordboxTrack | null): Track {
+  if (linked === null) return base;
+  const camelot = camelotFromTonality(linked.tonality);
+  const bpm = linked.averageBpm ?? linked.tempos[0]?.bpm ?? null;
+  const key = camelot ?? (filled(linked.tonality) ? linked.tonality.trim() : null);
+  return {
+    ...base,
+    ...(filled(linked.name) ? { title: linked.name.trim() } : {}),
+    ...(filled(linked.artist) ? { artist: linked.artist.trim() } : {}),
+    ...(filled(linked.genre) ? { genre: linked.genre.trim() } : {}),
+    ...(bpm === null ? {} : { bpmHint: bpm }),
+    ...(key === null ? {} : { keyHint: key }),
+    ...(linked.rating > 0 ? { rating: linked.rating } : {}),
+    ...(linked.playCount > 0 ? { playCount: linked.playCount } : {}),
+    ...(base.durationSec === undefined && linked.totalTimeSec !== null ? { durationSec: linked.totalTimeSec } : {}),
+  };
+}
+
+/** What a scan or an import found that is a candidate rekordbox.xml. */
+const xmlCandidates = (files: readonly ScannedFile[]): XmlCandidate[] =>
+  files.map((file) => ({ path: file.path, stamp: { size: file.size, lastModified: file.lastModified }, read: () => file.handle.getFile() }));
+
 export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
   const entryCache = options.entryCache ?? memoryEntryCache();
   const handleStore = options.handleStore ?? memoryHandleStore();
   const picker = options.showDirectoryPicker === undefined ? defaultPicker() : options.showDirectoryPicker;
   const notifyEveryMs = options.notifyEveryMs ?? 250;
 
+  const rekordbox = options.rekordbox ?? null;
   const entries = new Map<string, Entry>();
   const pathByKey = new Map<string, string>();
   /** Paths waiting for analysis, in the order found. */
@@ -213,13 +260,41 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     truncated = false;
   };
 
+  // rekordbox: a new or re-read collection relinks every file; the link's own status changes too.
+  let linkedLibrary = rekordbox?.library()?.library ?? null;
+  let rekordboxWork: Promise<unknown> = Promise.resolve();
+  const unlink =
+    rekordbox?.subscribe(() => {
+      const now = rekordbox.library()?.library ?? null;
+      if (now !== linkedLibrary) {
+        linkedLibrary = now;
+        for (const entry of entries.values()) relink(entry);
+      }
+      changed();
+    }) ?? (() => undefined);
+  const offerXml = (files: readonly XmlCandidate[]) => {
+    if (rekordbox === null) return;
+    rekordboxWork = rekordbox.offerFolderFiles(files).catch((error: unknown) => {
+      console.warn("tracks.folder.rekordboxFailed", { error });
+    });
+  };
+
+  /** Finds the file's rekordbox entry (again: the collection, or the file's known length, changed) and redraws its track. */
+  const relink = (entry: Entry) => {
+    const { durationSec } = entry.base;
+    const facts = { path: entry.path, size: entry.stamp.size, ...(durationSec === undefined ? {} : { durationSec }) };
+    entry.linked = rekordbox?.library()?.matcher.match(facts) ?? null;
+    entry.track = withRekordbox(entry.base, entry.linked);
+  };
+
   const withBpm = (entry: Entry, record: EntryRecord) => {
     if (record.outcome === "analysed") {
       entry.state = "analysed";
-      entry.track = { ...entry.track, ...(record.bpm === null ? {} : { bpmHint: record.bpm }), durationSec: record.durationSec };
+      entry.base = { ...entry.base, ...(record.bpm === null ? {} : { bpmHint: record.bpm }), durationSec: record.durationSec };
     } else {
       entry.state = "failed";
     }
+    relink(entry);
   };
 
   const worker = createPullWorker<{ path: string; wanted: boolean }>({
@@ -289,12 +364,14 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     for (const { path, name, stamp, read } of fresh) {
       drop(path);
       const track = trackForFile({ name, ...stamp }, path);
-      const entry: Entry = { path, key: track.id, stamp, read, track, state: "pending" };
+      const entry: Entry = { path, key: track.id, stamp, read, base: track, linked: null, track, state: "pending" };
       entries.set(path, entry);
       pathByKey.set(entry.key, path);
       const record = records.get(entry.key);
-      if (record === undefined) pending.add(path);
-      else withBpm(entry, record);
+      if (record === undefined) {
+        pending.add(path);
+        relink(entry);
+      } else withBpm(entry, record);
     }
     changed();
     worker.wake();
@@ -320,6 +397,8 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
       skipped = summary.skipped;
       truncated = summary.truncated;
       problem = null;
+      // A walk cut short may not have reached the XML: it says nothing about one being gone.
+      if (!summary.truncated || summary.xml.length > 0) offerXml(xmlCandidates(summary.xml));
       // A walk cut short says nothing about the files it did not reach: keep them.
       if (!summary.truncated) for (const path of diffScan(before, seen).removed) drop(path);
     } catch (error) {
@@ -412,6 +491,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
       skipped,
       truncated,
       problem,
+      rekordbox: rekordbox === null ? null : { ...rekordbox.status(), matched: [...entries.values()].filter((entry) => entry.linked !== null).length },
     };
     return cached;
   };
@@ -433,9 +513,15 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
       return () => listeners.delete(listener);
     },
     snapshot,
+    rekordbox,
     tracks,
 
     async start() {
+      if (rekordbox !== null) {
+        rekordboxWork = rekordbox.start().catch((error: unknown) => {
+          console.warn("tracks.folder.rekordboxNotRestored", { error });
+        });
+      }
       let remembered: DirectoryHandleLike | null;
       try {
         remembered = await handleStore.get();
@@ -499,6 +585,11 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
       scanAbort = new AbortController();
       const all = [...files];
       const audio = all.filter((file) => isAudioFile(file) && !file.name.startsWith("."));
+      offerXml(
+        all
+          .filter((file) => file.name.toLowerCase().endsWith(".xml") && !file.name.startsWith("."))
+          .map((file) => ({ path: file.webkitRelativePath || file.name, stamp: { size: file.size, lastModified: file.lastModified }, read: () => Promise.resolve(file) })),
+      );
       const name = (all[0]?.webkitRelativePath ?? "").split("/")[0] ?? "";
       if (handle !== null || folderName !== (name || "Imported files")) clearAll();
       handle = null;
@@ -534,6 +625,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
       } catch (error) {
         console.warn("tracks.folder.notForgotten", { error });
       }
+      await rekordbox?.forgetFolder();
     },
 
     want,
@@ -585,7 +677,20 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
             return { ok: false, error: gone };
           }
           loadOptions.onProgress?.({ stage: "fetching", loadedBytes: bytes.length, totalBytes: bytes.length, fraction: 0.8 });
-          return decodeAndHash(entry.track, bytes, decode, loadOptions);
+          const { linked } = entry;
+          const loaded = await decodeAndHash(entry.track, bytes, decode, loadOptions);
+          if (!loaded.ok || linked === null) return loaded;
+          // The grid the Learner set in rekordbox replaces the analysis's guess, where the decks can
+          // play it (one tempo, 4/4); a variable grid is left to the analysis.
+          const grid = rekordboxGrid(linked.tempos);
+          return {
+            ok: true,
+            value: {
+              ...loaded.value,
+              ...(grid.kind === "constant" ? { knownGrid: knownGridFromRekordbox(grid, loaded.value.audio.duration) } : {}),
+              ...(linked.cues.length === 0 ? {} : { cues: linked.cues }),
+            },
+          };
         },
       };
     },
@@ -593,6 +698,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     async settled() {
       for (;;) {
         if (scanning !== null) await scanning;
+        await rekordboxWork;
         await worker.idle();
         const runnable = wanted.some((path) => pending.has(path)) || (!backgroundPaused && pending.size > 0);
         if (scanning === null && worker.running === 0 && !runnable) return;
@@ -602,6 +708,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
 
     dispose() {
       disposed = true;
+      unlink();
       stopWatching();
       worker.stop();
       scanAbort.abort();

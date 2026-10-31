@@ -306,6 +306,7 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
                     {item.title}
                     <small>
                       {item.artist} · {bpmText(item.bpm)} · {item.camelot ?? "key ?"}
+                      {item.rating === undefined ? null : <span aria-label={`${String(item.rating)} stars`}> · {"★".repeat(item.rating)}</span>}
                     </small>
                   </span>
                   {DECKS.map((deck) => {

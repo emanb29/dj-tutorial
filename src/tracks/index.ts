@@ -64,8 +64,20 @@ export {
   type FolderOutcome,
   type MusicFolder,
   type MusicFolderOptions,
+  type MusicFolderRekordbox,
   type MusicFolderSnapshot,
 } from "./music-folder/music-folder.ts";
+export { indexedDbRekordboxCache, memoryRekordboxCache, type RekordboxCache } from "./rekordbox/cache.ts";
+export { camelotFromTonality, knownGridFromRekordbox, rekordboxGrid, type RekordboxGrid } from "./rekordbox/grid.ts";
+export { parseRekordboxFile } from "./rekordbox/parser.ts";
+export {
+  createRekordboxLink,
+  type RekordboxFileHandle,
+  type RekordboxLink,
+  type RekordboxOutcome,
+  type RekordboxStatus,
+} from "./rekordbox/rekordbox-link.ts";
+export type { RekordboxCue, RekordboxLibrary, RekordboxTrack } from "./rekordbox/xml.ts";
 export { indexedDbEntryCache, memoryEntryCache, type EntryCache, type EntryRecord } from "./music-folder/entry-cache.ts";
 export { scanAnywhere } from "./music-folder/scanner.ts";
 export { POLL_EVERY_MS, watchFolder, type FolderWatch } from "./music-folder/watch.ts";

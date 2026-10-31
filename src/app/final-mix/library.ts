@@ -4,6 +4,7 @@
 // and its audio is decoded again only when it goes onto a deck, so a long set never holds every
 // track's audio at once.
 import { analyseTrack, IndexedDbAnalysisCache } from "@analysis";
+import { HOT_CUE_SLOTS } from "@audio";
 import {
   camelotOf,
   lessonTrackFromAnalysis,
@@ -33,6 +34,8 @@ export interface LibraryItem {
   readonly bpm: number | null;
   readonly camelot: string | null;
   readonly genre: string | null;
+  /** Stars, 1-5, where the Learner rated it in rekordbox. */
+  readonly rating?: number;
   /** Prepares the track for the set: its grid, then a way to get its audio again. */
   readonly prepare: (options: PrepareOptions) => Promise<PrepareResult>;
   /** The Learner is about to use it (the ring is on it): find its grid first. Music-folder tracks only. */
@@ -49,6 +52,8 @@ export interface PrepareOptions {
 export interface PreparedTrack {
   readonly candidate: SetCandidate;
   readonly loadAudio: (signal: AbortSignal) => Promise<AudioBuffer>;
+  /** Hot cues the Learner set in rekordbox: pad (0-7) and track seconds. Freestyle puts them on the pads. */
+  readonly hotCues?: readonly { readonly slot: number; readonly sec: number }[];
 }
 
 export type PrepareResult = { readonly ok: true; readonly prepared: PreparedTrack } | { readonly ok: false; readonly message: string };
@@ -94,12 +99,14 @@ function sourceItem(source: TrackSource, track: Track): LibraryItem {
     bpm: track.bpmHint ?? null,
     camelot,
     genre,
+    ...(track.rating === undefined ? {} : { rating: track.rating }),
     // The sources decode at the engine's sample rate already (listLibrary).
     async prepare({ signal, onStatus }) {
       onStatus(`Fetching "${track.title}"…`);
       const loaded = await source.load(track, { signal });
       if (!loaded.ok) return { ok: false, message: `${loaded.error.message} ${loaded.error.fix}` };
-      const { audio, contentHash, knownGrid } = loaded.value;
+      const { audio, contentHash, knownGrid, cues = [] } = loaded.value;
+      // A grid set in rekordbox (knownGrid) is graded on as it is: the Learner may have fixed it there.
       let lessonTrack = knownGrid === undefined ? null : lessonTrackFromKnownGrid(meta(track), knownGrid);
       if (lessonTrack === null) {
         onStatus(`Finding the beat in "${track.title}"…`);
@@ -115,7 +122,8 @@ function sourceItem(source: TrackSource, track: Track): LibraryItem {
         if (!reloaded.ok) throw new Error(`${reloaded.error.message} ${reloaded.error.fix}`);
         return reloaded.value.audio;
       };
-      return { ok: true, prepared: { candidate, loadAudio } };
+      const hotCues = cues.flatMap((cue) => (cue.kind === "hot" && cue.slot !== null && cue.slot < HOT_CUE_SLOTS && cue.startSec >= 0 ? [{ slot: cue.slot, sec: cue.startSec }] : []));
+      return { ok: true, prepared: { candidate, loadAudio, ...(hotCues.length === 0 ? {} : { hotCues }) } };
     },
   };
 }

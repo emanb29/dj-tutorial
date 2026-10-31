@@ -37,7 +37,7 @@ describe("music folder in the browser", () => {
 
     const summary = await scanInWorker(folder as unknown as DirectoryHandleLike, { onBatch: (batch) => found.push(...batch) });
 
-    expect(summary).toEqual({ files: 2, skipped: 0, truncated: false });
+    expect(summary).toEqual({ files: 2, skipped: 0, truncated: false, xml: [] });
     expect(found.map((file) => file.path).toSorted()).toEqual([`${FOLDER}/House/b.wav`, `${FOLDER}/a.mp3`]);
     const a = found.find((file) => file.name === "a.mp3");
     expect(a?.size).toBe(3);

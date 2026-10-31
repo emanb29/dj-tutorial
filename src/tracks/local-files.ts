@@ -36,15 +36,15 @@ export interface DirectoryHandleLike {
   requestPermission?(descriptor: { mode: "read" }): Promise<PermissionState>;
 }
 
-/** Where the picked folder's handle is remembered between sessions. */
-export interface HandleStore {
-  get(): Promise<DirectoryHandleLike | null>;
-  put(handle: DirectoryHandleLike): Promise<void>;
+/** Where a picked folder's (or file's) handle is remembered between sessions. */
+export interface HandleStore<Handle = DirectoryHandleLike> {
+  get(): Promise<Handle | null>;
+  put(handle: Handle): Promise<void>;
   clear(): Promise<void>;
 }
 
-export function memoryHandleStore(): HandleStore {
-  let stored: DirectoryHandleLike | null = null;
+export function memoryHandleStore<Handle = DirectoryHandleLike>(): HandleStore<Handle> {
+  let stored: Handle | null = null;
   return {
     get: () => Promise.resolve(stored),
     put: (handle) => {
@@ -105,9 +105,9 @@ function request<Value>(make: (store: IDBObjectStore) => IDBRequest<Value>, mode
  * Keeps the handle in IndexedDB (handles are structured-cloneable; nothing of the files is stored).
  * `key` tells apart folders kept for different uses (the music folder setting keeps its own).
  */
-export function indexedDbHandleStore(key = DIRECTORY_KEY): HandleStore {
+export function indexedDbHandleStore<Handle = DirectoryHandleLike>(key = DIRECTORY_KEY): HandleStore<Handle> {
   return {
-    get: async () => (await request<unknown>((store) => store.get(key), "readonly")) as DirectoryHandleLike | null ?? null,
+    get: async () => (await request<unknown>((store) => store.get(key), "readonly")) as Handle | null ?? null,
     put: async (handle) => {
       await request((store) => store.put(handle, key), "readwrite");
     },

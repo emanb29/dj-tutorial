@@ -29,7 +29,13 @@ export interface ScanSummary {
   readonly skipped: number;
   /** Whether the walk stopped at the file limit. */
   readonly truncated: boolean;
+  /** .xml files on the way (a rekordbox collection may be one), the first MAX_XML_FILES; not tracks. */
+  readonly xml: readonly ScannedFile[];
 }
+
+/** XML files noted per walk at most: a rekordbox export is one file, not hundreds. */
+export const MAX_XML_FILES = 20;
+const isXml = (name: string) => name.toLowerCase().endsWith(".xml");
 
 export interface ScanOptions {
   /** Called with each batch of files as the walk finds them. */
@@ -54,6 +60,7 @@ export async function scanFolder(root: DirectoryHandleLike, options: ScanOptions
   let batch: ScannedFile[] = [];
   let files = 0;
   let skipped = 0;
+  const xml: ScannedFile[] = [];
   const flush = () => {
     if (batch.length === 0) return;
     options.onBatch(batch);
@@ -76,13 +83,18 @@ export async function scanFolder(root: DirectoryHandleLike, options: ScanOptions
         }
         continue;
       }
-      if (!hasAudioExtension(entry.name)) continue;
+      const xmlFile = isXml(entry.name);
+      if (!hasAudioExtension(entry.name) && !(xmlFile && xml.length < MAX_XML_FILES)) continue;
       let file: File;
       try {
         file = await entry.getFile();
       } catch (error) {
         skipped += 1;
         console.warn("tracks.folder.unreadable", { path, reason: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
+      if (xmlFile) {
+        xml.push({ path, name: entry.name, size: file.size, lastModified: file.lastModified, handle: entry });
         continue;
       }
       files += 1;
@@ -95,7 +107,7 @@ export async function scanFolder(root: DirectoryHandleLike, options: ScanOptions
   flush();
   const truncated = files >= maxFiles;
   if (truncated) console.warn("tracks.folder.truncated", { folder: root.name, maxFiles });
-  return { files, skipped, truncated };
+  return { files, skipped, truncated, xml };
 }
 
 export interface ScanDiff {

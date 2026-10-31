@@ -1,13 +1,17 @@
 // The music folder setting: pick a folder once and its tracks fill the library, kept up to date.
 // On /controller (the settings) in full, and in Freestyle's library as one line with Rescan.
 // Opening the browser's folder picker, and allowing access again, need a click, tap or key: MIDI
-// is not a user gesture, so with the FLX4 the ring's caption says so.
+// is not a user gesture, so with the FLX4 the ring's caption says so. The same goes for picking
+// rekordbox.xml ("Use rekordbox.xml"), whose BPMs, grids, keys and cues fill in the folder's tracks.
 import { useState, useSyncExternalStore } from "react";
 import type { MusicFolder, MusicFolderSnapshot } from "@tracks";
 import { useControllerConnected } from "../controller/KeyHint.tsx";
 import "./music-folder.css";
 
-export const GESTURE_NOTICE = "Picking a folder needs the mouse, keyboard or screen. Turn BROWSE to go past it.";
+/** Where rekordbox.xml comes from, for a Learner who has not made one. */
+export const REKORDBOX_HOW = "rekordbox: File → Export Collection in xml format. Pick it, or save it in your music folder.";
+
+export const GESTURE_NOTICE = "Picking a folder or file needs the mouse, keyboard or screen. Turn BROWSE to go past it.";
 
 export interface MusicFolderPanelProps {
   readonly folder: MusicFolder;
@@ -38,6 +42,17 @@ export function folderCaption(snapshot: MusicFolderSnapshot): string {
   if (snapshot.access === "needs-permission") return `${name}: the browser needs one click to read it again.`;
   if (snapshot.scanning) return `Looking in ${name}… ${plural(snapshot.found, "track")} so far`;
   return `${name}: ${folderCounts(snapshot)}`;
+}
+
+/** rekordbox's line: how many of the folder's tracks it knows. Null without a collection. */
+export function rekordboxLine(snapshot: MusicFolderSnapshot): string | null {
+  const linked = snapshot.rekordbox;
+  if (linked === null) return null;
+  if (linked.reading) return `rekordbox: reading “${linked.name ?? "rekordbox.xml"}”…`;
+  if (linked.needsPermission) return "rekordbox.xml: the browser needs one click to read it again.";
+  if (linked.from === null) return null;
+  const skipped = linked.skipped > 0 ? ` · ${plural(linked.skipped, "entry", "entries")} skipped` : "";
+  return `rekordbox: matched ${linked.matched.toLocaleString()} of ${snapshot.found.toLocaleString()}${skipped}`;
 }
 
 /** How new tracks get in. */
@@ -93,8 +108,12 @@ export function MusicFolderPanel({ folder, compact = false }: MusicFolderPanelPr
     </label>
   );
 
-  const shownProblem = problem ?? (snapshot.problem === null ? null : `${snapshot.problem.message} ${snapshot.problem.fix}`);
+  const folderProblem = snapshot.problem ?? snapshot.rekordbox?.problem ?? null;
+  const shownProblem = problem ?? (folderProblem === null ? null : `${folderProblem.message} ${folderProblem.fix}`);
   const refresh = refreshLine(snapshot);
+  const link = folder.rekordbox;
+  const linked = snapshot.rekordbox;
+  const rekordboxText = rekordboxLine(snapshot);
 
   return (
     <div className={compact ? "music-folder music-folder-compact" : "music-folder"} data-testid="music-folder" data-access={snapshot.access} data-scanning={snapshot.scanning}>
@@ -120,6 +139,39 @@ export function MusicFolderPanel({ folder, compact = false }: MusicFolderPanelPr
           </button>
         ) : null}
       </div>
+      {rekordboxText === null ? null : (
+        <p className="music-folder-caption music-folder-rekordbox" data-testid="rekordbox-status" aria-live="polite">
+          {rekordboxText}
+        </p>
+      )}
+      {!compact && link !== null && linked !== null ? (
+        <div className="music-folder-buttons">
+          {linked.canPickFile ? (
+            <button type="button" className="btn" {...gestureProps} onClick={() => { run(() => link.pickFile()); }}>
+              {linked.needsPermission ? "Allow rekordbox.xml" : "Use rekordbox.xml"}
+            </button>
+          ) : (
+            <label className="btn music-folder-import" {...gestureProps}>
+              Use rekordbox.xml
+              <input
+                type="file"
+                accept=".xml,text/xml,application/xml"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file !== undefined) run(() => link.useFile(file));
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          )}
+          {linked.from === "file" ? (
+            <button type="button" className="btn btn-quiet" onClick={() => void link.forgetFile()}>
+              Forget rekordbox.xml
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {!compact && linked !== null && linked.from === null && !linked.reading ? <p className="hw-hint">{REKORDBOX_HOW}</p> : null}
       {controllerConnected && ringOnPicker ? (
         <p className="hw-hint" data-testid="music-folder-gesture">
           {GESTURE_NOTICE}

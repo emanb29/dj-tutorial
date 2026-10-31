@@ -45,7 +45,11 @@ interface TrackMeta {
   readonly attribution: LessonTrack["attribution"];
 }
 
-/** An Original's exact grid (src/tracks KnownBeatGrid): no analysis, sections from the generator. */
+/**
+ * A known grid (src/tracks KnownBeatGrid): an Original's, with sections from the generator, or one the
+ * Learner set in rekordbox, with none. Either way no analysis, and phrases count from its bar 1. A
+ * rekordbox track is the Learner's own file: not an Original (which can be swapped for another).
+ */
 export function lessonTrackFromKnownGrid(
   meta: TrackMeta,
   known: KnownBeatGrid,
@@ -56,7 +60,7 @@ export function lessonTrackFromKnownGrid(
     title: meta.title,
     ...(meta.artist === undefined ? {} : { artist: meta.artist }),
     attribution: meta.attribution,
-    source: "original",
+    source: known.origin === "generator-meta" ? "original" : "starter-pack",
     durationSec: known.durationSec,
     grid,
     phraseStarts: phraseStartsOf(grid, known.durationSec),

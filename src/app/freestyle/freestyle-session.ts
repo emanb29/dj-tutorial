@@ -87,6 +87,8 @@ export class FreestyleSession {
         this.send({ control: "deck-cue", deck, value: true });
         this.send({ control: "deck-cue", deck, value: false });
       }
+      // The hot cues the Learner set in rekordbox, on the same pads (A = pad 1). A load clears the pads.
+      for (const cue of prepared.hotCues ?? []) this.send({ control: "hot-cue-set", deck, slot: cue.slot, pos: cue.sec });
       this.onDeck[deck] = track;
       return { ok: true };
     } catch (error) {

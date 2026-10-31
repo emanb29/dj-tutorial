@@ -1,12 +1,27 @@
 // The one music folder for the app (the setting on /controller, the library in Freestyle), made on
 // first use and kept for the page's life, so a scan goes on while the Learner moves between pages.
 // Its analyser is the Lessons' own: decode at 44.1 kHz, hash the file, analyse with the shared
-// analysis cache, so loading the track onto a deck later finds its grid there.
+// analysis cache, so loading the track onto a deck later finds its grid there. A linked rekordbox
+// collection's grid, where it matches a file, is used in place of that one (src/tracks/rekordbox).
 import { analyseTrack, IndexedDbAnalysisCache } from "@analysis";
 import { hashTrackBytes } from "@shared/track-hash.ts";
-import { createMusicFolder, decodeOffline, indexedDbEntryCache, indexedDbHandleStore, scanAnywhere, watchFolder, type AnalyseFileResult, type MusicFolder } from "@tracks";
+import {
+  createMusicFolder,
+  createRekordboxLink,
+  decodeOffline,
+  indexedDbEntryCache,
+  indexedDbHandleStore,
+  indexedDbRekordboxCache,
+  parseRekordboxFile,
+  scanAnywhere,
+  watchFolder,
+  type AnalyseFileResult,
+  type MusicFolder,
+  type RekordboxFileHandle,
+} from "@tracks";
 
 const HANDLE_KEY = "music-folder";
+const REKORDBOX_HANDLE_KEY = "rekordbox-xml";
 
 /** Reads `aborted` afresh; TypeScript would otherwise keep an earlier check's narrowing across awaits. */
 const wasAborted = (signal: AbortSignal) => signal.aborted;
@@ -41,6 +56,12 @@ export function musicFolder(): MusicFolder {
       handleStore: indexedDbHandleStore(HANDLE_KEY),
       scan: scanAnywhere,
       watch: watchFolder,
+      // The Learner's rekordbox collection: parsed in a worker, kept in IndexedDB, never sent anywhere.
+      rekordbox: createRekordboxLink({
+        parse: parseRekordboxFile,
+        cache: indexedDbRekordboxCache(),
+        handleStore: indexedDbHandleStore<RekordboxFileHandle>(REKORDBOX_HANDLE_KEY),
+      }),
     });
     shared.start().catch((error: unknown) => {
       console.warn("[music-folder] the remembered folder could not be re-opened; pick it again", error);

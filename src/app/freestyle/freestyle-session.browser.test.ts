@@ -62,6 +62,16 @@ describe("FreestyleSession", () => {
     expect(session.track("A")?.trackId).toBe("free/a");
   });
 
+  it("puts the track's rekordbox hot cues on the pads, and clears the last track's", async () => {
+    const created = await offlineEngine();
+    const session = new FreestyleSession(created, { hardwareConnected: () => false });
+    await session.load("A", { ...prepared("free/a", 0), hotCues: [{ slot: 0, sec: 1.5 }, { slot: 3, sec: 2.25 }] }, signal());
+    expect(created.deckState("A").hotCues).toEqual([1.5, null, null, 2.25, null, null, null, null]);
+
+    await session.load("A", prepared("free/b", 0), signal());
+    expect(created.deckState("A").hotCues).toEqual([null, null, null, null, null, null, null, null]);
+  });
+
   it("sets TRIM out of the red without a controller, and leaves it to the hardware with one", async () => {
     const created = await offlineEngine();
     let connected = false;

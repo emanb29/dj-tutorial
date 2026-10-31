@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MusicFolderSnapshot } from "@tracks";
-import { folderCaption, folderCounts } from "./MusicFolderPanel.tsx";
+import { folderCaption, folderCounts, rekordboxLine } from "./MusicFolderPanel.tsx";
 
 const snapshot = (overrides: Partial<MusicFolderSnapshot> = {}): MusicFolderSnapshot => ({
   version: 1,
@@ -15,7 +15,36 @@ const snapshot = (overrides: Partial<MusicFolderSnapshot> = {}): MusicFolderSnap
   skipped: 0,
   truncated: false,
   problem: null,
+  rekordbox: null,
   ...overrides,
+});
+
+const rekordbox = (overrides: Partial<NonNullable<MusicFolderSnapshot["rekordbox"]>> = {}): NonNullable<MusicFolderSnapshot["rekordbox"]> => ({
+  version: 1,
+  from: "folder",
+  name: "Music/rekordbox.xml",
+  reading: false,
+  tracks: 4000,
+  skipped: 0,
+  needsPermission: false,
+  canPickFile: true,
+  problem: null,
+  matched: 0,
+  ...overrides,
+});
+
+describe("rekordbox caption", () => {
+  it("says how many of the folder's tracks rekordbox knows", () => {
+    expect(rekordboxLine(snapshot({ found: 130, rekordbox: rekordbox({ matched: 120 }) }))).toBe("rekordbox: matched 120 of 130");
+    expect(rekordboxLine(snapshot({ found: 1, rekordbox: rekordbox({ matched: 1, skipped: 3 }) }))).toBe("rekordbox: matched 1 of 1 · 3 entries skipped");
+  });
+
+  it("says when it is reading, or needs a click, and nothing without a collection", () => {
+    expect(rekordboxLine(snapshot({ rekordbox: rekordbox({ reading: true }) }))).toBe("rekordbox: reading “Music/rekordbox.xml”…");
+    expect(rekordboxLine(snapshot({ rekordbox: rekordbox({ from: "file", needsPermission: true }) }))).toBe("rekordbox.xml: the browser needs one click to read it again.");
+    expect(rekordboxLine(snapshot({ rekordbox: rekordbox({ from: null, name: null }) }))).toBeNull();
+    expect(rekordboxLine(snapshot())).toBeNull();
+  });
 });
 
 describe("music folder captions", () => {
