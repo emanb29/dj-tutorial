@@ -44,7 +44,7 @@ const MAX_STEP_SEC = 2;
 /** The engine's scheduling lookahead on a real output (baseLatency + 2 quanta): changes take effect a little after the press. */
 const LOOKAHEAD_SEC = 0.0116 + 256 / SAMPLE_RATE;
 
-const ORIGINALS: readonly OriginalMeta[] = z.array(OriginalMetaSchema).parse(fixture);
+export const ORIGINALS: readonly OriginalMeta[] = z.array(OriginalMetaSchema).parse(fixture);
 
 /** The Original as the index lists it (src/tracks/originals.ts `toTrack`): what the rotation reads. */
 function indexTrack(meta: OriginalMeta): Track {
@@ -73,7 +73,7 @@ const metaOf = (track: Track): OriginalMeta => {
 };
 
 /** The Lesson track as the loader builds it from the Original's meta (track-loader.ts). */
-function lessonTrackOf(meta: OriginalMeta): LessonTrack {
+export function lessonTrackOf(meta: OriginalMeta): LessonTrack {
   const track = indexTrack(meta);
   return lessonTrackFromKnownGrid({ id: historyId(track), title: track.title, attribution: track.attribution }, knownGridFromMeta(meta));
 }
@@ -138,7 +138,7 @@ function withTops(samples: Float32Array<ArrayBuffer>, meta: OriginalMeta, sample
 }
 
 const samplesCache = new Map<string, Float32Array<ArrayBuffer>>();
-function audioOf(meta: OriginalMeta, context: BaseAudioContext): AudioBuffer {
+export function audioOf(meta: OriginalMeta, context: BaseAudioContext): AudioBuffer {
   if (meta.firstDownbeatSec !== 0) throw new Error(`Original ${meta.id}: the stand-in audio assumes bar 1 at 0 s.`);
   const samples = samplesCache.get(meta.id) ?? withTops(synthesizeHouse(layoutOf(meta), context.sampleRate), meta, context.sampleRate);
   samplesCache.set(meta.id, samples);

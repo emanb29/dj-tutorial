@@ -58,6 +58,22 @@ export function sineRmsDb(peak: number): number {
   return 20 * Math.log10(peak / Math.SQRT2);
 }
 
+/**
+ * Level of one frequency between two times, dB (Goertzel over a Hann window): how much of the render
+ * sits at `hz`, in a mix as well as a pure tone. Only differences between two readings mean anything.
+ */
+export function toneLevelDb(rendered: AudioBuffer, channel: number, fromSec: number, toSec: number, hz: number): number {
+  const data = rendered.getChannelData(channel).subarray(Math.round(fromSec * rendered.sampleRate), Math.round(toSec * rendered.sampleRate));
+  const coefficient = 2 * Math.cos((2 * Math.PI * hz) / rendered.sampleRate);
+  let [previous, beforePrevious] = [0, 0];
+  for (let index = 0; index < data.length; index++) {
+    const hann = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (data.length - 1));
+    [previous, beforePrevious] = [(data[index] ?? 0) * hann + coefficient * previous - beforePrevious, previous];
+  }
+  const power = previous * previous + beforePrevious * beforePrevious - coefficient * previous * beforePrevious;
+  return 10 * Math.log10(power / data.length ** 2 + 1e-30);
+}
+
 /** Upward zero crossings per second between two times: the frequency of a pure tone. */
 export function toneFrequency(rendered: AudioBuffer, channel: number, fromSec: number, toSec: number): number {
   const data = rendered.getChannelData(channel);

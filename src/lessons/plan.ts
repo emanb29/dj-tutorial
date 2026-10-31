@@ -112,9 +112,28 @@ const FULL_SECTIONS: ReadonlySet<string> = new Set(["groove", "drop", "main", "c
  */
 export function fullGroovePhrase(track: LessonTrack, phrases: number): number | null {
   if (track.sections.length === 0) return steadyPhrase(track);
+  return firstRunIn(track, phrases, FULL_SECTIONS);
+}
+
+/**
+ * Sections where chords or a melody play over the groove. The Originals' intros (and the synthetic
+ * groove's first two sections) are drums and at most a short, low bass: nothing there holds a note.
+ */
+const MELODIC_SECTIONS: ReadonlySet<string> = new Set(["drop", "chorus", "peak", "main"]);
+
+/**
+ * The first phrase at or after 2 where it and the next `phrases − 1` phrases sit in sections with
+ * chords or a melody, so a change of pitch is heard (tempo-fader's Master Tempo clips); null when the
+ * track names none.
+ */
+export function melodicPhrase(track: LessonTrack, phrases: number): number | null {
+  return firstRunIn(track, phrases, MELODIC_SECTIONS);
+}
+
+function firstRunIn(track: LessonTrack, phrases: number, names: ReadonlySet<string>): number | null {
   for (let phrase = 2; phrase + phrases <= track.phraseStarts.length; phrase += 1) {
     const run = Array.from({ length: phrases }, (_, index) => sectionOf(track, phrase + index));
-    if (run.every((name) => name !== null && FULL_SECTIONS.has(name))) return phrase;
+    if (run.every((name) => name !== null && names.has(name))) return phrase;
   }
   return null;
 }

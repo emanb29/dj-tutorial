@@ -102,7 +102,8 @@ function kick(t: number): number {
   return Math.sin(phase) * Math.exp(-t / 0.18);
 }
 
-const PAD_HZ = [220, 261.63, 329.63];
+/** The pad chord when a layout names none: A minor. */
+export const PAD_HZ: readonly number[] = [220, 261.63, 329.63];
 
 /** Mono samples of the layout at `sampleRate`, peak-normalised to `layout.peakDbfs`. */
 export function synthesizeHouse(layout: SyntheticLayout, sampleRate: number): Float32Array<ArrayBuffer> {

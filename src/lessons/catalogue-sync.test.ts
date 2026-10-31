@@ -144,6 +144,15 @@ describe("tempo-fader", () => {
     expect(definition.hook[1]?.named).toBe("Master Tempo on: still fast, back in key.");
   });
 
+  it("plays the hook, the clips and the Check from the drop, where the chords are, not the drum-only intro", () => {
+    // The synthetic groove's drop (bars 49–64) is its first 16 bars with the pad.
+    expect(pos).toBe(phraseStart(track.grid, 7));
+    expect(definition.practiceClip?.(track, false).pos).toBe(pos);
+    expect(plan.loop).toEqual({ deck: "B", atPos: phraseStart(track.grid, 9), reset: "positions" });
+    const noNames: LessonTrack = { ...track, sections: [] };
+    expect(definition.planCheck(noNames, 1).deckB?.pos).toBe(phraseStart(track.grid, 2));
+  });
+
   it("offers the Check's own clips, Off and On, to practise by ear before the Check", () => {
     const clips = definition.planCheck(track, 1).clips ?? {};
     const asked = Object.values(clips);

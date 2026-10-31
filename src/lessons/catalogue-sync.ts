@@ -3,7 +3,7 @@
 // in brackets. sync-blend and crossfader mix two tracks (`partner`); the others use one.
 import type { CheckQuestion, CheckPlan, DeckSetups, LessonDefinition, LessonTrack, ListeningClip, LoopPlan } from "./types.ts";
 import type { LessonTask } from "@shared/attempt.ts";
-import { barsSec, fromOwnCue, fullGroovePhrase, heardSpan, steadyPhrase, steadyRun } from "./plan.ts";
+import { barsSec, fromOwnCue, fullGroovePhrase, heardSpan, melodicPhrase, steadyPhrase, steadyRun } from "./plan.ts";
 import { setUpStep } from "./set-up-asks.ts";
 import { beatSec, phraseStart, trackOnDeck } from "./track.ts";
 
@@ -47,16 +47,24 @@ export function tempoTargets(track: LessonTrack): number[] {
   return TARGET_OFFSETS_BPM.map((offset) => roundBpm(track.grid.bpm + offset));
 }
 
+/**
+ * Where Lesson 8 plays, hook to Check: 16 bars with chords or a melody (an Original's drop, the
+ * synthetic groove's drop with its pad), so faster with Master Tempo off is heard higher; drums alone
+ * sound the same with it on or off. A track naming no such section falls back to its full groove, then
+ * to its steady phrase.
+ */
+const tempoPhrase = (track: LessonTrack) => melodicPhrase(track, 2) ?? fullGroovePhrase(track, 2) ?? steadyPhrase(track);
+
 function tempoDecks(track: LessonTrack): DeckSetups {
-  const pos = phraseStart(track.grid, steadyPhrase(track));
+  const pos = phraseStart(track.grid, tempoPhrase(track));
   return {
     A: { pos, fader: 0, play: false },
     B: { pos, fader: 1, play: true, sync: false, tempoRange: 6, tempoPercent: 0, masterTempo: false },
   };
 }
 
-/** B loops one steady 16 bars, whatever its tempo: the loop follows B's own position. */
-const tempoLoop = (track: LessonTrack): LoopPlan => ({ deck: "B", atPos: phraseStart(track.grid, steadyPhrase(track) + 2), reset: "positions" });
+/** B loops those 16 bars, whatever its tempo: the loop follows B's own position. */
+const tempoLoop = (track: LessonTrack): LoopPlan => ({ deck: "B", atPos: phraseStart(track.grid, tempoPhrase(track) + 2), reset: "positions" });
 
 const tempoFader: LessonDefinition = {
   id: "tempo-fader",
@@ -96,7 +104,7 @@ const tempoFader: LessonDefinition = {
   }),
   tips: {
     "tempo-fader.set-bpm": ["Watch B's BPM; stop when it reads the target.", "Close? Fine-tune: hold Shift as you drag, or slide your finger out to the side."],
-    "tempo-fader.master-tempo-ear": ["Off: faster and higher. On: faster, same note.", "Listen to the bass note when the tempo jumps."],
+    "tempo-fader.master-tempo-ear": ["Off: faster and higher. On: faster, same note.", "Hum the chord before it speeds up. Still in tune after? On. Higher? Off."],
   },
 };
 
