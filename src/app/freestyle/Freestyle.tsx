@@ -1,7 +1,7 @@
 // Freestyle (/freestyle): a small rekordbox. Both decks, every control, the Learner's library (the
 // Originals, the starter pack, their own files) and their sound output; no Lesson, no grading, nothing
 // recorded. The DDJ-FLX4 works here as everywhere (the Controller wires it).
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createAudioEngine, outputLine, type AudioEngine } from "@audio";
 import { midiConnection } from "@midi";
 import type { DeckId } from "@shared/attempt.ts";
@@ -11,6 +11,8 @@ import { KeyHint, useControllerConnected } from "../controller/KeyHint.tsx";
 import { currentOutputPlan } from "../audio-output.ts";
 import { listLibrary, type Library, type LibraryItem, type PreparedTrack } from "../final-mix/library.ts";
 import type { TrackPreference } from "../lesson/track-loader.ts";
+import { MusicFolderPanel, useMusicFolder } from "../music-folder/MusicFolderPanel.tsx";
+import { musicFolder } from "../music-folder/shared-folder.ts";
 import { FreestyleSession } from "./freestyle-session.ts";
 import "../lesson/lesson.css";
 import "../final-mix/final-mix.css";
@@ -24,6 +26,8 @@ export interface FreestyleProps {
 /** Everything on the controller, except TAP: a Lesson's ear-training input, which has nothing to time here. */
 const FREESTYLE_UNLOCKS: ReadonlySet<ControlId> = new Set(ALL_CONTROL_IDS.filter((id) => id !== "tap"));
 const DECKS: readonly DeckId[] = ["A", "B"];
+/** Rows drawn at once: a big music folder stays quick to scroll. Search finds the rest. */
+const SHOWN_LIMIT = 200;
 
 type Status = { readonly kind: "starting"; readonly line: string } | { readonly kind: "ready" } | { readonly kind: "failed"; readonly message: string };
 
@@ -52,6 +56,8 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
   const prepared = useRef(new Map<string, PreparedTrack>());
   const abort = useRef(new AbortController());
   const controllerConnected = useControllerConnected();
+  const [folder] = useState(musicFolder);
+  const folderSnapshot = useMusicFolder(folder);
 
   // The engine and the library, once per visit.
   useEffect(() => {
@@ -73,7 +79,7 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
         created = await createAudioEngine({ masterTempo: true, output: { plan, headphones: true } });
         if (cancelled()) return;
         setStatus({ kind: "starting", line: "Opening your library…" });
-        const listed = await listLibrary(trackPreference, created.context.sampleRate, controller.signal);
+        const listed = await listLibrary(trackPreference, created.context.sampleRate, controller.signal, folder);
         if (cancelled()) return;
         setEngine(created);
         setSession(new FreestyleSession(created, { hardwareConnected: () => midiConnection().connected }));
@@ -90,7 +96,7 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
       controller.abort();
       close();
     };
-  }, [trackPreference]);
+  }, [trackPreference, folder]);
 
   // Audio starts only after a gesture.
   useEffect(() => {
@@ -116,6 +122,21 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
   // The play state decides which deck can load: re-render when a deck starts or stops.
   const [, setPlayTick] = useState(0);
   useEffect(() => engine?.on("deck", () => { setPlayTick((tick) => tick + 1); }), [engine]);
+
+  // The music folder finds BPMs in the background only while no deck plays, so it never competes
+  // with the music; the track with the ring is still analysed at once.
+  useEffect(() => {
+    if (engine === null) return;
+    const quietOnly = () => {
+      folder.setBackgroundPaused(DECKS.some((deck) => engine.deckState(deck).playing));
+    };
+    quietOnly();
+    const unsubscribe = engine.on("deck", quietOnly);
+    return () => {
+      unsubscribe();
+      folder.setBackgroundPaused(true);
+    };
+  }, [engine, folder]);
 
   // End-to-end tests read the engine and what each deck holds.
   useEffect(() => {
@@ -164,7 +185,14 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
     [engine, session],
   );
 
-  const shown = items.filter((item) => `${item.title} ${item.artist} ${item.genre ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase()));
+  // The folder's items change as it scans and finds BPMs (its snapshot's version).
+  const folderItems = useMemo(() => (folderSnapshot.found === 0 ? [] : (library?.folder?.items() ?? [])), [library, folderSnapshot]);
+  const allItems = useMemo(() => {
+    const keys = new Set(items.map((item) => item.key));
+    return [...items, ...folderItems.filter((item) => !keys.has(item.key))];
+  }, [items, folderItems]);
+  const matching = allItems.filter((item) => `${item.title} ${item.artist} ${item.genre ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase()));
+  const shown = matching.slice(0, SHOWN_LIMIT);
 
   // The FLX4, the rekordbox way: BROWSE turns the ring through the tracks, LOAD A / LOAD B load the one
   // with the ring. Here LOAD always loads (never Enter or R); a playing deck refuses, as on screen.
@@ -253,12 +281,18 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
                 </label>
               )}
             </div>
+            <MusicFolderPanel folder={folder} compact />
             {preparing === null ? null : (
               <p className="set-preparing" role="status">
                 {preparing}
               </p>
             )}
             {shown.length === 0 ? <p className="set-empty">No tracks here yet. Add your own files.</p> : null}
+            {matching.length > shown.length ? (
+              <p className="set-preparing" data-testid="library-more">
+                Showing {shown.length} of {matching.length.toLocaleString()}. Search to find the rest.
+              </p>
+            ) : null}
             {controllerConnected ? (
               <p className="set-preparing" data-testid="flx4-library-hint">
                 FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd>
@@ -267,7 +301,7 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
             {/* Each track is one stop for BROWSE (its → A / → B are for the screen; LOAD is the FLX4's). */}
             <ul data-nav-start>
               {shown.map((item) => (
-                <li key={item.key} data-library={item.key} tabIndex={0} aria-label={item.title}>
+                <li key={item.key} data-library={item.key} tabIndex={0} aria-label={item.title} onFocus={item.want}>
                   <span className="set-title">
                     {item.title}
                     <small>

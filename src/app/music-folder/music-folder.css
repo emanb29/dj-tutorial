@@ -1,0 +1,37 @@
+/* The music folder setting: a caption, a row of buttons, a hint. Compact in a library. */
+
+.music-folder p {
+  margin: 0 0 var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.music-folder-caption {
+  font-variant-numeric: tabular-nums;
+}
+
+.music-folder-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.music-folder-compact {
+  margin-bottom: var(--space-2);
+}
+
+.music-folder-compact .music-folder-caption {
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.music-folder-import {
+  position: relative;
+}
+
+.music-folder-import input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}

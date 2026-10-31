@@ -101,15 +101,18 @@ function request<Value>(make: (store: IDBObjectStore) => IDBRequest<Value>, mode
   });
 }
 
-/** Keeps the handle in IndexedDB (handles are structured-cloneable; nothing of the files is stored). */
-export function indexedDbHandleStore(): HandleStore {
+/**
+ * Keeps the handle in IndexedDB (handles are structured-cloneable; nothing of the files is stored).
+ * `key` tells apart folders kept for different uses (the music folder setting keeps its own).
+ */
+export function indexedDbHandleStore(key = DIRECTORY_KEY): HandleStore {
   return {
-    get: async () => (await request<unknown>((store) => store.get(DIRECTORY_KEY), "readonly")) as DirectoryHandleLike | null ?? null,
+    get: async () => (await request<unknown>((store) => store.get(key), "readonly")) as DirectoryHandleLike | null ?? null,
     put: async (handle) => {
-      await request((store) => store.put(handle, DIRECTORY_KEY), "readwrite");
+      await request((store) => store.put(handle, key), "readwrite");
     },
     clear: async () => {
-      await request((store) => store.delete(DIRECTORY_KEY), "readwrite");
+      await request((store) => store.delete(key), "readwrite");
     },
   };
 }
@@ -131,13 +134,20 @@ export interface LocalFileSource extends TrackSource {
   forgetDirectory(): Promise<void>;
 }
 
-function isAudio(file: Pick<File, "name" | "type">): boolean {
-  if (file.type.startsWith("audio/")) return true;
-  if (file.type !== "" && !file.type.startsWith("video/")) return false;
-  return AUDIO_EXTENSIONS.has(file.name.split(".").pop()?.toLowerCase() ?? "");
+/** Whether a file name ends in an audio extension (for folder walks, before the file is opened). */
+export function hasAudioExtension(name: string): boolean {
+  return AUDIO_EXTENSIONS.has(name.split(".").pop()?.toLowerCase() ?? "");
 }
 
-function trackForFile(file: File, path: string): Track {
+/** Whether a file is audio, by its type or, when the browser gives none, its extension. */
+export function isAudioFile(file: Pick<File, "name" | "type">): boolean {
+  if (file.type.startsWith("audio/")) return true;
+  if (file.type !== "" && !file.type.startsWith("video/")) return false;
+  return hasAudioExtension(file.name);
+}
+
+/** The track for a file at `path`: "Artist - Title" from the name; the id is path, size and lastModified. */
+export function trackForFile(file: Pick<File, "name" | "size" | "lastModified">, path: string): Track {
   const stem = file.name.replace(/\.[^.]+$/, "");
   const split = /^(.+?)\s+-\s+(.+)$/.exec(stem);
   return {
@@ -172,7 +182,7 @@ export function createLocalFileSource(options: LocalFileOptions = {}): LocalFile
   const files = new Map<string, { track: Track; file: File }>();
 
   function add(file: File, path: string): Track | null {
-    if (!isAudio(file)) return null;
+    if (!isAudioFile(file)) return null;
     const track = trackForFile(file, path);
     if (files.has(track.id)) return null;
     files.set(track.id, { track, file });

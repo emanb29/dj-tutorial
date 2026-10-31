@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ALL_LEDS, allLedsOff, CHECKLIST, describeInput, Flx4Decoder, ledMessages, midiConnection, physicalControlOf, type MidiStatus } from "@midi";
 import { CONTROLLER_KEYS, NAVIGATION_BUTTONS, pressName } from "../controller/flx4-keys.ts";
 import { ButtonHint } from "../controller/KeyHint.tsx";
+import { MusicFolderPanel } from "../music-folder/MusicFolderPanel.tsx";
+import { musicFolder } from "../music-folder/shared-folder.ts";
 import { OutputPicker } from "./OutputPicker.tsx";
 import { PositionsCard } from "./PositionsCard.tsx";
 import { TimingCheck } from "./TimingCheck.tsx";
@@ -85,6 +87,11 @@ export function ControllerPage({ onBack }: { readonly onBack: () => void }) {
       <section aria-label="Sound output" className="hw-card">
         <h2>Where the sound goes</h2>
         <OutputPicker />
+      </section>
+
+      <section aria-label="Music folder" className="hw-card" id="music-folder">
+        <h2>Your music folder</h2>
+        <MusicFolderPanel folder={musicFolder()} />
       </section>
 
       <section aria-label="Timing check" className="hw-card" id="timing-check">

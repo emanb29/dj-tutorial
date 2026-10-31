@@ -82,8 +82,12 @@ export const SPEC_RULES: readonly SpecRule[] = [
   // Grading a mix recorded elsewhere (ISS-96): its page and the mix grader; the home list links to it.
   { paths: ["src/app/mix-grade/**", "src/analysis/mix/**"], specs: ["e2e/mix-upload.spec.ts"] },
   // Freestyle: both decks and the library, no grading; it shares the set's library (final-mix/library.ts).
-  { paths: ["src/app/freestyle/**", "src/app/final-mix/library.ts"], specs: ["e2e/freestyle.spec.ts"] },
+  { paths: ["src/app/freestyle/**", "src/app/final-mix/library.ts"], specs: ["e2e/freestyle.spec.ts", "e2e/music-folder.spec.ts"] },
+  // The music folder setting (on /controller, and in Freestyle's library) and its scanner.
+  { paths: ["src/app/music-folder/**", "src/tracks/music-folder/**"], specs: ["e2e/music-folder.spec.ts", "e2e/freestyle.spec.ts", "e2e/hardware.spec.ts"] },
+  // Your own files: the set's and Freestyle's "Add your files", and the music folder's tracks.
+  { paths: ["src/tracks/local-files.ts"], specs: ["e2e/music-folder.spec.ts", "e2e/freestyle.spec.ts", "e2e/final-mix.spec.ts"] },
   { paths: ["src/app/playground/**"], specs: ["e2e/controller.spec.ts", "e2e/mobile.spec.ts"] },
   // The DDJ-FLX4: the MIDI module and the Controller page (src/app/controller/hardware.ts stays under the shared controller rule).
-  { paths: ["src/midi/**", "src/app/controller-page/**"], specs: ["e2e/hardware.spec.ts"] },
+  { paths: ["src/midi/**", "src/app/controller-page/**"], specs: ["e2e/hardware.spec.ts", "e2e/music-folder.spec.ts"] },
 ];

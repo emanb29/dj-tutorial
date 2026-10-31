@@ -13,7 +13,17 @@ import {
   SYNTHETIC_SET,
   type SetCandidate,
 } from "@lessons";
-import { createLocalFileSource, createOriginalsSource, createStarterPackSource, decoderAt, type LocalFileSource, type Track, type TrackSource } from "@tracks";
+import {
+  createLocalFileSource,
+  createOriginalsSource,
+  createStarterPackSource,
+  decoderAt,
+  type AudioDecoder,
+  type LocalFileSource,
+  type MusicFolder,
+  type Track,
+  type TrackSource,
+} from "@tracks";
 
 export interface LibraryItem {
   readonly key: string;
@@ -25,6 +35,8 @@ export interface LibraryItem {
   readonly genre: string | null;
   /** Prepares the track for the set: its grid, then a way to get its audio again. */
   readonly prepare: (options: PrepareOptions) => Promise<PrepareResult>;
+  /** The Learner is about to use it (the ring is on it): find its grid first. Music-folder tracks only. */
+  readonly want?: () => void;
 }
 
 export interface PrepareOptions {
@@ -108,18 +120,62 @@ function sourceItem(source: TrackSource, track: Track): LibraryItem {
   };
 }
 
+/**
+ * A music-folder track as a library item. Its grid comes from the folder's background analysis
+ * (asked for first, and waited for), so preparing it then finds the grid in the analysis cache.
+ */
+function folderItem(folder: MusicFolder, source: TrackSource, track: Track): LibraryItem {
+  const item = sourceItem(source, track);
+  return {
+    ...item,
+    want: () => {
+      folder.want(track.id);
+    },
+    async prepare(options) {
+      options.onStatus(`Finding the beat in "${track.title}"…`);
+      await folder.ready(track.id, options.signal);
+      return item.prepare(options);
+    },
+  };
+}
+
+/** The music folder's tracks as library items; a track keeps its item until it changes (its BPM arrives). */
+export interface FolderLibrary {
+  readonly music: MusicFolder;
+  readonly items: () => readonly LibraryItem[];
+}
+
+export function folderLibrary(music: MusicFolder, decode: AudioDecoder): FolderLibrary {
+  const source = music.source(decode);
+  let made = new Map<Track, LibraryItem>();
+  return {
+    music,
+    items: () => {
+      made = new Map(music.tracks().map((track) => [track, made.get(track) ?? folderItem(music, source, track)] as const));
+      return [...made.values()];
+    },
+  };
+}
+
 export interface Library {
   readonly items: readonly LibraryItem[];
+  /** The Learner's music folder (the setting on /controller); null in the synthetic library. */
+  readonly folder: FolderLibrary | null;
   /** Your own files: add them from a file input. Null in the synthetic library. */
   readonly files: LocalFileSource | null;
   /** Library items for files the Learner just added. */
   readonly addFiles: (files: Iterable<File>) => readonly LibraryItem[];
 }
 
-/** Lists the library: Originals and the starter pack (house first), or the synthetic set grooves. */
-export async function listLibrary(preference: "auto" | "synthetic", sampleRate: number, signal: AbortSignal): Promise<Library> {
-  if (preference === "synthetic") return { items: syntheticItems(), files: null, addFiles: () => [] };
+/**
+ * Lists the library: Originals and the starter pack (house first), or the synthetic set grooves.
+ * With `music`, the music folder's tracks come too, through `folder` (they change as it scans).
+ */
+export async function listLibrary(preference: "auto" | "synthetic", sampleRate: number, signal: AbortSignal, music?: MusicFolder): Promise<Library> {
   const decode = decoderAt(sampleRate);
+  // The folder is the Learner's own and needs no network, so it comes with the synthetic grooves too.
+  const folder = music === undefined ? null : folderLibrary(music, decode);
+  if (preference === "synthetic") return { items: syntheticItems(), folder, files: null, addFiles: () => [] };
   const originals = createOriginalsSource({ decode });
   const starter = createStarterPackSource({ decode });
   const files = createLocalFileSource({ decode });
@@ -129,5 +185,5 @@ export async function listLibrary(preference: "auto" | "synthetic", sampleRate: 
     ...(fromStarter.ok ? fromStarter.value.map((track) => sourceItem(starter, track)) : []),
   ];
   const houseFirst = listed.toSorted((a, b) => Number((b.genre ?? "").includes("house")) - Number((a.genre ?? "").includes("house")));
-  return { items: houseFirst, files, addFiles: (added) => files.addFiles(added).map((track) => sourceItem(files, track)) };
+  return { items: houseFirst, folder, files, addFiles: (added) => files.addFiles(added).map((track) => sourceItem(files, track)) };
 }
