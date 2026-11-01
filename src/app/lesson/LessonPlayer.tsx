@@ -55,6 +55,8 @@ import { practiceSetUp } from "./practice-set-up.ts";
 import { ResultCard } from "./ResultCard.tsx";
 import { SetUpStep, useSetUpCaption } from "./SetUpStep.tsx";
 import { loadLessonTrack, type TrackPreference } from "./track-loader.ts";
+import { readOwnMusic, writeOwnMusic } from "./own-music-setting.ts";
+import { musicFolder } from "../music-folder/shared-folder.ts";
 import "./lesson.css";
 import "./lesson-extras.css";
 
@@ -202,6 +204,10 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   // The track and the session: picked when the Lesson opens, and again on each `roll` ("Different
   // track", or the Check again after a result). One run (hook → practice → Check) keeps its track.
   const [roll, setRoll] = useState(0);
+  // "Your music": the Learner's own tracks first, when one fits this Lesson; `trackNote` says why not.
+  const [ownMusic, setOwnMusic] = useState(readOwnMusic);
+  const [ownTrack, setOwnTrack] = useState(false);
+  const [trackNote, setTrackNote] = useState<string | null>(null);
   // A roll from the result card: the Check starts once the new track is on the deck.
   const checkAfterRoll = useRef(false);
   useEffect(() => {
@@ -220,6 +226,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       try {
         const ready = await loadLessonTrack(listed, {
           preference: trackPreference,
+          music: ownMusic ? musicFolder() : null,
           signal: abort.signal,
           sampleRate: engine.context.sampleRate,
           onStatus: (status) => {
@@ -227,6 +234,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           },
         });
         if (cancelled()) return;
+        setOwnTrack(ready.own === true);
+        setTrackNote(ready.note ?? null);
         const peakOf = (audio: AudioBuffer) => peakDbfsOf(Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel)));
         const partner = ready.track.partner === undefined || ready.partnerAudio === undefined ? undefined : { ...ready.track.partner, peakDbfs: peakOf(ready.partnerAudio) };
         const track: LessonTrack = { ...ready.track, peakDbfs: peakOf(ready.audio), ...(partner === undefined ? {} : { partner }) };
@@ -279,10 +288,10 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
       session?.close();
       delete window.learnToDjLesson;
     };
-  }, [engine, listed, trackPreference, roll]);
+  }, [engine, listed, trackPreference, roll, ownMusic]);
 
   // Only Originals rotate: the starter pack and the synthetic groove are single fallbacks.
-  const rerollable = trackPreference === "auto" && setup.kind === "ready" && setup.session.track.source === "original";
+  const rerollable = setup.kind === "ready" && (ownTrack || (trackPreference === "auto" && setup.session.track.source === "original"));
   const differentTrack = useCallback(() => {
     setRoll((count) => count + 1);
   }, []);
@@ -544,7 +553,27 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           </span>
         ) : null}
         {setup.kind === "ready" ? <TrackCredit track={setup.session.track} /> : null}
-        {trackPreference === "auto" && (inPractice || phase.kind === "check") && (rerollable || setup.kind === "loading") ? (
+        {inPractice || phase.kind === "check" ? (
+          <button
+            type="button"
+            className="btn btn-quiet lesson-own-music"
+            aria-pressed={ownMusic}
+            disabled={phase.kind === "check" || setup.kind === "loading"}
+            title={phase.kind === "check" ? "After the Check" : ownMusic ? "Back to the app's tracks" : "Your own tracks, when one fits this Lesson"}
+            onClick={() => {
+              writeOwnMusic(!ownMusic);
+              setOwnMusic(!ownMusic);
+            }}
+          >
+            {ownMusic ? "Your music ✓" : "Your music"}
+          </button>
+        ) : null}
+        {trackNote === null || !ownMusic ? null : (
+          <span className="lesson-track-note" role="status">
+            {trackNote}
+          </span>
+        )}
+        {(trackPreference === "auto" || ownTrack) && (inPractice || phase.kind === "check") && (rerollable || setup.kind === "loading") ? (
           <button
             type="button"
             className="btn btn-quiet lesson-reroll"

@@ -766,3 +766,13 @@
   font-size: 0.85em;
   opacity: 0.75;
 }
+
+.lesson-own-music[aria-pressed="true"] {
+  color: var(--accent, currentColor);
+}
+
+.lesson-track-note {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}

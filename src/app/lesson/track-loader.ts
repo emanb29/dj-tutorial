@@ -4,8 +4,10 @@
 // A Lesson that mixes two tracks (`partner`) gets a pair of Originals whose tempos fit its Check, or
 // the two synthetic grooves; the starter pack is not analysed for a pair. Which Originals, and in what
 // order, is track-rotation.ts: a different one each time, away from what this browser heard lately.
+// With "Your music" on, the Learner's own tracks come first, when one fits the Lesson (own-music.ts).
 import { analyseTrack, IndexedDbAnalysisCache } from "@analysis";
 import {
+  energySections,
   lessonTrackFromAnalysis,
   lessonTrackFromKnownGrid,
   SYNTHETIC_HOUSE,
@@ -16,7 +18,9 @@ import {
   type LessonTrack,
   type SyntheticLayout,
 } from "@lessons";
-import { createOriginalsSource, createStarterPackSource, decoderAt, type Track } from "@tracks";
+import { createOriginalsSource, createStarterPackSource, decoderAt, type MusicFolder, type Track } from "@tracks";
+import { folderLibrary } from "../final-mix/library.ts";
+import { pickOwnTracks, type OwnPick } from "./own-music.ts";
 import { deckAOrder, localTrackHistory, partnerCandidates, type Random, type TrackHistoryStore } from "./track-rotation.ts";
 
 export interface ReadyTrack {
@@ -25,6 +29,10 @@ export interface ReadyTrack {
   readonly audio: AudioBuffer;
   /** Deck B's audio, when `track.partner` is set. */
   readonly partnerAudio?: AudioBuffer;
+  /** The Learner's own music ("Your music"). */
+  readonly own?: true;
+  /** Why "Your music" was asked for but the app's tracks play, in one line. */
+  readonly note?: string;
 }
 
 export type TrackPreference = "auto" | "synthetic";
@@ -39,10 +47,16 @@ export interface TrackLoadOptions {
   readonly history?: TrackHistoryStore;
   /** Default `Math.random`; tests pass a seeded one. */
   readonly random?: Random;
+  /** "Your music": try the Learner's music folder first. */
+  readonly music?: MusicFolder | null;
 }
 
 /** How long a starter-pack download and analysis may take before the Lesson starts on the synthetic groove. */
 export const STARTER_PACK_BUDGET_MS = 12_000;
+/** How long "Your music" may take (a few decodes) before the Lesson uses the app's tracks. */
+const OWN_MUSIC_BUDGET_MS = 20_000;
+/** How long a just-opened page waits for the remembered music folder to list its tracks. */
+const FOLDER_LIST_WAIT_MS = 3_000;
 const ORIGINALS_TRIED = 3;
 /** Partners tried for each deck A candidate. */
 const PARTNERS_TRIED = 2;
@@ -125,6 +139,44 @@ async function fromStarterPack(
   return track !== null && definition.trackProblems(track).length === 0 ? { track, audio } : null;
 }
 
+/** The folder's tracks, once a just-opened page has re-read the remembered folder (or the wait is over). */
+function folderTracks(music: MusicFolder, signal: AbortSignal): Promise<readonly Track[]> {
+  if (music.tracks().length > 0) return Promise.resolve(music.tracks());
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      unsubscribe();
+      signal.removeEventListener("abort", done);
+      resolve(music.tracks());
+    };
+    const timer = setTimeout(done, FOLDER_LIST_WAIT_MS);
+    const unsubscribe = music.subscribe(() => {
+      if (music.tracks().length > 0) done();
+    });
+    signal.addEventListener("abort", done);
+  });
+}
+
+async function fromMusicFolder(definition: LessonDefinition, music: MusicFolder, options: TrackLoadOptions): Promise<OwnPick<AudioBuffer>> {
+  const { signal, onStatus, sampleRate } = options;
+  await folderTracks(music, signal);
+  const items = folderLibrary(music, decoderAt(sampleRate)).items();
+  const tracks = items.map((item) => ({
+    key: item.key,
+    bpm: item.bpm,
+    prepare: async () => {
+      const prepared = await item.prepare({ signal, onStatus, sampleRate });
+      if (!prepared.ok) return null;
+      const audio = await prepared.prepared.loadAudio(signal);
+      const track = prepared.prepared.candidate.track;
+      // The Learner's tracks have no named sections: quiet phrases are breakdowns, so a blend stays on the groove.
+      const channels = Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel));
+      return { track: track.sections.length > 0 ? track : { ...track, sections: energySections(channels, audio.sampleRate, track.phraseStarts) }, audio };
+    },
+  }));
+  return pickOwnTracks(definition, tracks, options.random ?? Math.random);
+}
+
 function within<Value>(promise: Promise<Value>, ms: number): Promise<Value | null> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -145,6 +197,16 @@ function within<Value>(promise: Promise<Value>, ms: number): Promise<Value | nul
 }
 
 export async function loadLessonTrack(definition: LessonDefinition, options: TrackLoadOptions): Promise<ReadyTrack> {
+  if (options.music == null) return appTrack(definition, options);
+  options.onStatus("Looking in your music…");
+  const own = await within(fromMusicFolder(definition, options.music, options), OWN_MUSIC_BUDGET_MS);
+  if (own?.ok === true) return { ...own.ready, own: true };
+  const note = own === null ? "Your music took too long to load, so this run uses the app's tracks." : own.reason;
+  return { ...(await appTrack(definition, options)), note };
+}
+
+/** The app's own tracks: an Original, the starter pack, or the synthetic groove. */
+async function appTrack(definition: LessonDefinition, options: TrackLoadOptions): Promise<ReadyTrack> {
   if (options.preference === "synthetic") return syntheticTrack(definition, options.sampleRate);
   options.onStatus("Looking for a track…");
   const history = options.history ?? localTrackHistory();
