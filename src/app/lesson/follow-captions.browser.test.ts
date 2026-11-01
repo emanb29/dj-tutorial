@@ -63,7 +63,7 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
   it("bass-swap passes", { timeout: 90_000 }, async () => {
     const run = await pairHarness("bass-swap", latencySec);
     const { track } = run;
-    const { leadPos, blendPos, handoverPos } = blendPositions(track);
+    const { leadPos, playPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const bar = 4 * beat;
     // "Set up: CUE 🎧 B on, LOW B all the way down", off the clock.
@@ -72,7 +72,7 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
       { control: "eq-low", deck: "B", value: -1 },
     ]);
     const moves: Move[] = [
-      { pos: blendPos, command: { control: "play", deck: "B" }, caption: "Press ," },
+      { pos: playPos, command: { control: "play", deck: "B" }, caption: "Press ," },
       ...slide("channel-fader", "B", blendPos, 2, beat, 0, 1),
       { pos: handoverPos - 0.03, command: { control: "eq-low", deck: "A", value: -1 }, caption: "LOW A down, LOW B up" },
       { pos: handoverPos + 0.03, command: { control: "eq-low", deck: "B", value: 0 } },
@@ -88,7 +88,7 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
   it("filter-transition passes", { timeout: 90_000 }, async () => {
     const run = await pairHarness("filter-transition", latencySec);
     const { track } = run;
-    const { leadPos, blendPos, handoverPos } = blendPositions(track);
+    const { leadPos, playPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const bar = 4 * beat;
     // "Set up: CUE 🎧 B on", off the clock.
@@ -102,7 +102,7 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
     }));
     const moves: Move[] = [
       ...sweep,
-      { pos: blendPos, command: { control: "play", deck: "B" }, caption: "Press ," },
+      { pos: playPos, command: { control: "play", deck: "B" }, caption: "Press ," },
       ...slide("channel-fader", "B", blendPos, 2, beat, 0, 1),
       { pos: handoverPos, command: { control: "channel-fader", deck: "A", value: 0 }, caption: "A out" },
       { pos: handoverPos + beat + 0.4, command: { control: "filter", deck: "A", value: 0 }, caption: "CFX A back to the middle" },

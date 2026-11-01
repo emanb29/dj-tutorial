@@ -628,14 +628,16 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
   "bass-swap": async (run) => {
     const { plan, track } = run;
     const beat = beatSec(track.grid);
-    const blendPos = cuePos(plan, "Next phrase: Press , and slide B up") + 2 * barLength(track);
-    const handoverPos = cuePos(plan, "Next 1: LOW A down, LOW B up") + barLength(track);
+    // PLAY B on Phrase 2's 1, fader B on Phrase 3's 1, the swap on Phrase 4's 1.
+    const playPos = cuePos(plan, "Press , now. Fader B stays down");
+    const blendPos = cuePos(plan, "Fader B up now. LOW B stays down");
+    const handoverPos = cuePos(plan, "At Phrase 4, bar 1: LOW A down, LOW B up") + barLength(track);
     const outPos = handoverPos + 8 * beat;
     await setUpThenReady(run, [
       { control: "headphone-cue", deck: "B", value: true },
       { control: "eq-low", deck: "B", value: -1 },
     ]);
-    await run.toPos(blendPos);
+    await run.toPos(playPos);
     run.send({ control: "play", deck: "B" });
     await movesAt(run, [
       ...drag(track, blendPos, 4, fader("B"), 0, 1).slice(1),
@@ -651,14 +653,15 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
   "filter-transition": async (run) => {
     const { plan, track } = run;
     const beat = beatSec(track.grid);
-    const sweepFrom = cuePos(plan, "Start CFX A right, slowly. B in on the 1");
-    const blendPos = cuePos(plan, "Next 1: Press , and slide B up") + barLength(track);
-    const handoverPos = cuePos(plan, "Next 1: A out (S)") + barLength(track);
+    const playPos = cuePos(plan, "Press , now. Fader B stays down");
+    const sweepFrom = cuePos(plan, "CFX A right now, slowly. Fader B up at Phrase 3, bar 1");
+    const blendPos = cuePos(plan, "Fader B up now. Keep turning CFX A right, slowly");
+    const handoverPos = cuePos(plan, "At Phrase 4, bar 1: A out (S)") + barLength(track);
     await setUpThenReady(run, [{ control: "headphone-cue", deck: "B", value: true }]);
     const sweepBeats = (handoverPos - sweepFrom) / beat;
     await movesAt(run, [
       ...drag(track, sweepFrom, sweepBeats - 1, (value) => ({ control: "filter", deck: "A", value }), 0.06, 0.85),
-      { pos: blendPos, command: { control: "play", deck: "B" } },
+      { pos: playPos, command: { control: "play", deck: "B" } },
       ...drag(track, blendPos, 4, fader("B"), 0, 1).slice(1),
       { pos: handoverPos, command: { control: "channel-fader", deck: "A", value: 0 } },
       { pos: handoverPos + 2 * beat, command: { control: "filter", deck: "A", value: 0 } },

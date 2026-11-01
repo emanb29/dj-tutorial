@@ -74,12 +74,12 @@ export function switchCountdown(track: LessonTrack, switchPos: number, captions:
 }
 
 /** The first phrase at or after 2 whose 16 bars hold no breakdown or build (they may have no kick). */
-export function steadyPhrase(track: LessonTrack): number {
+export function steadyPhrase(track: LessonTrack, from = 2): number {
   const quiet = track.sections.filter((section) => section.name === "breakdown" || section.name === "build").map((section) => section.phrase);
-  for (let phrase = 2; phrase + 1 < track.phraseStarts.length; phrase += 1) {
+  for (let phrase = from; phrase + 1 < track.phraseStarts.length; phrase += 1) {
     if (!quiet.includes(phrase) && !quiet.includes(phrase + 1)) return phrase;
   }
-  return 2;
+  return from;
 }
 
 /**
@@ -109,11 +109,11 @@ const FULL_SECTIONS: ReadonlySet<string> = new Set(["groove", "drop", "main", "c
 /**
  * The first phrase at or after 2 where it and the next `phrases − 1` phrases sit in full-groove
  * sections; null when the track names none. A track without named sections falls back to the steady
- * phrase.
+ * phrase. `from` moves the earliest phrase later, for a Check that needs more lead-in before it.
  */
-export function fullGroovePhrase(track: LessonTrack, phrases: number): number | null {
-  if (track.sections.length === 0) return steadyPhrase(track);
-  return firstRunIn(track, phrases, FULL_SECTIONS);
+export function fullGroovePhrase(track: LessonTrack, phrases: number, from = 2): number | null {
+  if (track.sections.length === 0) return steadyPhrase(track, from);
+  return firstRunIn(track, phrases, FULL_SECTIONS, from);
 }
 
 /**
@@ -131,8 +131,8 @@ export function melodicPhrase(track: LessonTrack, phrases: number): number | nul
   return firstRunIn(track, phrases, MELODIC_SECTIONS);
 }
 
-function firstRunIn(track: LessonTrack, phrases: number, names: ReadonlySet<string>): number | null {
-  for (let phrase = 2; phrase + phrases <= track.phraseStarts.length; phrase += 1) {
+function firstRunIn(track: LessonTrack, phrases: number, names: ReadonlySet<string>, from = 2): number | null {
+  for (let phrase = from; phrase + phrases <= track.phraseStarts.length; phrase += 1) {
     const run = Array.from({ length: phrases }, (_, index) => sectionOf(track, phrase + index));
     if (run.every((name) => name !== null && names.has(name))) return phrase;
   }

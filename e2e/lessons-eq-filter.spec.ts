@@ -17,7 +17,7 @@ async function command(page: Page, sent: Record<string, unknown>): Promise<void>
 /** Fader B up over a bar from `beat`, a step every 0.4 beats, as a trackpad drag sends it. */
 const faderBUp = (beat: number) => Array.from({ length: 11 }, (_, step) => ({ beat: beat + step * 0.4, command: { control: "channel-fader", deck: "B", value: step / 10 } }));
 
-test("bass-swap: LOW B cut, PLAY B on A's phrase start, the LOWs swapped on the next, passes", async ({ page }) => {
+test("bass-swap: LOW B cut, PLAY B on Phrase 2, fader B on Phrase 3, the LOWs swapped on Phrase 4, passes", async ({ page }) => {
   test.setTimeout(180_000);
   const learnerId = learner("bassswap");
   await seedPassed(page, learnerId, BEFORE, { headphones: true });
@@ -27,7 +27,7 @@ test("bass-swap: LOW B cut, PLAY B on A's phrase start, the LOWs swapped on the 
   // The hook: LOW B down, PLAY B, then a swap.
   await expect(caption(page)).toContainText("Turn LOW B all the way down");
   await command(page, { control: "eq-low", deck: "B", value: -1 });
-  await expect(caption(page)).toContainText("On the phrase's 1: Press , and push fader B up");
+  await expect(caption(page)).toContainText("On a phrase's bar 1: Press , then push fader B up");
   await command(page, { control: "play", deck: "B" });
   await expect(caption(page)).toContainText("Swap: LOW A down, LOW B up");
   await command(page, { control: "eq-low", deck: "A", value: -1 });
@@ -38,8 +38,9 @@ test("bass-swap: LOW B cut, PLAY B on A's phrase start, the LOWs swapped on the 
 
   // Practice cues the decks again, every EQ centred, and waits for its set-up (LOW B cut). One swap on the 1 is enough.
   await command(page, { control: "eq-low", deck: "B", value: -1 });
-  await readyFromPhraseStart(page, "practice", 32);
-  await keysAtBeats(page, [64], { codes: ["Comma"] });
+  // Phrase 1 from beat 0, PLAY B on Phrase 2 (beat 32), fader B on Phrase 3 (beat 64), the swap on Phrase 4 (beat 96).
+  await readyFromPhraseStart(page, "practice", 0);
+  await keysAtBeats(page, [32], { codes: ["Comma"] });
   await commandsAtBeats(page, [
     ...faderBUp(64.2),
     { beat: 95.85, command: { control: "eq-low", deck: "A", value: -1 } },
@@ -51,8 +52,9 @@ test("bass-swap: LOW B cut, PLAY B on A's phrase start, the LOWs swapped on the 
   await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on, LOW B all the way down");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await command(page, { control: "eq-low", deck: "B", value: -1 });
-  await readyFromPhraseStart(page, "check", 32);
-  await keysAtBeats(page, [64], { codes: ["Comma"] });
+  await readyFromPhraseStart(page, "check", 0);
+  await expect(page.getByTestId("phrase-count")).toContainText("Phrase 1 · bar");
+  await keysAtBeats(page, [32], { codes: ["Comma"] });
   await commandsAtBeats(page, [
     ...faderBUp(64.2),
     { beat: 95.85, command: { control: "eq-low", deck: "A", value: -1 } },
@@ -69,7 +71,7 @@ test("bass-swap: LOW B cut, PLAY B on A's phrase start, the LOWs swapped on the 
   await expect(card).toContainText("Two basslines at once: 0.00 beats");
 });
 
-test("filter-transition: CFX A swept to high-pass over 10 bars, B in on the phrase, A out, CFX back, passes", async ({ page }) => {
+test("filter-transition: PLAY B on Phrase 2, CFX A swept over 10 bars, fader B on Phrase 3, A out on Phrase 4, CFX back, passes", async ({ page }) => {
   test.setTimeout(180_000);
   const learnerId = learner("filter");
   await seedPassed(page, learnerId, BEFORE, { headphones: true });
@@ -87,12 +89,13 @@ test("filter-transition: CFX A swept to high-pass over 10 bars, B in on the phra
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "practice");
   await expect(page.locator('[data-control="B.filter"]')).toHaveAttribute("data-locked", "false");
 
-  // CFX A from 2 bars before B (beat 56) to 85% by beat 88; PLAY B on beat 64 and fader B up.
+  // PLAY B on Phrase 2 (beat 32), fader down; CFX A from Phrase 2, bar 7 (beat 56) to 85% by beat 88;
+  // fader B up on Phrase 3 (beat 64); A out on Phrase 4 (beat 96).
   const sweep = Array.from({ length: 81 }, (_, step) => ({ beat: 56 + step * 0.4, command: { control: "filter", deck: "A", value: 0.06 + (0.79 * step) / 80 } }));
-  const timed = [...sweep, { beat: 64, command: { control: "play", deck: "B" } }, ...faderBUp(64.2)].sort((a, b) => a.beat - b.beat);
+  const timed = [...sweep, { beat: 32, command: { control: "play", deck: "B" } }, ...faderBUp(64.2)].sort((a, b) => a.beat - b.beat);
 
   // Practice cues the decks again, CFX centred, and waits for R: one filter-out of 10 bars is enough.
-  await readyFromPhraseStart(page, "practice", 32);
+  await readyFromPhraseStart(page, "practice", 0);
   await commandsAtBeats(page, timed);
   await keysAtBeats(page, [96], { codes: ["KeyS"] });
   await expect(caption(page)).toContainText("Ready? This one counts.");
@@ -100,7 +103,7 @@ test("filter-transition: CFX A swept to high-pass over 10 bars, B in on the phra
   await page.keyboard.press("Enter");
   await expect(page.locator(".lesson-cue")).toHaveText("Set up: CUE 🎧 B on");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
-  await readyFromPhraseStart(page, "check", 32);
+  await readyFromPhraseStart(page, "check", 0);
   await commandsAtBeats(page, timed);
   await keysAtBeats(page, [96], { codes: ["KeyS"] });
   await commandsAtBeats(page, [{ beat: 97, command: { control: "filter", deck: "A", value: 0 } }]);

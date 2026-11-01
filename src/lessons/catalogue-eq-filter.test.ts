@@ -148,17 +148,19 @@ describe("the Lesson catalogue for Lessons 12–13", () => {
   });
 
   it("sets both Lessons up the same way: A in the groove with its bass, B synced on its cue point, every EQ and CFX centred", () => {
-    const { leadPos, blendPos, handoverPos, cueB } = blendPositions(track);
+    const { leadPos, playPos, blendPos, handoverPos, cueB } = blendPositions(track);
     // The groove (bars 17–32) has the kick and the bass; B's groove starts on its phrase 3.
     expect(blendPos).toBeCloseTo(barStart(track.grid, 17));
     expect(handoverPos).toBeCloseTo(barStart(track.grid, 25));
-    // A whole phrase to count, from its start, after the set-up off the clock.
-    expect(leadPos).toBeCloseTo(blendPos - 8 * BAR);
-    expect(cueB).toBeCloseTo(phraseStart(partner.grid, 2));
+    // Phrase 1 to count, from its start, after the set-up off the clock; PLAY B on Phrase 2, fader B on Phrase 3.
+    expect(leadPos).toBeCloseTo(blendPos - 16 * BAR);
+    expect(playPos).toBeCloseTo(blendPos - 8 * BAR);
+    // B starts two phrases before its groove, so its bass arrives with the handover.
+    expect(cueB).toBeCloseTo(phraseStart(partner.grid, 1));
     for (const id of ["bass-swap", "filter-transition"] as const) {
       const plan = lessonDefinition(id).planCheck(track);
       expect(plan.startPos, id).toBeCloseTo(leadPos);
-      expect(plan.firstPhraseAction, id).toBeCloseTo(blendPos);
+      expect(plan.firstPhraseAction, id).toBeCloseTo(playPos);
       expect(plan.setUp?.caption, id).toMatch(/^Set up: CUE 🎧 B on/);
       expect(plan.deckA, id).toMatchObject({ sync: false, eqCentred: true, filterCentred: true, headphoneCue: false });
       expect(plan.deckB, id).toMatchObject({ pos: cueB, play: false, fader: 0, cuePoint: true, sync: true, eqCentred: true, filterCentred: true });
@@ -173,7 +175,7 @@ describe("the Lesson catalogue for Lessons 12–13", () => {
     expect(eqPairProblems(track, { ...partner, grid: { ...partner.grid, bpm: 128 } })[0]).toContain("3.2% apart");
     expect(eqPairProblems(track, track)).toContain("The partner is the same track.");
     const noBass = { ...partner, sections: partner.sections.map((section) => ({ ...section, name: "intro" })) };
-    expect(eqPairProblems(track, noBass)).toEqual(["Deck B: The track needs two phrases in a row with the kick and the bass."]);
+    expect(eqPairProblems(track, noBass)).toEqual(["Deck B: The track needs two phrases in a row with the kick and the bass, after 2 phrases of lead-in."]);
   });
 });
 

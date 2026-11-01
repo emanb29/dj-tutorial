@@ -414,10 +414,10 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     const observed: Observation[] = [];
     const track = pairTrack();
     const run = await harness({ sampleRate, lessonId: "bass-swap", track, audio: (context) => pair(context, SYNTHETIC_HOUSE), partnerAudio: (context) => pair(context, SYNTHETIC_PARTNER), renderSec: 120, observed });
-    const { leadPos, blendPos, handoverPos } = blendPositions(track);
+    const { leadPos, playPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const swap: { pos: number; command: EngineCommand }[] = [
-      { pos: blendPos, command: { control: "play", deck: "B" } },
+      { pos: playPos, command: { control: "play", deck: "B" } },
       ...Array.from({ length: 10 }, (_, step): Move => ({ pos: blendPos + (step + 1) * 0.4 * beat, command: { control: "channel-fader", deck: "B", value: (step + 1) / 10 } })),
       { pos: handoverPos - 0.1, command: { control: "eq-low", deck: "A", value: -1 } },
       { pos: handoverPos + 0.1, command: { control: "eq-low", deck: "B", value: 0 } },
@@ -449,11 +449,11 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     const observed: Observation[] = [];
     const track = pairTrack();
     const run = await harness({ sampleRate, lessonId: "filter-transition", track, audio: (context) => pair(context, SYNTHETIC_HOUSE), partnerAudio: (context) => pair(context, SYNTHETIC_PARTNER), renderSec: 120, observed });
-    const { leadPos, blendPos, handoverPos } = blendPositions(track);
+    const { leadPos, playPos, blendPos, handoverPos } = blendPositions(track);
     const beat = 60 / track.grid.bpm;
     const out: { pos: number; command: EngineCommand }[] = [
       ...Array.from({ length: 81 }, (_, step): Move => ({ pos: blendPos - 8 * beat + step * 0.4 * beat, command: { control: "filter", deck: "A", value: 0.06 + (0.79 * step) / 80 } })),
-      { pos: blendPos, command: { control: "play", deck: "B" } },
+      { pos: playPos, command: { control: "play", deck: "B" } },
       ...Array.from({ length: 10 }, (_, step): Move => ({ pos: blendPos + (step + 1) * 0.4 * beat, command: { control: "channel-fader", deck: "B", value: (step + 1) / 10 } })),
       { pos: handoverPos, command: { control: "channel-fader", deck: "A", value: 0 } },
     ];
