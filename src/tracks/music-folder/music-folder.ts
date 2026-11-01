@@ -114,6 +114,11 @@ export interface MusicFolder {
   want(trackId: string): void;
   /** Resolves once the track is analysed (or failed, or gone), analysing it first. */
   ready(trackId: string, signal: AbortSignal): Promise<void>;
+  /**
+   * Whether loading the track now gives a beat grid without waiting: rekordbox has a one-tempo 4/4 grid
+   * for it, or the analysis is done. Cheap: picking from a large library starts here, not with decoding.
+   */
+  gridReady(trackId: string): boolean;
   /** True: background analysis waits (wanted tracks still run). The default is paused. */
   setBackgroundPaused(paused: boolean): void;
   /** The tracks as a TrackSource whose `load` decodes with `decode` (the engine's rate). */
@@ -629,6 +634,13 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     },
 
     want,
+
+    gridReady(trackId) {
+      const path = pathByKey.get(trackId);
+      const entry = path === undefined ? undefined : entries.get(path);
+      if (entry === undefined) return false;
+      return (entry.linked !== null && rekordboxGrid(entry.linked.tempos).kind === "constant") || (entry.state === "analysed" && entry.base.bpmHint !== undefined);
+    },
 
     ready(trackId, signal) {
       const path = pathByKey.get(trackId);

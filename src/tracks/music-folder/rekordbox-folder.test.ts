@@ -97,6 +97,20 @@ describe("music folder with rekordbox", () => {
     expect(liveLoaded.ok && liveLoaded.value.knownGrid).toBeUndefined();
   });
 
+  it("says a track's grid is ready without decoding when rekordbox has a one-tempo grid for it", async () => {
+    const folder = fakeFolder("Music", { "House/Kay Grove - Brothers.mp3": "a", "live.mp3": "b", "rekordbox.xml": COLLECTION });
+    const { music } = setUp(folder);
+    await music.pick();
+    await music.settled();
+    const brothers = byFile(music, "Brothers (Club Mix)");
+    const live = byFile(music, "Live Take");
+    if (brothers === undefined || live === undefined) throw new Error("a track was not listed");
+    expect(music.gridReady(brothers.id)).toBe(true);
+    // A variable grid is left to the app's analysis, which (faked here) has finished: ready too.
+    expect(music.gridReady(live.id)).toBe(true);
+    expect(music.gridReady("not-a-track")).toBe(false);
+  });
+
   it("re-reads rekordbox.xml when a rescan sees it change, and drops it when it is gone", async () => {
     const folder = fakeFolder("Music", { "live.mp3": "b", "rekordbox.xml": COLLECTION });
     const { music } = setUp(folder);

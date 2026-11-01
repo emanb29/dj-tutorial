@@ -7,6 +7,7 @@
 // With "Your music" on, the Learner's own tracks come first, when one fits the Lesson (own-music.ts).
 import { analyseTrack, IndexedDbAnalysisCache } from "@analysis";
 import {
+  camelotOf,
   energySections,
   lessonTrackFromAnalysis,
   lessonTrackFromKnownGrid,
@@ -19,7 +20,6 @@ import {
   type SyntheticLayout,
 } from "@lessons";
 import { createOriginalsSource, createStarterPackSource, decoderAt, type MusicFolder, type Track } from "@tracks";
-import { folderLibrary } from "../final-mix/library.ts";
 import { pickOwnTracks, type OwnPick } from "./own-music.ts";
 import { deckAOrder, localTrackHistory, partnerCandidates, type Random, type TrackHistoryStore } from "./track-rotation.ts";
 
@@ -157,23 +157,41 @@ function folderTracks(music: MusicFolder, signal: AbortSignal): Promise<readonly
   });
 }
 
+/**
+ * The Learner's folder as candidates: only tracks whose grid is ready now (rekordbox's, or a finished
+ * analysis), each sketched from its tempo and length so most are judged without decoding (own-music.ts).
+ */
 async function fromMusicFolder(definition: LessonDefinition, music: MusicFolder, options: TrackLoadOptions): Promise<OwnPick<AudioBuffer>> {
   const { signal, onStatus, sampleRate } = options;
-  await folderTracks(music, signal);
-  const items = folderLibrary(music, decoderAt(sampleRate)).items();
-  const tracks = items.map((item) => ({
-    key: item.key,
-    bpm: item.bpm,
-    prepare: async () => {
-      const prepared = await item.prepare({ signal, onStatus, sampleRate });
-      if (!prepared.ok) return null;
-      const audio = await prepared.prepared.loadAudio(signal);
-      const track = prepared.prepared.candidate.track;
-      // The Learner's tracks have no named sections: quiet phrases are breakdowns, so a blend stays on the groove.
-      const channels = Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel));
-      return { track: track.sections.length > 0 ? track : { ...track, sections: energySections(channels, audio.sampleRate, track.phraseStarts) }, audio };
-    },
-  }));
+  const source = music.source(decoderAt(sampleRate));
+  const ready = (await folderTracks(music, signal)).filter(
+    (track) => track.bpmHint !== undefined && track.durationSec !== undefined && music.gridReady(track.id),
+  );
+  const tracks = ready.map((track) => {
+    const sketchGrid = { origin: "rekordbox", bpm: track.bpmHint ?? 0, durationSec: track.durationSec ?? 0, firstBeatSec: 0, beatGrid: [], downbeatPhase: 0, phrases: [] } as const;
+    return {
+      key: track.id,
+      sketch: lessonTrackFromKnownGrid(meta(track), sketchGrid),
+      camelot: camelotOf(track.keyHint),
+      prepare: async () => {
+        onStatus(`Loading "${track.title}"…`);
+        const loaded = await source.load(track, { signal });
+        if (!loaded.ok) return null;
+        const { audio, contentHash, knownGrid } = loaded.value;
+        const channels = Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel));
+        // rekordbox's grid as it is; otherwise the folder's finished analysis, read back from its cache.
+        let lessonTrack = knownGrid === undefined ? null : lessonTrackFromKnownGrid(meta(track), knownGrid);
+        if (lessonTrack === null) {
+          const analysed = await analyseTrack({ channels, sampleRate: audio.sampleRate }, { cache: new IndexedDbAnalysisCache(), contentHash, signal });
+          lessonTrack = analysed.ok ? lessonTrackFromAnalysis(meta(track), analysed.analysis) : null;
+        }
+        if (lessonTrack === null) return null;
+        // The Learner's tracks have no named sections: quiet phrases are breakdowns, so a blend stays on the groove.
+        const sections = lessonTrack.sections.length > 0 ? lessonTrack.sections : energySections(channels, audio.sampleRate, lessonTrack.phraseStarts);
+        return { track: { ...lessonTrack, sections }, audio };
+      },
+    };
+  });
   return pickOwnTracks(definition, tracks, options.random ?? Math.random);
 }
 
