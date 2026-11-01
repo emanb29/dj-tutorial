@@ -251,6 +251,7 @@ const echoOut: LessonDefinition = {
   },
   practiceLoop: (track) => ({ atPos: phraseStart(track.grid, echoPhrases(track).phrase + 1), reset: "setup" }),
   phraseCount: true,
+  phraseCountInCheck: true,
   headphones: true,
   trackProblems: (track) => phrasesNeeded(track, echoPhrases(track).cueB),
   hook: [
@@ -266,7 +267,7 @@ const echoOut: LessonDefinition = {
     { caption: "Pull the fader down (S)", control: "A.channel-fader", trigger: { kind: "fader-down" }, named: "The echoes ring on after the fader: an echo out." },
   ],
   practice: { caption: "ECHO on (V), cut A on a 1 (S), then FX off (V)", rep: "echo-cut", window: 2, needed: 1 },
-  checkCaption: "This one counts: ECHO on, cut A on the last bar's 1, Press , on the phrase's 1",
+  checkCaption: "This one counts: ECHO on, cut A at Phrase 2, bar 8, Press , at Phrase 3",
   questions: [],
   planCheck: (track): CheckPlan => {
     const decks = echoDecks(track);
@@ -284,9 +285,9 @@ const echoOut: LessonDefinition = {
       endWhen: { kind: "did-then", what: { kind: "play", deck: "B" }, count: 1, bars: ECHO_TAIL_BARS },
       timeoutSec: barsSec(track, ECHO_LEAD_BARS + 8 + ECHO_TAIL_BARS) + 8,
       cues: [
-        { fromPos: decks.A.pos, caption: "Count 2 phrases: cut A on the last bar's 1" },
-        { fromPos: next - barsSec(track, 2), caption: "Next bar is the last: cut A on its 1 (S)" },
-        { fromPos: next - barsSec(track, 1) + beat, caption: "Phrase's 1: Press ," },
+        { fromPos: decks.A.pos, caption: "Phrase 1: just count. Cut A at Phrase 2, bar 8 (S)" },
+        { fromPos: next - barsSec(track, 2), caption: "At Phrase 2, bar 8: cut A (S)" },
+        { fromPos: next - barsSec(track, 1) + beat, caption: "Press , at Phrase 3, bar 1" },
         { fromPos: next + beat, caption: "Echo gone? FX off (V)" },
       ],
     };
@@ -295,7 +296,7 @@ const echoOut: LessonDefinition = {
   gradeFromOwnCue: true,
   tips: {
     "echo-out.echo-cut": ["ECHO on first (V), then cut A right on the 1 (S).", "CH 1 lit: the echo takes deck A."],
-    "echo-out.echo-entry": ["Count on through the echoes: Press , on the phrase's 1.", "The echoes keep the beat: B goes on the next 1 of the phrase."],
+    "echo-out.echo-entry": ["Count on through the echoes: Press , at Phrase 3, bar 1.", "The echoes keep the beat: B goes on the next 1 of the phrase."],
     "echo-out.fx-off": ["When the echoes stop, FX off (V).", "Leave FX on and the next track echoes too."],
   },
 };

@@ -317,23 +317,33 @@ const XF_TAIL_BARS = 4;
 /**
  * crossfader's phrases on deck A, numbered as the Learner sees them: Phrase 1 is counted, B plays on
  * Phrase 2's 1 (the crossfader on A keeps it silent), the blend starts on Phrase 3's 1 and the cut back
- * to A is on Phrase 5's 1. One move per phrase start. Phrase 3 is the first of 3 phrases of groove, so
- * the run starts at the track's phrase 3 or later, leaving two phrases before it.
+ * to A is on Phrase 5's 1. One move per phrase start. Phrases 2–5 are 4 phrases of groove in a row, so
+ * the bars before the blend (the loudness reference) and the cut are on the groove, not a breakdown.
  */
+const XF_STEADY_PHRASES = 4;
+
 function crossfaderPositions(track: LessonTrack): { leadPos: number; playPos: number; blendPos: number; cutPos: number; cueB: number } {
-  const { cueB } = blendPositions(track);
-  const blendPos = phraseStart(track.grid, steadyRun(track, STEADY_PHRASES, 3) ?? Math.max(3, steadyPhrase(track)));
+  const partner = trackOnDeck(track, "B");
+  const playPos = phraseStart(track.grid, steadyRun(track, XF_STEADY_PHRASES) ?? steadyPhrase(track));
+  const blendPos = playPos + barsSec(track, BLEND_LEAD_BARS);
   return {
-    leadPos: blendPos - barsSec(track, 2 * BLEND_LEAD_BARS),
-    playPos: blendPos - barsSec(track, BLEND_LEAD_BARS),
+    leadPos: playPos - barsSec(track, BLEND_LEAD_BARS),
+    playPos,
     blendPos,
     cutPos: blendPos + barsSec(track, XF_CUT_BARS),
-    cueB,
+    // B plays from its own run of groove: unheard through Phrase 2, the blend on its second phrase.
+    cueB: phraseStart(partner.grid, steadyRun(partner, XF_STEADY_PHRASES) ?? steadyPhrase(partner)),
   };
 }
 
-const noLateSteadyRun = (track: LessonTrack) =>
-  steadyRun(track, STEADY_PHRASES, 3) === null ? ["The track needs 3 phrases in a row without a breakdown, after 2 phrases of lead-in."] : [];
+const noLongSteadyRun = (track: LessonTrack) =>
+  steadyRun(track, XF_STEADY_PHRASES) === null ? ["The track needs 4 phrases in a row without a breakdown."] : [];
+
+/** As the other two-track Lessons, and B needs the same 4 phrases of groove: it plays from Phrase 2 to the cut. */
+const crossfaderPairProblems = (track: LessonTrack, partner: LessonTrack) => [
+  ...pairProblems(track, partner),
+  ...noLongSteadyRun(partner).map((problem) => `Deck B: ${problem}`),
+];
 
 function crossfaderDecks(track: LessonTrack, again = false): DeckSetups {
   const { leadPos, cueB } = crossfaderPositions(track);
@@ -358,11 +368,11 @@ const crossfaderLesson: LessonDefinition = {
   }),
   phraseCount: true,
   phraseCountInCheck: true,
-  partner: { problems: pairProblems },
+  partner: { problems: crossfaderPairProblems },
   headphones: true,
   aids: { sync: true, bpmDisplay: true },
   gradeFromOwnCue: true,
-  trackProblems: (track) => [...tooShort(track), ...noLateSteadyRun(track)],
+  trackProblems: (track) => [...tooShort(track), ...noLongSteadyRun(track)],
   hook: [
     { caption: "Press , to play B", control: "B.play", trigger: { kind: "play", deck: "B" }, named: "Both faders up, yet B is silent: the crossfader is on A.", reveals: ["crossfader"] },
     { caption: "Slide the crossfader to B", control: "crossfader", trigger: { kind: "crossfader-to", side: "B" }, named: "The crossfader: A to B in one move." },
@@ -436,6 +446,7 @@ const eqBasics: LessonDefinition = {
   practiceDecks: eqDecks,
   practiceLoop: (track) => ({ atPos: phraseStart(track.grid, eqPhrase(track) + 2), reset: "positions" }),
   phraseCount: true,
+  phraseCountInCheck: true,
   gradeFromOwnCue: true,
   trackProblems: (track) => [
     ...tooShort(track),
@@ -452,7 +463,7 @@ const eqBasics: LessonDefinition = {
     },
   ],
   practice: { caption: "Cut LOW on a phrase's 1, back on the next 1", rep: "eq-return", window: 2, needed: 1 },
-  checkCaption: "This one counts: cut LOW for a phrase, back on the 1",
+  checkCaption: "This one counts: LOW A down at Phrase 2, back at Phrase 3",
   questions: [],
   planCheck: (track) => {
     const decks = eqDecks(track);
@@ -468,11 +479,11 @@ const eqBasics: LessonDefinition = {
       endWhen: { kind: "position", pos: backPos + barsSec(track, EQ_TAIL_BARS) + beat },
       timeoutSec: barsSec(track, EQ_LEAD_BARS + 8 + EQ_TAIL_BARS) + 5,
       cues: [
-        { fromPos: decks.A.pos, caption: "Count this phrase: LOW A down on the next 1" },
-        { fromPos: cutPos - barsSec(track, 2), caption: "Next phrase: LOW A down on the 1" },
+        { fromPos: decks.A.pos, caption: "Phrase 1: just count. LOW A down at Phrase 2, bar 1" },
+        { fromPos: cutPos - barsSec(track, 2), caption: "At Phrase 2, bar 1: LOW A down" },
         { fromPos: cutPos - beat, caption: "LOW A down now" },
-        { fromPos: cutPos + barsSec(track, 2), caption: "Hold it. LOW back on the next phrase's 1" },
-        { fromPos: backPos - barsSec(track, 1), caption: "Next 1: LOW back to the middle" },
+        { fromPos: cutPos + barsSec(track, 2), caption: "Hold it. LOW back at Phrase 3, bar 1" },
+        { fromPos: backPos - barsSec(track, 1), caption: "At Phrase 3, bar 1: LOW back to the middle" },
         { fromPos: backPos + beat, caption: "Every EQ in the middle" },
       ],
     };
@@ -480,7 +491,7 @@ const eqBasics: LessonDefinition = {
   taskFor: (): LessonTask => ({ lessonId: "eq-basics" }),
   tips: {
     "eq-basics.low-kill": ["LOW all the way down, and hold it for the whole phrase.", "Cut on the 1, count 8 bars, then bring it back."],
-    "eq-basics.low-return": ["Count 8 bars on the 1s; LOW back right on the next 1.", "Turn it back in one quick move, on the 1."],
+    "eq-basics.low-return": ["LOW back at Phrase 3, bar 1: watch the count.", "Turn it back in one quick move, on the 1."],
     "eq-basics.eq-centred": ["Finish with HI, MID and LOW in the middle."],
   },
 };

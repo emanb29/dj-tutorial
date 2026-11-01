@@ -98,13 +98,13 @@ describe.each(OUTPUTS)("following the captions on $what", ({ latencySec }) => {
     const sweep: Move[] = Array.from({ length: 41 }, (_, step) => ({
       pos: sweepFrom + step * ((handoverPos - bar - sweepFrom) / 40),
       command: { control: "filter", deck: "A", value: 0.06 + (0.79 * step) / 40 },
-      ...(step === 0 ? { caption: "Start CFX A right" } : {}),
+      ...(step === 0 ? { caption: "CFX A right now" } : {}),
     }));
     const moves: Move[] = [
       ...sweep,
       { pos: playPos, command: { control: "play", deck: "B" }, caption: "Press ," },
       ...slide("channel-fader", "B", blendPos, 2, beat, 0, 1),
-      { pos: handoverPos, command: { control: "channel-fader", deck: "A", value: 0 }, caption: "A out" },
+      { pos: handoverPos, command: { control: "channel-fader", deck: "A", value: 0 }, caption: "At Phrase 4, bar 1: A out" },
       { pos: handoverPos + beat + 0.4, command: { control: "filter", deck: "A", value: 0 }, caption: "CFX A back to the middle" },
     ];
     await follow(run, playAt, leadPos, moves);
@@ -337,8 +337,8 @@ describe.each(OUTPUTS)("following the captions with pads, loops and FX on $what"
     // A plays a whole phrase from its start, then the groove phrase; B comes in on the one after.
     const next = plan.startPos + 16 * bar;
     await follow(run, playAt, plan.startPos, [
-      { pos: next - bar, command: { control: "channel-fader", deck: "A", value: 0 }, caption: "cut A on its 1" },
-      { pos: next, command: { control: "play", deck: "B" }, caption: "Phrase's 1: Press ," },
+      { pos: next - bar, command: { control: "channel-fader", deck: "A", value: 0 }, caption: "At Phrase 2, bar 8: cut A" },
+      { pos: next, command: { control: "play", deck: "B" }, caption: "Press , at Phrase 3" },
       { pos: next + beat + 0.5, command: { control: "beat-fx", value: false }, caption: "FX off (V)" },
     ]);
     const outcome = await gradedAfterEnd(run, passedBefore(LESSON_IDS, "echo-out"));

@@ -616,7 +616,7 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
   "eq-basics": async (run) => {
     const { plan, track } = run;
     const cutPos = cuePos(plan, "LOW A down now") + beatSec(track.grid);
-    const backPos = cuePos(plan, "Next 1: LOW back to the middle") + barLength(track);
+    const backPos = cuePos(plan, "At Phrase 3, bar 1: LOW back to the middle") + barLength(track);
     await movesAt(run, [
       { pos: cutPos - 0.1 * beatSec(track.grid), command: { control: "eq-low", deck: "A", value: -1 } },
       { pos: backPos, command: { control: "eq-low", deck: "A", value: 0 } },
@@ -809,8 +809,8 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
       { control: "headphone-cue", deck: "B", value: true },
       { control: "beat-fx", value: true },
     ]);
-    const cutPos = cuePos(plan, "Next bar is the last: cut A on its 1 (S)") + barLength(track);
-    const next = cuePos(plan, "Phrase's 1: Press ,") - beatSec(track.grid) + barLength(track);
+    const cutPos = cuePos(plan, "At Phrase 2, bar 8: cut A (S)") + barLength(track);
+    const next = cuePos(plan, "Press , at Phrase 3, bar 1") - beatSec(track.grid) + barLength(track);
     await run.toPos(cutPos);
     run.send({ control: "channel-fader", deck: "A", value: 0 });
     await run.toPos(next);
