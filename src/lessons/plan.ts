@@ -84,15 +84,14 @@ export function steadyPhrase(track: LessonTrack, from = 2): number {
 
 /**
  * The first phrase at or after 2 that starts `phrases` phrases in a row with no breakdown or build: a
- * blend and what follows it stay on the groove. Null when the track has no such run. `from` moves the
- * earliest phrase later, for a Check that needs more lead-in before it.
+ * blend and what follows it stay on the groove. Null when the track has no such run.
  */
-export function steadyRun(track: LessonTrack, phrases: number, from = 2): number | null {
+export function steadyRun(track: LessonTrack, phrases: number): number | null {
   const quiet = (phrase: number) => {
     const name = sectionOf(track, phrase);
     return name === "breakdown" || name === "build";
   };
-  for (let phrase = from; phrase + phrases <= track.phraseStarts.length; phrase += 1) {
+  for (let phrase = 2; phrase + phrases <= track.phraseStarts.length; phrase += 1) {
     if (!Array.from({ length: phrases }, (_, index) => phrase + index).some(quiet)) return phrase;
   }
   return null;

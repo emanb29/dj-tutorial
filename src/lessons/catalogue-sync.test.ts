@@ -286,29 +286,29 @@ describe("sync-blend", () => {
 describe("crossfader", { timeout: 20_000 }, () => {
   const definition = lessonDefinition("crossfader");
   const plan = definition.planCheck(track);
-  // Phrase 1 counted, PLAY B on Phrase 2, the blend on Phrase 3, the cut back to A on Phrase 5.
-  const playPos = plan.startPos + 8 * BAR;
-  const blendPos = plan.startPos + 16 * BAR;
+  // Phrase 1 counted while B already plays (silent behind the crossfader), the blend on Phrase 2, the cut back to A on Phrase 4.
+  const blendPos = plan.startPos + 8 * BAR;
   const cutPos = blendPos + 16 * BAR;
   const cueB = plan.deckB?.pos ?? 0;
   const synced = track.grid.bpm / partner.grid.bpm;
 
   it("starts with the crossfader on A, both faders up, B synced on its cue point", () => {
     expect(plan.crossfader).toBe(0);
-    expect(plan.deckB).toMatchObject({ fader: 1, sync: true, cuePoint: true, play: false });
+    expect(plan.deckB).toMatchObject({ fader: 1, sync: true, cuePoint: true, play: true });
     expect(plan.endWhen).toEqual({ kind: "position", pos: cutPos + 4 * BAR + BEAT });
-    expect(plan.firstPhraseAction).toBeCloseTo(playPos);
+    expect(plan.firstPhraseAction).toBeCloseTo(blendPos);
   });
 
   function crossfaderAttempt(cutAt: number, practiceBefore: boolean): { graded: Attempt; end: number } {
-    const playBAt = heardA(plan, playPos);
+    // The Check starts B with A.
+    const playBAt = CUED;
     const blendAt = heardA(plan, blendPos);
     const end = heardA(plan, cutPos + 4 * BAR + BEAT);
     const practice: PlayheadSegment[] = practiceBefore ? [{ fromCtx: RECORDER_START, pos: blendPos + 14 * BAR - 0.3, rate: 1 }] : [];
     const graded = recorded({
       decks: {
         A: { trackId: track.trackId, playhead: { segments: [...practice, { fromCtx: CUED, pos: plan.startPos, rate: 1 }] } },
-        B: { trackId: partner.trackId, playhead: { segments: [{ fromCtx: CUED, pos: cueB, rate: 0 }, { fromCtx: playBAt, pos: cueB, rate: synced }] } },
+        B: { trackId: partner.trackId, playhead: { segments: [{ fromCtx: playBAt, pos: cueB, rate: synced }] } },
       },
       events: [
         event(CUED + 1, "cueMonitor", 1, "B"),

@@ -315,35 +315,15 @@ const XF_SPLIT_BARS = 14;
 const XF_TAIL_BARS = 4;
 
 /**
- * crossfader's phrases on deck A, numbered as the Learner sees them: Phrase 1 is counted, B plays on
- * Phrase 2's 1 (the crossfader on A keeps it silent), the blend starts on Phrase 3's 1 and the cut back
- * to A is on Phrase 5's 1. One move per phrase start. Phrases 2–5 are 4 phrases of groove in a row, so
- * the bars before the blend (the loudness reference) and the cut are on the groove, not a breakdown.
+ * crossfader's phrases on deck A, numbered as the Learner sees them: Phrase 1 is counted while B already
+ * plays (the Check starts it, synced, from its own phrase start; the crossfader on A keeps it silent),
+ * the blend starts on Phrase 2's 1, the first of 3 phrases of groove, and the cut back to A is on
+ * Phrase 4's 1. One move per phrase start, and no PLAY in the Check: this Lesson is about the crossfader.
  */
-const XF_STEADY_PHRASES = 4;
-
-function crossfaderPositions(track: LessonTrack): { leadPos: number; playPos: number; blendPos: number; cutPos: number; cueB: number } {
-  const partner = trackOnDeck(track, "B");
-  const playPos = phraseStart(track.grid, steadyRun(track, XF_STEADY_PHRASES) ?? steadyPhrase(track));
-  const blendPos = playPos + barsSec(track, BLEND_LEAD_BARS);
-  return {
-    leadPos: playPos - barsSec(track, BLEND_LEAD_BARS),
-    playPos,
-    blendPos,
-    cutPos: blendPos + barsSec(track, XF_CUT_BARS),
-    // B plays from its own run of groove: unheard through Phrase 2, the blend on its second phrase.
-    cueB: phraseStart(partner.grid, steadyRun(partner, XF_STEADY_PHRASES) ?? steadyPhrase(partner)),
-  };
+function crossfaderPositions(track: LessonTrack): { leadPos: number; blendPos: number; cutPos: number; cueB: number } {
+  const { leadPos, blendPos, cueB } = blendPositions(track);
+  return { leadPos, blendPos, cutPos: blendPos + barsSec(track, XF_CUT_BARS), cueB };
 }
-
-const noLongSteadyRun = (track: LessonTrack) =>
-  steadyRun(track, XF_STEADY_PHRASES) === null ? ["The track needs 4 phrases in a row without a breakdown."] : [];
-
-/** As the other two-track Lessons, and B needs the same 4 phrases of groove: it plays from Phrase 2 to the cut. */
-const crossfaderPairProblems = (track: LessonTrack, partner: LessonTrack) => [
-  ...pairProblems(track, partner),
-  ...noLongSteadyRun(partner).map((problem) => `Deck B: ${problem}`),
-];
 
 function crossfaderDecks(track: LessonTrack, again = false): DeckSetups {
   const { leadPos, cueB } = crossfaderPositions(track);
@@ -368,40 +348,39 @@ const crossfaderLesson: LessonDefinition = {
   }),
   phraseCount: true,
   phraseCountInCheck: true,
-  partner: { problems: crossfaderPairProblems },
+  partner: { problems: pairProblems },
   headphones: true,
   aids: { sync: true, bpmDisplay: true },
   gradeFromOwnCue: true,
-  trackProblems: (track) => [...tooShort(track), ...noLongSteadyRun(track)],
+  trackProblems: (track) => [...tooShort(track), ...noSteadyRun(track)],
   hook: [
     { caption: "Press , to play B", control: "B.play", trigger: { kind: "play", deck: "B" }, named: "Both faders up, yet B is silent: the crossfader is on A.", reveals: ["crossfader"] },
     { caption: "Slide the crossfader to B", control: "crossfader", trigger: { kind: "crossfader-to", side: "B" }, named: "The crossfader: A to B in one move." },
     { caption: "Snap it back to A (C)", control: "crossfader", trigger: { kind: "crossfader-to", side: "A" }, named: "One quick snap: a cut with the crossfader." },
   ],
-  practice: { caption: "Press , on bar 1, crossfader stays on A. Next bar 1: crossfader to B; later C on a 1", rep: "blend-start", window: 2, needed: 1 },
-  checkCaption: "This one counts: Press , at Phrase 2, crossfader to B at Phrase 3, back to A at Phrase 5",
+  practice: { caption: "Press , (crossfader on A: silent). Crossfader to B on a bar 1; later C on a bar 1", rep: "blend-start", window: 2, needed: 1 },
+  checkCaption: "This one counts: B plays already. Crossfader to B at Phrase 2, back to A at Phrase 4",
   questions: [],
   planCheck: (track) => {
     const decks = crossfaderDecks(track);
-    const { blendPos, leadPos, playPos, cutPos } = crossfaderPositions(track);
+    const { blendPos, leadPos, cutPos } = crossfaderPositions(track);
     const beat = beatSec(track.grid);
     return {
       startPos: leadPos,
       autoPlay: true,
       faderAtStart: 1,
       deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
-      ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
+      // B plays from the Check's start, synced, phrase on phrase with A: silent behind the crossfader.
+      ...(decks.B === undefined ? {} : { deckB: { ...decks.B, play: true, headphoneCue: false } }),
       crossfader: 0,
-      firstPhraseAction: playPos,
+      firstPhraseAction: blendPos,
       endWhen: { kind: "position", pos: cutPos + barsSec(track, XF_TAIL_BARS) + beat },
-      timeoutSec: barsSec(track, 2 * BLEND_LEAD_BARS + XF_CUT_BARS + XF_TAIL_BARS) + 5,
+      timeoutSec: barsSec(track, BLEND_LEAD_BARS + XF_CUT_BARS + XF_TAIL_BARS) + 5,
       cues: [
-        { fromPos: leadPos, caption: "Phrase 1: faders up, crossfader on A. Press , at Phrase 2, bar 1" },
-        { fromPos: playPos, caption: "Press , now. Crossfader stays on A" },
-        { fromPos: playPos + barsSec(track, 1), caption: "Crossfader toward B at Phrase 3, bar 1" },
+        { fromPos: leadPos, caption: "Phrase 1: B plays, crossfader on A. Crossfader toward B at Phrase 2, bar 1" },
         { fromPos: blendPos, caption: `Crossfader toward B now, slow and steady: ${String(BLEND_ASKED_BARS)} bars` },
         { fromPos: blendPos + barsSec(track, BLEND_ASKED_BARS), caption: "Blend done. CUE 🎧 A on", checkpoint: true },
-        { fromPos: blendPos + barsSec(track, 12), caption: "CUE 🎧 A on. Cut back to A at Phrase 5, bar 1 (C)" },
+        { fromPos: blendPos + barsSec(track, 12), caption: "CUE 🎧 A on. Cut back to A at Phrase 4, bar 1 (C)" },
         { fromPos: cutPos + beat, caption: "Let it ride" },
       ],
     };
@@ -417,8 +396,8 @@ const crossfaderLesson: LessonDefinition = {
     };
   },
   tips: {
-    "crossfader.xf-blend": ["Press , at Phrase 2, bar 1. The crossfader waits for Phrase 3, bar 1.", `One hand, one slow move: the crossfader holds the level (no ¾ steps). Take ${String(BLEND_ASKED_BARS)} bars.`],
-    "crossfader.xf-cut": ["CUE 🎧 A on early, then snap to A at Phrase 5, bar 1 (C).", "Watch the count: snap to A (C) when it reads Phrase 5 · bar 1."],
+    "crossfader.xf-blend": ["Crossfader toward B at Phrase 2, bar 1: watch the count.", `One hand, one slow move: the crossfader holds the level (no ¾ steps). Take ${String(BLEND_ASKED_BARS)} bars.`],
+    "crossfader.xf-cut": ["CUE 🎧 A on early, then snap to A at Phrase 4, bar 1 (C).", "Watch the count: snap to A (C) when it reads Phrase 4 · bar 1."],
     "crossfader.faders-up": ["Leave both channel faders up: the crossfader does it all."],
   },
 };
