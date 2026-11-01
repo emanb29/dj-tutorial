@@ -27,6 +27,12 @@ import { originalsRoutes } from "./originals.ts";
 import { ORIGINALS_PATH } from "@shared/originals.ts";
 
 export const MAX_BODY_BYTES = 32 * 1024;
+/**
+ * A profile is saved whole and grows with every attempt and Placement (32 KB after 9 Lessons). The store
+ * keeps at most `MAX_LEARNERS` of them, so the file stays bounded at this times that.
+ */
+export const MAX_PROFILE_BODY_BYTES = 1024 * 1024;
+const PROFILE_PATH = /^\/api\/learners\/[^/]+\/profile$/;
 const FINAL_PROJECT_AUDIO_PATH = /^\/api\/learners\/[^/]+\/final-project\/audio$/;
 
 export interface AppServices {
@@ -98,13 +104,18 @@ export function createApp(options: AppOptions = {}): Hono {
     maxSize: MAX_BODY_BYTES,
     onError: (context) => failure(context, 413, "tooLarge", `The body is over ${String(MAX_BODY_BYTES / 1024)} KB. Send less.`),
   });
+  const profileLimit = bodyLimit({
+    maxSize: MAX_PROFILE_BODY_BYTES,
+    onError: (context) => failure(context, 413, "tooLarge", `The profile is over ${String(MAX_PROFILE_BODY_BYTES / 1024 / 1024)} MB. Export it and report this.`),
+  });
   const audioLimit = bodyLimit({
     maxSize: MAX_FINAL_PROJECT_BYTES,
     onError: (context) =>
       failure(context, 413, "tooLarge", `The recording is over ${String(MAX_FINAL_PROJECT_BYTES / 1024 / 1024)} MB. Record a shorter set.`),
   });
-  // The final project's audio is the one body that is not small JSON; it has its own (bounded) limit.
-  const limits: MiddlewareHandler = (context, next) => (FINAL_PROJECT_AUDIO_PATH.test(context.req.path) ? audioLimit(context, next) : jsonLimit(context, next));
+  // The final project's audio and the whole profile are the bodies that are not small; each has its own (bounded) limit.
+  const limits: MiddlewareHandler = (context, next) =>
+    FINAL_PROJECT_AUDIO_PATH.test(context.req.path) ? audioLimit(context, next) : PROFILE_PATH.test(context.req.path) ? profileLimit(context, next) : jsonLimit(context, next);
   app.use("/api/*", limits);
 
   app.get(HEALTH_PATH, (context) =>

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { emptyLearnerRecord } from "@shared/learner.ts";
-import { createApp } from "./app.ts";
+import { createApp, MAX_BODY_BYTES, MAX_PROFILE_BODY_BYTES } from "./app.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { APP_ORIGIN, appRequest, startTestServer, type TestServer } from "./test-support.ts";
 
@@ -218,10 +218,21 @@ describe("Learner profile routes", () => {
     const badJson = await appRequest(server.app, "/api/learners/default/profile", { method: "PUT", body: "{ nope" });
     const tooLarge = await appRequest(server.app, "/api/learners/default/profile", {
       method: "PUT",
-      body: JSON.stringify({ padding: "x".repeat(33 * 1024) }),
+      body: JSON.stringify({ padding: "x".repeat(MAX_PROFILE_BODY_BYTES + 1024) }),
     });
 
     expect([wrongType.status, badJson.status, tooLarge.status]).toEqual([415, 400, 413]);
+  });
+
+  it("takes a profile over the 32 KB limit for other JSON: a whole profile outgrows it", async () => {
+    server = await startTestServer({ client: null });
+    const padding = "x".repeat(MAX_BODY_BYTES + 1024);
+
+    // Past the size check, the profile route reads the body and refuses its shape (400), not its size.
+    const profile = await appRequest(server.app, "/api/learners/default/profile", { method: "PUT", body: JSON.stringify({ padding }) });
+    const coachLine = await appRequest(server.app, "/api/learners/default/coach/line", { method: "POST", body: JSON.stringify({ padding }) });
+
+    expect([profile.status, coachLine.status]).toEqual([400, 413]);
   });
 
   it("exports the record as a download", async () => {

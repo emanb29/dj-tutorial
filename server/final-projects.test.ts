@@ -52,10 +52,10 @@ describe("the final project's audio", () => {
     expect(crossSite.status).toBe(403);
   });
 
-  it("still limits JSON bodies on every other route to 32 KB", async () => {
+  it("still limits JSON bodies on the other small-JSON routes to 32 KB", async () => {
     server = await startTestServer({ client: null });
-    const response = await server.app.request("/api/learners/default/profile", {
-      method: "PUT",
+    const response = await server.app.request("/api/learners/default/coach/line", {
+      method: "POST",
       headers: { origin: APP_ORIGIN, "content-type": "application/json" },
       body: JSON.stringify({ padding: "x".repeat(40 * 1024) }),
     });
