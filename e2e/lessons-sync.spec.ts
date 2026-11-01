@@ -213,23 +213,26 @@ async function syncBlendCheck(page: Page, name: string, moves: (fromBeat: number
   // Deck B holds the second groove, slower: SYNC has something to do.
   expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B")?.grid.bpm)).toBe(121);
 
-  // Set up off the clock, A looping phrase 1 (bar 1, beat 0), then go: a whole phrase, and the blend
-  // starts on phrase 2 (bar 9, beat 32).
+  // Set up off the clock, A looping Phrase 1 (bar 1, beat 0), then go: PLAY B on Phrase 2 (bar 9,
+  // beat 32) with its fader down, and the blend on Phrase 3 (bar 17, beat 64).
   await page.keyboard.press("Enter");
   await expect(page.locator(".lesson-cue")).toHaveText("Set up: SYNC B on, CUE 🎧 B on");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.getByRole("button", { name: "Deck B beat sync" }).click();
   await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").syncOn)).toBe(true);
   await readyFromPhraseStart(page, "check", 0);
-  await expect(page.locator(".lesson-cue")).toHaveText("Next 1: Press , and fader B to ¾", { timeout: 20_000 });
+  await expect(page.locator(".lesson-cue")).toHaveText("Phrase 1: just count. Press , at Phrase 2, bar 1", { timeout: 20_000 });
+  await expect(page.getByTestId("phrase-count")).toContainText("Phrase 1 · bar");
   await keysAtBeats(page, [32], { codes: ["Comma"] });
-  await commandsAtBeats(page, moves(32));
+  await expect(page.locator(".lesson-cue")).toHaveText("Fader B to ¾ at Phrase 3, bar 1", { timeout: 20_000 });
+  await expect(page.getByTestId("phrase-count")).toContainText("Phrase 2 · bar");
+  await commandsAtBeats(page, moves(64));
   const card = resultCard(page);
   await expect(card).toBeVisible({ timeout: 30_000 });
   return card;
 }
 
-test("sync-blend: SYNC B, PLAY B on A's phrase start, the stepped blend (B ¾, A ¾, B up, A down), passes", async ({ page }) => {
+test("sync-blend: SYNC B, PLAY B on Phrase 2, the stepped blend from Phrase 3 (B ¾, A ¾, B up, A down), passes", async ({ page }) => {
   test.setTimeout(120_000);
   const card = await syncBlendCheck(page, "syncblend", steppedBlend);
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");

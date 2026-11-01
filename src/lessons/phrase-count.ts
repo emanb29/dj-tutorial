@@ -1,7 +1,8 @@
 // The live 8-bar count a Lesson's hook and practice show ("bar 3 of 8"), and when it steps aside so
 // the Learner counts by ear: after 2 phrase-timed actions right in a row (phrase taps in Count phrases;
-// cuts, swaps, pad jumps … elsewhere) it fades out, after 2 misses in a row it comes back. Never in a
-// Check: counting is the skill the Check grades. Pure.
+// cuts, swaps, pad jumps … elsewhere) it fades out, after 2 misses in a row it comes back. Not in a
+// Check, where counting is graded, unless the Lesson grades something else and its captions name phrases
+// (`phraseCountInCheck`): then the count is numbered from the Check's start and never fades. Pure.
 import type { BeatGrid } from "@shared/attempt.ts";
 import { BARS_PER_PHRASE, BEATS_PER_BAR, beatSec } from "./track.ts";
 
@@ -69,4 +70,12 @@ export function phrasePosition(grid: BeatGrid, positionSec: number): PhrasePosit
     bar: inPhrase + 1,
     beat: (((beats % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR) + 1,
   };
+}
+
+/** The Check's count (`phraseCountInCheck`): phrases numbered from the Check's start, Phrase 1. Null before it. */
+export function checkPhraseCount(grid: BeatGrid, startPos: number, positionSec: number): { readonly phrase: number; readonly bar: number } | null {
+  // A hair of slack, as in phrasePosition: a deck parked on its start is in Phrase 1.
+  if (positionSec < startPos - 1e-3) return null;
+  const now = phrasePosition(grid, positionSec);
+  return { phrase: now.phrase - phrasePosition(grid, startPos).phrase + 1, bar: now.bar };
 }

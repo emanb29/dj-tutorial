@@ -576,10 +576,12 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
       { control: "sync", deck: "B", value: true },
       { control: "headphone-cue", deck: "B", value: true },
     ]);
-    const blendPos = cuePos(plan, "Next 1: Press , and fader B to ¾") + 2 * barLength(track);
-    const upPos = cuePos(plan, "Now A all the way down");
+    // PLAY B on Phrase 2's 1, fader down; the blend on Phrase 3's 1.
+    const playPos = cuePos(plan, "Press , now. Fader B stays down");
+    const blendPos = cuePos(plan, "Fader B to ¾ now, then A to ¾");
+    const upPos = cuePos(plan, "Fader B all the way up now, then A all the way down");
     const beat = beatSec(track.grid);
-    await run.toPos(blendPos);
+    await run.toPos(playPos);
     run.send({ control: "play", deck: "B" });
     await movesAt(run, [
       ...drag(track, blendPos, 0.5, fader("B"), 0, 0.75),

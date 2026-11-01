@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PHRASE_COUNT_START, phraseCountStep, phrasePosition, type PhraseCountEvent, type PhraseCountState } from "./phrase-count.ts";
+import { checkPhraseCount, PHRASE_COUNT_START, phraseCountStep, phrasePosition, type PhraseCountEvent, type PhraseCountState } from "./phrase-count.ts";
 
 const run = (events: readonly PhraseCountEvent[], from: PhraseCountState = PHRASE_COUNT_START) => events.reduce(phraseCountStep, from);
 const right: PhraseCountEvent = { kind: "tap", onPhraseStart: true };
@@ -54,5 +54,20 @@ describe("phrasePosition", () => {
 
   it("puts a pickup before bar 1 in phrase 0's last bar", () => {
     expect(phrasePosition(grid, 0.3)).toEqual({ phrase: 0, bar: 8, beat: 4 });
+  });
+});
+
+describe("checkPhraseCount", () => {
+  const grid = { bpm: 120, firstBeat: 0.25, downbeatIndex: 1, rmsResidualMs: 0 };
+  // The Check starts on the track's phrase 3 (bar 1 at 0.75 s, a phrase 16 s).
+  const startPos = 0.75 + 2 * 16;
+  it("numbers phrases from the Check's start: its first phrase is Phrase 1", () => {
+    expect(checkPhraseCount(grid, startPos, startPos)).toEqual({ phrase: 1, bar: 1 });
+    expect(checkPhraseCount(grid, startPos, startPos + 16 + 6 * 2 + 0.5)).toEqual({ phrase: 2, bar: 7 });
+    expect(checkPhraseCount(grid, startPos, startPos + 2 * 16)).toEqual({ phrase: 3, bar: 1 });
+  });
+
+  it("shows nothing while the deck is still before the Check's start", () => {
+    expect(checkPhraseCount(grid, startPos, startPos - 1)).toBeNull();
   });
 });

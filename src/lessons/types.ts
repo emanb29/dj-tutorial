@@ -452,6 +452,11 @@ export interface LessonDefinition {
    */
   readonly phraseCount?: true;
   /**
+   * The Check shows the count too, numbered from its start ("Phrase 2 · bar 7 of 8"), so its captions can
+   * name a phrase and a bar instead of "the next 1". Always shown: it never fades.
+   */
+  readonly phraseCountInCheck?: true;
+  /**
    * Practice waits after each set-up, as the Check's `setUp` step does (with its asks): deck A loops the
    * phrase from its practice start until the Learner has set up, then plays on to the phrase-timed action.
    */

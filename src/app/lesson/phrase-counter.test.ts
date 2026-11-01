@@ -8,4 +8,9 @@ describe("phraseCountText", () => {
     expect(phraseCountText({ bar: 1, shown: false })).toBe("now by ear");
     expect(phraseCountText(null)).toBe("");
   });
+
+  it("puts the phrase number first in a Check", () => {
+    expect(phraseCountText({ phrase: 2, bar: 7, shown: true })).toBe("Phrase 2 · bar 7 of 8");
+    expect(phraseCountText({ phrase: 3, bar: 1, shown: true })).toBe("Phrase 3 · bar 1 of 8 · new phrase!");
+  });
 });

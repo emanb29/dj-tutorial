@@ -62,7 +62,7 @@ export { partnerOrder } from "./plan.ts";
 export { phrasePreviewSpan, previewPhraseAt } from "./phrase-preview.ts";
 export { EAR_ROUND_START, earGuess, earHeard, mysteryMasterTempo, type EarRound } from "./ear-round.ts";
 export { phraseTapLine, sectionAnswerLine } from "./phrase-feedback.ts";
-export { PHRASE_COUNT_START, phraseCountStep, phrasePosition, type PhraseCountState, type PhrasePosition } from "./phrase-count.ts";
+export { checkPhraseCount, PHRASE_COUNT_START, phraseCountStep, phrasePosition, type PhraseCountState, type PhrasePosition } from "./phrase-count.ts";
 export { BY_EAR_LESSONS, COVERED_DISPLAYS, describeByEar, kickRun } from "./catalogue-by-ear.ts";
 export { drillReveals, drillStep, livePhaseMs, startDrill, tempoPercentApart, type DrillAction, type DrillInput, type DrillReading, type DrillState, type DrillStep, type RoundStart } from "./drill.ts";
 export { hotCuePadPhrases, PERFORMANCE_LESSONS, type PerformanceLessonId } from "./catalogue-performance.ts";

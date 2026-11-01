@@ -565,7 +565,7 @@ test.describe("Lessons 8–11 on a phone (412×915, touch)", () => {
     await expect(caption(page).locator(".lesson-do")).toHaveText("Press BEAT SYNC on B");
     await expectFingerSized(page, page.getByRole("button", { name: "Deck B beat sync" }));
     await page.getByRole("button", { name: "Deck B beat sync" }).tap();
-    await expect(caption(page)).toContainText("On the phrase's 1: Tap PLAY on deck B");
+    await expect(caption(page)).toContainText("On a phrase's bar 1: Tap PLAY on deck B");
   });
 
   test("crossfader: the crossfader is on screen and finger-sized, its cut key is not in the caption", async ({ page }) => {

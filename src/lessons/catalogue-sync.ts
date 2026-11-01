@@ -203,6 +203,8 @@ const BLEND_ASKED_BARS = 10;
  * beat later, both at ¾ until this bar, then B up and A down a beat apart. About 9 bars as heard.
  */
 const STEP_UP_BARS = 9;
+/** Where sync-blend's step up falls, as the Check's count shows it: the blend starts on Phrase 3, bar 1. */
+const STEP_UP_AT = `Phrase ${String(3 + Math.floor(STEP_UP_BARS / 8))}, bar ${String((STEP_UP_BARS % 8) + 1)}`;
 
 /** Phrases of groove the two-track Lessons need from the blend's start: the blend, and the cut after it. */
 const STEADY_PHRASES = 3;
@@ -223,6 +225,17 @@ const noSteadyRun = (track: LessonTrack) =>
 /** SYNC off and the tempo fader centred, unless practice is going round again (`again`): then they are left as the Learner set them. */
 const tempoReset = (again: boolean) => (again ? {} : { sync: false, tempoPercent: 0 });
 
+/**
+ * sync-blend's three phrases on deck A, numbered as the Learner sees them: Phrase 1 (`leadPos`) is
+ * counted, B plays on Phrase 2's 1 (`playPos`) with its fader down, and the blend starts on Phrase 3's 1
+ * (`blendPos`). One move per phrase start: PLAY B and fader B never have to share a beat. B's own cue
+ * (its first phrase of groove) plays unheard through Phrase 2, so the blend lands on its second.
+ */
+function syncBlendPositions(track: LessonTrack): { leadPos: number; playPos: number; blendPos: number; cueB: number } {
+  const { blendPos: playPos, leadPos, cueB } = blendPositions(track);
+  return { leadPos, playPos, blendPos: playPos + barsSec(track, BLEND_LEAD_BARS), cueB };
+}
+
 function syncDecks(track: LessonTrack, again = false): DeckSetups {
   const { leadPos, cueB } = blendPositions(track);
   return {
@@ -238,12 +251,13 @@ const syncBlend: LessonDefinition = {
   practiceStart: (track) => syncDecks(track).A.pos,
   practiceDecks: syncDecks,
   practiceLoop: (track) => ({
-    atPos: blendPositions(track).blendPos + barsSec(track, BLEND_MAX_BARS),
+    atPos: syncBlendPositions(track).blendPos + barsSec(track, BLEND_MAX_BARS),
     reset: "setup",
     decks: syncDecks(track, true),
   }),
   practiceSetUp: true,
   phraseCount: true,
+  phraseCountInCheck: true,
   partner: { problems: pairProblems },
   headphones: true,
   aids: { sync: true, bpmDisplay: true },
@@ -251,16 +265,16 @@ const syncBlend: LessonDefinition = {
   trackProblems: (track) => [...tooShort(track), ...noSteadyRun(track)],
   hook: [
     { caption: "Press BEAT SYNC on B", control: "B.sync", trigger: { kind: "sync-on", deck: "B" }, named: "SYNC: B now runs at A's tempo." },
-    { caption: "On the phrase's 1: Press ,", control: "B.play", trigger: { kind: "play", deck: "B" }, named: "B starts in time with A. Fader down: only you know." },
-    { caption: "Fader B to ¾, then A to ¾", control: "B.channel-fader", trigger: { kind: "blend-step", step: 1 }, named: "Both at ¾: a blend. Then B up, A down." },
+    { caption: "On a phrase's bar 1: Press , (fader B stays down)", control: "B.play", trigger: { kind: "play", deck: "B" }, named: "B plays in time with A. Fader down: only you hear it." },
+    { caption: "Next phrase's bar 1: fader B to ¾, then A to ¾", control: "B.channel-fader", trigger: { kind: "blend-step", step: 1 }, named: "Both at ¾: a blend. Then B up, A down." },
   ],
   // One rep per step: ready once all four are made in order.
-  practice: { caption: "On the 1: Press , B to ¾, A to ¾. Later: B up, A down", rep: "blend-step", window: 4, needed: 4 },
-  checkCaption: "This one counts: SYNC B, Press , on the 1. B ¾, A ¾ … B up, A down",
+  practice: { caption: "Press , on bar 1, fader down. Next bar 1: B to ¾, A to ¾. Later: B up, A down", rep: "blend-step", window: 4, needed: 4 },
+  checkCaption: "This one counts: SYNC B. Press , at Phrase 2, fader B at Phrase 3",
   questions: [],
   planCheck: (track) => {
     const decks = syncDecks(track);
-    const { blendPos, leadPos } = blendPositions(track);
+    const { blendPos, leadPos, playPos } = syncBlendPositions(track);
     return {
       startPos: leadPos,
       autoPlay: true,
@@ -268,23 +282,24 @@ const syncBlend: LessonDefinition = {
       deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
       ...(decks.B === undefined ? {} : { deckB: { ...decks.B, headphoneCue: false } }),
       setUp: setUpStep([{ kind: "sync-on", deck: "B" }, { kind: "cue-on", deck: "B" }]),
-      firstPhraseAction: blendPos,
+      firstPhraseAction: playPos,
       endWhen: { kind: "faded-out-then", deck: "A", bars: BLEND_TAIL_BARS },
-      timeoutSec: barsSec(track, BLEND_LEAD_BARS + BLEND_MAX_BARS + 4) + 5,
+      timeoutSec: barsSec(track, 2 * BLEND_LEAD_BARS + BLEND_MAX_BARS + 4) + 5,
       cues: [
-        { fromPos: leadPos, caption: "Count this phrase: B in on the next 1" },
-        { fromPos: blendPos - barsSec(track, 2), caption: "Next 1: Press , and fader B to ¾" },
-        { fromPos: blendPos, caption: "Now fader A to ¾" },
-        { fromPos: blendPos + barsSec(track, 1), caption: "Both at ¾. Hold, count the bars" },
-        { fromPos: blendPos + barsSec(track, STEP_UP_BARS - 1), caption: "Next 1: fader B all the way up" },
-        { fromPos: blendPos + barsSec(track, STEP_UP_BARS), caption: "Now A all the way down" },
+        { fromPos: leadPos, caption: "Phrase 1: just count. Press , at Phrase 2, bar 1" },
+        { fromPos: playPos, caption: "Press , now. Fader B stays down" },
+        { fromPos: playPos + barsSec(track, 1), caption: "Fader B to ¾ at Phrase 3, bar 1" },
+        { fromPos: blendPos, caption: "Fader B to ¾ now, then A to ¾" },
+        { fromPos: blendPos + barsSec(track, 1), caption: `Both at ¾. Hold until ${STEP_UP_AT}` },
+        { fromPos: blendPos + barsSec(track, STEP_UP_BARS - 1), caption: `At ${STEP_UP_AT}: fader B all the way up, then A down` },
+        { fromPos: blendPos + barsSec(track, STEP_UP_BARS), caption: "Fader B all the way up now, then A all the way down" },
       ],
     };
   },
   taskFor: (): LessonTask => ({ lessonId: "sync-blend" }),
   tips: {
-    "sync-blend.blend-start": ["Press , on the 1 of the new phrase, then start fader B.", "Count A's 8 bars on the 1s; go on the next 1."],
-    "sync-blend.blend-length": [`Hold both at ¾ for ${String(STEP_UP_BARS)} bars: count them on the 1s.`, "Done by 16 bars: A all the way down."],
+    "sync-blend.blend-start": ["Press , at Phrase 2, bar 1. Fader B waits for Phrase 3, bar 1.", "Watch the count: fader B moves when it reads Phrase 3 · bar 1."],
+    "sync-blend.blend-length": [`Hold both at ¾ until ${STEP_UP_AT}.`, "Done by 16 bars: A all the way down."],
     "sync-blend.loud-steady": [
       "Both faders full is +3 dB louder. B to ¾, A to ¾, then B up and A down.",
       "Stop B at ¾ before A moves: never both full, never both low.",

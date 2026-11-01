@@ -28,6 +28,7 @@ import {
   type ListeningClip,
   type LessonTrack,
   type Observation,
+  checkPhraseCount,
 } from "@lessons";
 import type { LessonId } from "@shared/attempt.ts";
 import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
@@ -45,7 +46,7 @@ import { needsHeadphonesCheck } from "./headphones-check.ts";
 import { HeadphonesGate } from "./HeadphonesGate.tsx";
 import { lessonKey } from "./lesson-keys.ts";
 import { LessonSession } from "./lesson-session.ts";
-import { PhraseCounter } from "./PhraseCounter.tsx";
+import { PhraseCounter, type ShownCount } from "./PhraseCounter.tsx";
 import { PhrasePlayButton, PhrasePreviewBar } from "./PhrasePreview.tsx";
 import { EarRound } from "./EarRound.tsx";
 import { NO_DRILL_STATUS, type DrillStatus } from "./practice-drill.ts";
@@ -344,6 +345,16 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
   // A by-ear drill (Lessons 14–16) starts its own rounds from the set-up, and its last hook step shows a reveal a re-cue would cut off.
   const setUp = practiceSetUp(phase.kind, session?.deckTrack("B") != null && definition.drill === undefined);
   const attempt = phase.kind === "check" ? phase.attempt : null;
+  const practiceCount = useCallback(() => session?.phraseCount() ?? null, [session]);
+  // The Check's count (`phraseCountInCheck`) is numbered from the Check's start, so captions can say "Phrase 3, bar 1".
+  const checkCount = useCallback((): ShownCount | null => {
+    const plan = session?.runningPlan();
+    const track = session?.deckTrack("A");
+    if (engine === null || plan == null || track == null || !engine.deckState("A").playing) return null;
+    const reading = engine.playhead("A");
+    const count = reading.ok ? checkPhraseCount(track.grid, plan.startPos, reading.positionSec) : null;
+    return count === null ? null : { ...count, shown: true };
+  }, [session, engine]);
   useEffect(() => {
     if (session !== null && setUp !== null) session.preparePractice(setUp);
   }, [session, setUp]);
@@ -557,7 +568,8 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
             setupStatus={setup.kind === "loading" ? setup.status : headphonesGate ? "Headphones check first" : null}
             cueLine={cueLine}
           />
-          {session !== null && inPractice && definition.phraseCount === true ? <PhraseCounter session={session} /> : null}
+          {session !== null && inPractice && definition.phraseCount === true ? <PhraseCounter count={practiceCount} /> : null}
+          {session !== null && phase.kind === "check" && definition.phraseCountInCheck === true ? <PhraseCounter count={checkCount} /> : null}
         </p>
         {wording === "touch" ? <TouchGo phase={phase} dispatch={dispatch} /> : null}
         {wording === "touch" && session !== null ? <TouchReady phase={phase} session={session} definition={definition} /> : null}
