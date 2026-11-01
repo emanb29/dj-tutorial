@@ -286,7 +286,9 @@ describe("sync-blend", () => {
 describe("crossfader", { timeout: 20_000 }, () => {
   const definition = lessonDefinition("crossfader");
   const plan = definition.planCheck(track);
-  const blendPos = plan.startPos + 8 * BAR;
+  // Phrase 1 counted, PLAY B on Phrase 2, the blend on Phrase 3, the cut back to A on Phrase 5.
+  const playPos = plan.startPos + 8 * BAR;
+  const blendPos = plan.startPos + 16 * BAR;
   const cutPos = blendPos + 16 * BAR;
   const cueB = plan.deckB?.pos ?? 0;
   const synced = track.grid.bpm / partner.grid.bpm;
@@ -295,10 +297,12 @@ describe("crossfader", { timeout: 20_000 }, () => {
     expect(plan.crossfader).toBe(0);
     expect(plan.deckB).toMatchObject({ fader: 1, sync: true, cuePoint: true, play: false });
     expect(plan.endWhen).toEqual({ kind: "position", pos: cutPos + 4 * BAR + BEAT });
+    expect(plan.firstPhraseAction).toBeCloseTo(playPos);
   });
 
   function crossfaderAttempt(cutAt: number, practiceBefore: boolean): { graded: Attempt; end: number } {
-    const playBAt = heardA(plan, blendPos);
+    const playBAt = heardA(plan, playPos);
+    const blendAt = heardA(plan, blendPos);
     const end = heardA(plan, cutPos + 4 * BAR + BEAT);
     const practice: PlayheadSegment[] = practiceBefore ? [{ fromCtx: RECORDER_START, pos: blendPos + 14 * BAR - 0.3, rate: 1 }] : [];
     const graded = recorded({
@@ -309,8 +313,8 @@ describe("crossfader", { timeout: 20_000 }, () => {
       events: [
         event(CUED + 1, "cueMonitor", 1, "B"),
         { ...event(playBAt, "play", 1, "B"), appliedCtx: playBAt },
-        ...ramp("crossfader", undefined, { from: playBAt, to: playBAt + 9 * BAR }, 0, 1),
-        event(playBAt + 12 * BAR, "cueMonitor", 1, "A"),
+        ...ramp("crossfader", undefined, { from: blendAt, to: blendAt + 9 * BAR }, 0, 1),
+        event(blendAt + 12 * BAR, "cueMonitor", 1, "A"),
         event(cutAt, "crossfader", 0),
       ].sort((a, b) => a.ctx - b.ctx),
       meters: { master: masterFrames(end), A: frames(RECORDER_START, end, () => MUSIC), B: frames(RECORDER_START, end, (t) => (t >= playBAt ? MUSIC : { peak: -120, momentary: -120 })) },

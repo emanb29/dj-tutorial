@@ -595,13 +595,16 @@ const FOLLOW: Readonly<Record<BuiltLessonId, (run: Run) => Promise<Answers>>> = 
 
   crossfader: async (run) => {
     const { plan, track } = run;
-    const blendPos = cuePos(plan, "Next phrase: Press , and slide to B") + 2 * barLength(track);
+    // PLAY B on Phrase 2's 1 (crossfader on A: silent), the blend on Phrase 3's 1.
+    const playPos = cuePos(plan, "Press , now. Crossfader stays on A");
+    const blendPos = cuePos(plan, `Crossfader toward B now, slow and steady: 10 bars`);
     run.send({ control: "headphone-cue", deck: "B", value: true });
-    await run.toPos(blendPos);
+    await run.toPos(playPos);
     run.send({ control: "play", deck: "B" });
+    await run.toPos(blendPos);
     // One slow, even move over the 10 bars asked.
     await movesAt(run, drag(track, blendPos, 40, (value) => ({ control: "crossfader", value }), 0, 1).slice(1));
-    const cutCue = cuePos(plan, "CUE 🎧 A on. Cut back to A on the phrase's 1 (C)");
+    const cutCue = cuePos(plan, "CUE 🎧 A on. Cut back to A at Phrase 5, bar 1 (C)");
     await run.toPos(cutCue);
     run.send({ control: "headphone-cue", deck: "A", value: true });
     await run.toPos(nextPhraseStart(track, cutCue));

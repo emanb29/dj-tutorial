@@ -249,14 +249,15 @@ test("sync-blend: B all the way up while A is full is too loud, and the Check sa
   await expect(card).toContainText(/✗ Level through the blend: moved [3-9]\.\d dB \(need 3 or less\)/);
 });
 
-test("crossfader: a crossfader blend to B on the phrase, then a cut back to A with C, passes", async ({ page }) => {
+test("crossfader: PLAY B on Phrase 2, the crossfader blend from Phrase 3, the cut back to A on Phrase 5, passes", async ({ page }) => {
   test.setTimeout(120_000);
   const learnerId = learner("crossfader");
   await seedPassed(page, learnerId, [...FIRST_SEVEN, "tempo-fader", "sync-blend"], { headphones: true });
   await openLesson(page, learnerId, "crossfader");
   await expect(caption(page)).toContainText("Press , to play B");
 
-  // A from bar 1 (beat 0), a whole phrase; the blend on bar 9 (beat 32); the cut back to A on bar 25 (beat 96).
+  // Phrase 1 from beat 0; PLAY B on Phrase 2 (beat 32), crossfader on A; the blend on Phrase 3
+  // (beat 64); the cut back to A on Phrase 5 (beat 128).
   await page.keyboard.press("Enter");
   await playingPast(page, "check", 0.5, { before: 12 });
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
@@ -264,10 +265,11 @@ test("crossfader: a crossfader blend to B on the phrase, then a cut back to A wi
   // One slow, even move over the 10 bars asked (a step every 0.4 beats, as a trackpad drag): the
   // constant-power curve holds the loudness through the middle.
   const steps = Math.round(40 / 0.4);
-  const blend = Array.from({ length: steps }, (_, step) => ({ beat: 32 + (step + 1) * 0.4, command: { control: "crossfader", value: (step + 1) / steps } }));
+  const blend = Array.from({ length: steps }, (_, step) => ({ beat: 64 + (step + 1) * 0.4, command: { control: "crossfader", value: (step + 1) / steps } }));
+  await expect(page.getByTestId("phrase-count")).toContainText("Phrase 2 · bar");
   await commandsAtBeats(page, blend);
   await page.getByRole("button", { name: "Channel A headphone cue" }).click();
-  await keysAtBeats(page, [96], { codes: ["KeyC"] });
+  await keysAtBeats(page, [128], { codes: ["KeyC"] });
 
   const card = resultCard(page);
   await expect(card).toBeVisible({ timeout: 30_000 });
