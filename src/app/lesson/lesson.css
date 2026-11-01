@@ -73,7 +73,7 @@
   font-size: var(--text-xs);
 }
 
-/* ---- the caption line: one line, always ------------------------------------------------- */
+/* ---- the caption line: never cut off; it wraps to a second line rather than hide the instruction ---- */
 
 .lesson-stage {
   display: flex;
@@ -85,20 +85,14 @@
 .lesson-caption {
   display: flex;
   flex: 1;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-4);
+  gap: 0 var(--space-4);
   min-width: 0;
   margin: 0;
-  overflow: hidden;
   font-size: var(--text-caption);
   font-weight: 700;
   letter-spacing: -0.01em;
-  white-space: nowrap;
-}
-
-.lesson-caption > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .lesson-named {
