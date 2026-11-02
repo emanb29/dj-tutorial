@@ -1,5 +1,5 @@
 /**
- * The contract for Originals: tracks the owner's generator writes under
+ * The contract for Originals: tracks the maintainer's generator writes under
  * `.local/tracks/originals/` (gitignored, never committed). The server reads them, and the client
  * turns their meta into a known beat grid so these tracks skip analysis.
  *

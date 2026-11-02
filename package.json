@@ -1,5 +1,6 @@
 {
-  "name": "learn-to-dj",
+  "name": "dj-tutorial",
+  "license": "MIT",
   "version": "0.0.0",
   "private": true,
   "description": "An interactive wizard that teaches DJing, controller-first.",

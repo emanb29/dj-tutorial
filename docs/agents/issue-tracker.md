@@ -3,15 +3,15 @@
 Issues and specs for this repo live in Linear:
 
 - **Team:** Emanb29 (key `ISS`)
-- **Project:** Learn to DJ, https://linear.app/emanb29/project/learn-to-dj-643b7d40d305
+- **Project:** DJ Tutorial, https://linear.app/emanb29/project/dj-tutorial-643b7d40d305
 
-Use the `linear-server` MCP tools for every operation. Always pass `team: "Emanb29"` and `project: "Learn to DJ"` when creating issues, so they don't land outside the project. Issue identifiers look like `ISS-123`.
+Use the `linear-server` MCP tools for every operation. Always pass `team: "Emanb29"` and `project: "DJ Tutorial"` when creating issues, so they don't land outside the project. Issue identifiers look like `ISS-123`.
 
 ## Conventions
 
 - **Create an issue:** `save_issue` with `team`, `project`, `title` and a Markdown `description`. Don't pass `id` when creating.
 - **Read an issue:** `get_issue` with the identifier, then `list_comments` for its conversation history.
-- **List issues:** `list_issues` with `project: "Learn to DJ"`, filtered by `label` or `state` as needed.
+- **List issues:** `list_issues` with `project: "DJ Tutorial"`, filtered by `label` or `state` as needed.
 - **Comment on an issue:** `save_comment` with the issue identifier and a Markdown body.
 - **Apply or remove labels:** `save_issue` with `id` plus `addLabels` / `removeLabels`. Never use `labels` for this, because it replaces the whole label set. If a label doesn't exist yet, create it on the team with `create_issue_label`.
 - **Close:** add a comment explaining why, then `save_issue` with `state: "Done"`. Use `state: "Canceled"` for wontfix.
@@ -22,7 +22,7 @@ Use the `linear-server` MCP tools for every operation. Always pass `team: "Emanb
 
 ## When a skill says "publish to the issue tracker"
 
-Create a Linear issue in the Learn to DJ project.
+Create a Linear issue in the DJ Tutorial project.
 
 ## When a skill says "fetch the relevant ticket"
 

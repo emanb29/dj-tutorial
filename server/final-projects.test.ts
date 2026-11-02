@@ -29,7 +29,7 @@ describe("the final project's audio", () => {
     const download = await server.app.request(PATH);
     expect(download.status).toBe(200);
     expect(download.headers.get("content-type")).toBe("audio/ogg");
-    expect(download.headers.get("content-disposition")).toContain('filename="learn-to-dj-default-final-project.ogg"');
+    expect(download.headers.get("content-disposition")).toContain('filename="dj-tutorial-default-final-project.ogg"');
     expect([...new Uint8Array(await download.arrayBuffer())]).toEqual([9, 8]);
     // Bounded: one audio file and its metadata per Learner, no leftovers.
     expect((await readdir(join(server.dataDir, FINAL_PROJECTS_DIR))).sort()).toEqual(["default.audio", "default.json"]);

@@ -1,4 +1,4 @@
-// Tolerance tiers (check-design, "Input leeway", owner 2026-10-16).
+// Tolerance tiers (check-design, "Input leeway", maintainer 2026-10-16).
 import type { LessonId } from "@shared/attempt.ts";
 
 /** Keyboard taps, every Lesson. */

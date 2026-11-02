@@ -260,7 +260,7 @@ interface MissionScreenProps {
 function MissionScreen({ mission, onMission, onGo, onSkip, retake }: MissionScreenProps) {
   return (
     <main className="placement-page placement-mission">
-      <h1>{retake ? "Show me again" : "Learn to DJ"}</h1>
+      <h1>{retake ? "Show me again" : "DJ Tutorial"}</h1>
       <form
         onSubmit={(event) => {
           event.preventDefault();

@@ -43,5 +43,5 @@ export function exportTags(project: Pick<FinalProject, "recordedAt" | "tracks">,
 }
 
 export function exportFileName(project: Pick<FinalProject, "recordedAt">, format: ExportFormat): string {
-  return `learn-to-dj-set-${project.recordedAt.slice(0, 10)}.${format}`;
+  return `dj-tutorial-set-${project.recordedAt.slice(0, 10)}.${format}`;
 }

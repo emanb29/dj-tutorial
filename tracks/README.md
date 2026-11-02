@@ -17,7 +17,7 @@ runtime. No audio is stored in this repo. The app fetches each `url` from archiv
 | `genre` | The track's role in the course: `house`, `techno` or `uk-garage` (see [lesson-catalogue Q7](../docs/lesson-catalogue.md)) |
 | `bpmEstimate` | Estimated tempo, to the nearest 0.5 BPM |
 | `introBars`, `outroBars` | Estimated mixable intro and outro, rounded to 4 bars |
-| `corsOk` | `true` if both hops sent `ACAO: *` for `Origin: https://dj.example.com` and a `Range` request returned `206` |
+| `corsOk` | `true` if both hops sent `ACAO: *` for a cross-origin `Origin` (the app's) and a `Range` request returned `206` |
 | `notes` | Caveats, kick density, grid steadiness, release name and the uploader's genre tags |
 
 ## How the tracks were chosen

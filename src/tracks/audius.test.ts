@@ -60,7 +60,7 @@ describe("Audius source", () => {
 
     const found = await source.search("deep house");
 
-    expect(calls[0]?.url).toBe(`${BASE}/v1/tracks/search?query=deep+house&app_name=learn-to-dj`);
+    expect(calls[0]?.url).toBe(`${BASE}/v1/tracks/search?query=deep+house&app_name=dj-tutorial`);
     expect(found.ok && found.value.map((track) => track.id)).toEqual(["a1"]);
   });
 
@@ -102,7 +102,7 @@ describe("Audius source", () => {
     const loaded = await source.load(found.value[0]);
 
     const streamCall = calls.find((call) => call.url.includes("/stream"));
-    expect(streamCall?.url).toBe(`${BASE}/v1/tracks/a1/stream?app_name=learn-to-dj&skip_play_count=true`);
+    expect(streamCall?.url).toBe(`${BASE}/v1/tracks/a1/stream?app_name=dj-tutorial&skip_play_count=true`);
     expect(streamCall?.init).toMatchObject({ mode: "cors", credentials: "omit", cache: "no-store" });
     expect(loaded.ok && loaded.value.track.retention).toBe("session-only");
     expect(loaded.ok && loaded.value.contentHash).toMatch(/^[0-9a-f]{64}$/);

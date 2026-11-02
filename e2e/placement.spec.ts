@@ -20,14 +20,14 @@ const placementMain = (page: Page) => page.locator("main.placement");
 /** Waits until `task` is on screen and its attempt (the music) is running. */
 async function taskPlaying(page: Page, task: string): Promise<void> {
   await expect(page.locator("main.placement")).toHaveAttribute("data-task", task, { timeout: 20_000 });
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.phase() === "check", undefined, { timeout: 20_000 });
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.phase() === "check", undefined, { timeout: 20_000 });
 }
 
 /** Waits until deck A's heard playhead is past `beat` in the running task. */
 async function pastBeat(page: Page, beat: number): Promise<void> {
   await page.waitForFunction(
     (past) => {
-      const reading = (window as LessonWindow).learnToDjLesson?.engine.playhead("A");
+      const reading = (window as LessonWindow).djTutorialLesson?.engine.playhead("A");
       return reading?.ok === true && (reading.beat ?? 0) > past;
     },
     beat,

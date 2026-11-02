@@ -9,7 +9,7 @@ import { TAP_TOLERANCE_MS } from "../tolerance.ts";
 
 /**
  * Full form: 8 + 8 bars. Short form: 4 + 4 bars, same ratios (extras scaled down). The downbeat
- * extras cap is an owner decision (2026-10-17) so tap spam around each downbeat cannot pass.
+ * extras cap is a maintainer decision (2026-10-17) so tap spam around each downbeat cannot pass.
  */
 const LIMITS: Readonly<Record<CheckVariant, { beatExtras: number; downbeatsMatched: number; downbeatExtras: number }>> = {
   full: { beatExtras: 3, downbeatsMatched: 7, downbeatExtras: 3 },

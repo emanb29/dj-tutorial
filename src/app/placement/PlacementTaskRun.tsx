@@ -97,7 +97,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
         );
         session = created;
         const running = engine;
-        window.learnToDjLesson = { engine: running, track, phase: () => handlePhase(phaseRef.current), deckTrack: (deck) => created.deckTrack(deck) } satisfies LessonHandle;
+        window.djTutorialLesson = { engine: running, track, phase: () => handlePhase(phaseRef.current), deckTrack: (deck) => created.deckTrack(deck) } satisfies LessonHandle;
         setSetup({ engine: running, session: created });
       } catch (error) {
         if (cancelled()) return;
@@ -108,7 +108,7 @@ export function PlacementTaskRun({ definition, learner, passedLessons, loadTrack
     return () => {
       abort.abort();
       session?.close();
-      delete window.learnToDjLesson;
+      delete window.djTutorialLesson;
       engine?.close().catch((error: unknown) => {
         console.warn("[placement] the audio engine did not close cleanly", error);
       });

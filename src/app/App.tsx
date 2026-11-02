@@ -33,7 +33,7 @@ export function isOriginalsPage(pathname: string): boolean {
 }
 
 /**
- * The playground is a developer tool: on the dev server (including the owner's tunnel) it is always
+ * The playground is a developer tool: on the dev server (including through a PUBLIC_HOSTS tunnel) it is always
  * there; in a production build it needs an explicit `?playground` flag (the end-to-end tests use it).
  */
 export function playgroundEnabled(location: { pathname: string; search: string }, devServer: boolean): boolean {
@@ -281,7 +281,7 @@ export function App() {
   return (
     <main className="home">
       <header className="home-head">
-        <h1>Learn to DJ</h1>
+        <h1>DJ Tutorial</h1>
         <a
           className="home-controller-link"
           href={CONTROLLER_PAGE_PATH}

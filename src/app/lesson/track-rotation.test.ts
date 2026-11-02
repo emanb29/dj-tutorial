@@ -21,7 +21,7 @@ function original(id: string, genre: string, bpm: number, subgenre?: string): Tr
     id,
     source: "original",
     title: `Track ${id}`,
-    artist: "learn-to-dj original",
+    artist: "dj-tutorial original",
     bpmHint: bpm,
     genre,
     ...(subgenre === undefined ? {} : { subgenre }),

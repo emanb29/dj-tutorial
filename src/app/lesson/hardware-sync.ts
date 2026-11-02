@@ -1,4 +1,4 @@
-// The screen's controller in step with a connected DDJ-FLX4 (owner, 2026-10-18: "the physical and
+// The screen's controller in step with a connected DDJ-FLX4 (maintainer, 2026-10-18: "the physical and
 // virtual controllers should ALWAYS be in sync"). The FLX4's knobs and faders cannot be moved by the app
 // and cannot report where they are until they move (src/midi/positions.ts), so while it is connected a
 // set-up never turns a fader or knob, in software, to somewhere the hardware is known not to be:

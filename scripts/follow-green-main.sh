@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fast-forwards a main checkout to the newest main commit whose CI push run passed, and never past
-# it. The owner's live dev server runs from the main checkout, so Vite and tsx hot-reload the
+# it. A live dev server can run from the main checkout, so Vite and tsx hot-reload the
 # result. Safe to run again and again (from cron, or after each merge): it does nothing when the
 # checkout is already there, and refuses when the working tree is dirty, the checkout is not on
 # main, or the green commit is not ahead of it.

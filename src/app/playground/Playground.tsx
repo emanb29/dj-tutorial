@@ -28,7 +28,7 @@ export interface PlaygroundHandle {
 declare global {
   interface Window {
     /** Set by the dev playground only. */
-    learnToDjPlayground?: PlaygroundHandle;
+    djTutorialPlayground?: PlaygroundHandle;
   }
 }
 
@@ -158,11 +158,11 @@ export function Playground() {
     };
   }, [engine]);
 
-  // The last command, for the owner to see what each input sent, and a log for end-to-end tests.
+  // The last command, for the maintainer to see what each input sent, and a log for end-to-end tests.
   useEffect(() => {
     if (engine === null) return;
     const commands: CommandEvent[] = [];
-    window.learnToDjPlayground = { engine, commands };
+    window.djTutorialPlayground = { engine, commands };
     const stop = engine.on("command", (event) => {
       commands.push(event);
       if (commands.length > COMMAND_LOG_LIMIT) commands.shift();
@@ -170,7 +170,7 @@ export function Playground() {
     });
     return () => {
       stop();
-      delete window.learnToDjPlayground;
+      delete window.djTutorialPlayground;
     };
   }, [engine]);
 

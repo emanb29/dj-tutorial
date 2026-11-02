@@ -308,7 +308,7 @@ export function setNotesText(input: {
   const band = outcome.kind === "passed" && outcome.bands !== undefined ? ` (${outcome.bands.overall})` : "";
   const lines = [
     input.title,
-    `Recorded ${input.recordedAt.slice(0, 16).replace("T", " ")} with learn-to-dj. Check: ${outcome.kind}${band}.`,
+    `Recorded ${input.recordedAt.slice(0, 16).replace("T", " ")} with dj-tutorial. Check: ${outcome.kind}${band}.`,
     "",
     "Track list",
     ...input.tracks.map((track, index) => `${String(index + 1)}. ${track.artist} – ${track.title} (${track.bpm.toFixed(1)} BPM). ${track.credit}`),

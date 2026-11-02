@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The dev playground exposes its engine and a command log on window.learnToDjPlayground.
+// The dev playground exposes its engine and a command log on window.djTutorialPlayground.
 interface LoggedCommand {
   readonly command: { readonly control: string; readonly deck?: string; readonly value?: unknown };
   readonly device: string;
@@ -9,7 +9,7 @@ interface LoggedCommand {
 }
 
 interface PlaygroundWindow {
-  learnToDjPlayground?: {
+  djTutorialPlayground?: {
     engine: { deckState(deck: "A" | "B"): { playing: boolean } };
     commands: LoggedCommand[];
   };
@@ -18,15 +18,15 @@ interface PlaygroundWindow {
 /** Production builds serve the playground only with the explicit `playground` flag. */
 async function openPlayground(page: Page, options = ""): Promise<void> {
   await page.goto(`/playground?playground${options === "" ? "" : `&${options}`}`);
-  await page.waitForFunction(() => (window as PlaygroundWindow).learnToDjPlayground !== undefined);
+  await page.waitForFunction(() => (window as PlaygroundWindow).djTutorialPlayground !== undefined);
 }
 
 function commands(page: Page): Promise<LoggedCommand[]> {
-  return page.evaluate(() => (window as PlaygroundWindow).learnToDjPlayground?.commands.map((entry) => ({ ...entry })) ?? []);
+  return page.evaluate(() => (window as PlaygroundWindow).djTutorialPlayground?.commands.map((entry) => ({ ...entry })) ?? []);
 }
 
 function deckPlaying(page: Page, deck: "A" | "B"): Promise<boolean> {
-  return page.evaluate((which) => (window as PlaygroundWindow).learnToDjPlayground?.engine.deckState(which).playing ?? false, deck);
+  return page.evaluate((which) => (window as PlaygroundWindow).djTutorialPlayground?.engine.deckState(which).playing ?? false, deck);
 }
 
 /** Drags vertically from the middle of an element by `dy` pixels in small steps, as a hand would. */

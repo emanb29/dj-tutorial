@@ -97,7 +97,7 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   // Halfway: a tick and one caption, while the music keeps playing.
   await expect(cue).toHaveAttribute("data-checkpoint", "true", { timeout: 3000 });
   await expect(cue).toHaveText("Halfway: keep tapping each phrase");
-  expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing)).toBe(true);
+  expect(await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("A").playing)).toBe(true);
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "check");
 
   // Second half; the tick goes away after a few bars, and the attempt ends by itself.
@@ -108,7 +108,7 @@ test("phrases: a tap on each phrase start across two halves, a halfway tick, the
   const lineRequest = page.waitForRequest((request) => request.url().endsWith(`/api/learners/${learnerId}/coach/line`));
   const curriculumRequest = page.waitForRequest((request) => request.url().endsWith(`/api/learners/${learnerId}/coach/curriculum`));
   // Each phrase can be heard again before it is chosen: ▶ plays it on deck A; choosing stops it.
-  const playing = () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing);
+  const playing = () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("A").playing);
   const breakdown = questions.getByRole("group", { name: /breakdown/ });
   await expect(questions).toContainText("▶ plays from just before that phrase — listen for the change.");
   const stop = questions.getByRole("button", { name: "■ Stop" });
@@ -180,7 +180,7 @@ test("phrases: a wrong drop and missed phrase starts say exactly what went wrong
   await expect(card.getByTestId("phrase-tap-misses")).toContainText(/^Missed phrases [\d, ]*4\b[\d, ]* 7 and 8 · late on phrase 3/);
 
   // ▶ beside the wrong line replays the drop from 2 bars before it, with the live phrase marker.
-  const playing = () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing);
+  const playing = () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("A").playing);
   await card.getByRole("button", { name: "Play the drop: phrase 6" }).click();
   await expect.poll(playing).toBe(true);
   await expect(card.getByTestId("phrase-preview-now")).toContainText(/Phrase 5 · bar [78] of 8/);

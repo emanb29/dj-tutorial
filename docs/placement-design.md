@@ -6,7 +6,7 @@ failure). Criteria, tolerances, short forms, `CheckResult` and `SkillProfile` fo
 `docs/check-design.md`, including its Decisions and "Input leeway". The Coach request follows
 `docs/coach-design.md` §2.2 and §3.
 
-Design limits from the owner: controller-first; one caption line, not prose; no dead waiting; every
+Design limits from the maintainer: controller-first; one caption line, not prose; no dead waiting; every
 attempt under a minute; no guided overlay; Placement **≤ 6 minutes** and skippable entirely.
 
 ## 1. Flow at a glance
@@ -269,7 +269,7 @@ Code: rules in `src/lessons/placement.ts`, tasks in `src/lessons/placement-tasks
 | A Start Lesson that is not built yet (Lessons 8+) shows "coming soon" and Start opens the Lesson list | Lessons 8–16 exist only as Checks |
 | One track for the whole run (the synthetic groove, or an Original that suits every task); no "first alternate" yet | Lesson track sets do not exist yet |
 
-## Questions for the owner
+## Questions for the maintainer
 
 None. Time, money and privacy are already settled: the 6-minute budget is the brief, the Coach
 call costs about $0.04 inside the $5/month cap (K1), and the Mission footnote is K2's.

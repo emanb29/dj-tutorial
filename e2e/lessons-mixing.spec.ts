@@ -7,7 +7,7 @@ import { caption, checkPlayingPast, keysAtBeats, learner, openLesson, readyFromP
 const FIRST_SIX = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point"];
 
 async function command(page: Page, sent: Record<string, unknown>): Promise<void> {
-  const ok = await page.evaluate((payload) => (window as LessonWindow).learnToDjLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
+  const ok = await page.evaluate((payload) => (window as LessonWindow).djTutorialLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
   expect(ok, JSON.stringify(sent)).toBe(true);
 }
 
@@ -88,23 +88,23 @@ test("cue-point: the jog searches a paused deck, and three cue points on a 1 pas
 
   // The hook: scrolling over the jog wheel of the paused deck moves its playhead, without playing it.
   await expect(caption(page)).toContainText("Turn the jog wheel");
-  const before = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.playhead("A").positionSec ?? 0);
+  const before = await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.playhead("A").positionSec ?? 0);
   await page.locator(".deck-A .jog-surface, [aria-label^='Deck A jog wheel']").first().hover();
   await page.mouse.wheel(0, 120);
   await expect(caption(page)).toContainText("Find a kick. Press Z", { timeout: 10_000 });
   // The playhead read is the heard one: the search is heard an output latency after the scroll.
   await expect
-    .poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.playhead("A").positionSec ?? 0))
+    .poll(async () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.playhead("A").positionSec ?? 0))
     .not.toBeCloseTo(before, 3);
-  expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing)).toBe(false);
+  expect(await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("A").playing)).toBe(false);
 
   // The Check: three slices, each paused between beats. Search to its first 1, set the cue, Ready.
   await page.keyboard.press("Enter");
   for (const slice of [1, 2, 3]) {
-    await page.waitForFunction((number) => (window as LessonWindow).learnToDjLesson?.deckTrack("A")?.trackId.endsWith(`#cue-${String(number)}`) === true, slice);
+    await page.waitForFunction((number) => (window as LessonWindow).djTutorialLesson?.deckTrack("A")?.trackId.endsWith(`#cue-${String(number)}`) === true, slice);
     await expect(page.locator(".lesson-cue")).toHaveText(`Cue ${String(slice)} of 3: a 1, by ear. R when happy`);
     const delta = await page.evaluate(() => {
-      const lesson = (window as LessonWindow).learnToDjLesson;
+      const lesson = (window as LessonWindow).djTutorialLesson;
       const grid = lesson?.deckTrack("A")?.grid;
       if (lesson === undefined || grid === undefined) throw new Error("No slice on deck A.");
       const beat = 60 / grid.bpm;
@@ -141,7 +141,7 @@ test("cue-point practice: each cue point shows its offset, the target narrows, a
   /** Paused deck A to `ms` off the 1 of the grid's 9th bar, then CUE: a cue point there. */
   const cueAt = async (ms: number) => {
     const pos = await page.evaluate((offsetMs) => {
-      const grid = (window as LessonWindow).learnToDjLesson?.deckTrack("A")?.grid;
+      const grid = (window as LessonWindow).djTutorialLesson?.deckTrack("A")?.grid;
       if (grid === undefined) throw new Error("No track on deck A.");
       return grid.firstBeat + (grid.downbeatIndex + 32) * (60 / grid.bpm) + offsetMs / 1000;
     }, ms);

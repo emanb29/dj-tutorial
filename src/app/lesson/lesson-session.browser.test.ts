@@ -1,5 +1,5 @@
 // LessonSession end to end on a real engine and recorder, rendered offline (never the speakers), as the
-// owner runs a Lesson: hook and practice first (the deck plays the Check's sections already), then
+// maintainer runs a Lesson: hook and practice first (the deck plays the Check's sections already), then
 // Checks in a row with every tap on a heard beat, at both common hardware sample rates.
 import { afterEach, describe, expect, it } from "vitest";
 import { audioContextClock, createAudioEngine, type AudioEngine, type EngineCommand } from "@audio";
@@ -29,7 +29,7 @@ import type { CheckResult, VoidAttempt } from "@shared/check-result.ts";
 import { knownGridFromMeta } from "@tracks";
 import { LessonSession } from "./lesson-session.ts";
 
-/** "Lamplight Moths", the Original of the owner's report: 123 BPM, bar 1 at 0 s. */
+/** "Lamplight Moths", the Original of the maintainer's report: 123 BPM, bar 1 at 0 s. */
 const LAMPLIGHT_MOTHS = {
   bpm: 123,
   firstDownbeatSec: 0,
@@ -283,7 +283,7 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     }
   });
 
-  // The owner's report: every Lesson 2 Check on the MacBook voided (sectionNotHeard). Real outputs, with
+  // The maintainer's report: every Lesson 2 Check on the MacBook voided (sectionNotHeard). Real outputs, with
   // the engine's real lookahead (baseLatency + 2 quanta ≈ 17 ms): Bluetooth and wired latencies, and an
   // output timestamp running 20 ms ahead of the render, which put the Check's start after its own cue.
   it.each([
@@ -312,7 +312,7 @@ describe.each([44_100, 48_000])("LessonSession at %i Hz", (sampleRate) => {
     const graded = await run.session.grade({}, ["deck-basics"]);
     run.session.close();
     expect(graded.ok && graded.outcome.outcome).toEqual({ kind: "void", reason: "sectionNotHeard" });
-    // Enough to diagnose an owner's report: which section, how far it got, and the clock.
+    // Enough to diagnose a maintainer's report: which section, how far it got, and the clock.
     const diagnostics = graded.ok && "diagnostics" in graded.outcome ? graded.outcome.diagnostics : undefined;
     expect(diagnostics).toMatchObject({ section: "beatSection", to: null, checkStartPos: run.plan.startPos });
     expect([typeof diagnostics?.["recorderStartedCtx"], typeof diagnostics?.["recorderStoppedCtx"]]).toEqual(["number", "number"]);
@@ -508,7 +508,7 @@ describe("practice loop at 48 kHz on Bluetooth output (250 ms)", () => {
   });
 });
 
-// Owner feedback: Lesson 3 had no clear start to the first phrase. A Learner who does exactly what the
+// Maintainer feedback: Lesson 3 had no clear start to the first phrase. A Learner who does exactly what the
 // captions say passes: the practice count shows the bars, then steps aside once they tap by ear; the
 // Check counts in to phrase 1 and says TAP on its downbeat; a tap well off gets a nudge, not a hint.
 describe.each([

@@ -162,7 +162,7 @@ test("without a folder picker (Android Chrome), a folder is imported once and th
   await page.addInitScript(() => {
     delete (window as { showDirectoryPicker?: unknown }).showDirectoryPicker;
   });
-  const folder = mkdtempSync(join(tmpdir(), "learn-to-dj-e2e-import-"));
+  const folder = mkdtempSync(join(tmpdir(), "dj-tutorial-e2e-import-"));
   try {
     mkdirSync(join(folder, "Phone", "Sub"), { recursive: true });
     writeFileSync(join(folder, "Phone", "a.mp3"), "not music");

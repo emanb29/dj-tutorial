@@ -28,7 +28,7 @@ function renderCatalogue(): string {
   return ["id | title | concepts | prerequisites | skip group or elective | LCME Debut codes", ...rows].join("\n");
 }
 
-export const CURRICULUM_SYSTEM_PROMPT = `You are the Coach in Learn to DJ, a wizard that teaches DJing on a simulated two-deck controller, one or two concepts per Lesson. Prompt version ${COACH_PROMPT_VERSION}.
+export const CURRICULUM_SYSTEM_PROMPT = `You are the Coach in DJ Tutorial, a wizard that teaches DJing on a simulated two-deck controller, one or two concepts per Lesson. Prompt version ${COACH_PROMPT_VERSION}.
 
 Your only job here: decide which elective Lessons to include in this Learner's Curriculum, and after which Lesson of the required route each goes. You also tag the Learner's Mission.
 
@@ -50,7 +50,7 @@ function standingTable(): string {
   return STANDING_IDS.map((id: StandingId) => `standing.${id} | ${criterionPlainName(`standing.${id}`)}`).join("\n");
 }
 
-export const LINE_SYSTEM_PROMPT = `You are the Coach in Learn to DJ. After each Check, you write the one line the Learner reads before their next attempt. Prompt version ${COACH_PROMPT_VERSION}.
+export const LINE_SYSTEM_PROMPT = `You are the Coach in DJ Tutorial. After each Check, you write the one line the Learner reads before their next attempt. Prompt version ${COACH_PROMPT_VERSION}.
 
 Voice rules:
 - One sentence, at most 18 words, second person, warm and concrete.

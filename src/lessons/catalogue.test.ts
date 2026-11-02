@@ -114,7 +114,7 @@ describe("beats-and-bars", () => {
     ]);
   });
 
-  // Owner feedback: the switch from every beat to only the 1 came without enough warning.
+  // Maintainer feedback: the switch from every beat to only the 1 came without enough warning.
   it("warns of the switch two bars ahead, then counts the last bar down on its beats", () => {
     const switchPos = barStart(track.grid, 17);
     const warnings = plan.cues.slice(2);
@@ -209,7 +209,7 @@ describe("phrases", () => {
     expect(failed.outcome).toEqual({ kind: "failed", failedCriteria: ["phrases.phrase-taps"] });
   });
 
-  // Owner feedback: no clear start to the first phrase, so one early miscount ruined the rest.
+  // Maintainer feedback: no clear start to the first phrase, so one early miscount ruined the rest.
   it("counts in to phrase 1 like Lesson 2's switch: 2 bars ahead, the last bar on its beats, then TAP", () => {
     // A phrase to count along with first, from its start.
     expect(plan.cues[0]).toEqual({ fromPos: plan.startPos, caption: "Count along: 8 bars, then phrase 1" });
@@ -261,7 +261,7 @@ describe("phrases", () => {
     expect(definition.practiceStart(original)).toBeCloseTo(phraseStart(track.grid, 10), 9);
   });
 
-  // Owner feedback: naming the sections from memory of the count, after 64 bars, tested memory, not ears.
+  // Maintainer feedback: naming the sections from memory of the count, after 64 bars, tested memory, not ears.
   it("asks for the breakdown and the drop in plain words, each phrase playable before choosing it", () => {
     expect(definition.questions).toEqual([
       { id: "breakdown", caption: "Which phrase was the breakdown? (the kick drops out)", options: 8, previews: "phrases" },
@@ -275,7 +275,7 @@ describe("phrases", () => {
     expect(plan.phrasePreviews?.end).toBeCloseTo(phraseStart(track.grid, 10), 9);
   });
 
-  // Owner feedback: 2 bars of a phrase alone are unfair; a breakdown or a drop is a change, heard
+  // Maintainer feedback: 2 bars of a phrase alone are unfair; a breakdown or a drop is a change, heard
   // only against what came before it.
   it("plays each phrase's ▶ from 2 bars before it, phrase 1 from its count-in, on to a bar past the window", () => {
     const previews = plan.phrasePreviews;

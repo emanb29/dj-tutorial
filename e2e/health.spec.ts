@@ -11,7 +11,7 @@ test("the page is cross-origin isolated", async ({ page }) => {
 test("the page shows the title and the API health turns ok", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Learn to DJ" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "DJ Tutorial" })).toBeVisible();
   const health = page.getByRole("status", { name: "API health" });
   await expect(health).toHaveAttribute("data-status", "ok");
   await expect(health).toHaveText("API: ok");

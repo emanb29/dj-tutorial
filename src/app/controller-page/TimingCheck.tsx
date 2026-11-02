@@ -23,7 +23,7 @@ const CLICK_MS = 12;
 declare global {
   interface Window {
     /** Set while the Timing check's clicks play, like a Lesson's handle: lets end-to-end tests follow the clicks. */
-    learnToDjTimingCheck?: { readonly engine: AudioEngine };
+    djTutorialTimingCheck?: { readonly engine: AudioEngine };
   }
 }
 
@@ -99,7 +99,7 @@ export function TimingCheck() {
   const stop = () => {
     const running = engine.current;
     engine.current = null;
-    delete window.learnToDjTimingCheck;
+    delete window.djTutorialTimingCheck;
     if (running !== null) {
       running.close().catch((error: unknown) => {
         console.warn("[timing] the click track's engine did not close cleanly", error);
@@ -160,7 +160,7 @@ export function TimingCheck() {
       if (!loaded.ok) throw new Error("the click track would not load");
       if (created.context instanceof AudioContext) await created.context.resume();
       created.command({ control: "play", deck: "A" }, { device: "mouse" });
-      window.learnToDjTimingCheck = { engine: created };
+      window.djTutorialTimingCheck = { engine: created };
       setMode(plan.kind);
       // Space taps from here on; it must not press whichever button has focus.
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();

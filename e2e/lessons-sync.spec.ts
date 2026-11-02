@@ -11,7 +11,7 @@ const FIRST_SEVEN = ["deck-basics", "beats-and-bars", "phrases", "gain-staging",
 const BPM = 124;
 
 async function command(page: Page, sent: Record<string, unknown>): Promise<void> {
-  const ok = await page.evaluate((payload) => (window as LessonWindow).learnToDjLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
+  const ok = await page.evaluate((payload) => (window as LessonWindow).djTutorialLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
   expect(ok, JSON.stringify(sent)).toBe(true);
 }
 
@@ -59,8 +59,8 @@ test("tempo-fader: three BPMs set and confirmed with Ready, then both Master Tem
   for (const number of [1, 2]) {
     const question = page.getByRole("group", { name: `Clip ${String(number)}: Master Tempo on or off?` });
     await expect(question).toBeVisible();
-    await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").playing)).toBe(true);
-    const on = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.clip?.()?.masterTempo);
+    await expect.poll(async () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("B").playing)).toBe(true);
+    const on = await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.clip?.()?.masterTempo);
     expect(on).not.toBeUndefined();
     // The controller must not give the answer away: BEAT SYNC B (Master Tempo when held) is unlit and locked while a clip plays.
     await expect(page.getByTestId("master-tempo-lamp-B")).toHaveAttribute("data-on", "false");
@@ -88,7 +88,7 @@ test("tempo-fader where Master Tempo cannot load: no MASTER TEMPO step, no clip 
   const learnerId = learner("tempo-no-mt");
   await seedPassed(page, learnerId, ["deck-basics"]);
   await openLesson(page, learnerId, "tempo-fader");
-  expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").masterTempoAvailability?.available)).toBe(false);
+  expect(await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("B").masterTempoAvailability?.available)).toBe(false);
 
   await expect(caption(page)).toContainText("Slide TEMPO B near +: faster");
   await command(page, { control: "tempo", deck: "B", value: 0.8 });
@@ -151,13 +151,13 @@ test("tempo-fader practice: once the BPMs are ready, Off and On clips to compare
   await expect(caption(page)).toContainText("By ear first: Off, On, then try one.");
   const round = page.getByTestId("ear-round");
   await expect(round).toContainText("Master Tempo keeps the key: vocals sound natural.");
-  const clip = async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.clip?.() ?? null);
+  const clip = async () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.clip?.() ?? null);
 
   // Labelled clips: the Check's own clip, Master Tempo as named.
   for (const [label, masterTempo] of [["▶ Off", false], ["▶ On", true]] as const) {
     await round.getByRole("button", { name: label }).click();
     await expect.poll(async () => (await clip())?.masterTempo).toBe(masterTempo);
-    await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").playing)).toBe(true);
+    await expect.poll(async () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("B").playing)).toBe(true);
   }
 
   // The mystery: no answer before it plays; while it plays the controller does not give it away.
@@ -211,7 +211,7 @@ async function syncBlendCheck(page: Page, name: string, moves: (fromBeat: number
   await openLesson(page, learnerId, "sync-blend");
   await expect(caption(page)).toContainText("Press BEAT SYNC on B");
   // Deck B holds the second groove, slower: SYNC has something to do.
-  expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B")?.grid.bpm)).toBe(121);
+  expect(await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.deckTrack("B")?.grid.bpm)).toBe(121);
 
   // Set up off the clock, A looping Phrase 1 (bar 1, beat 0), then go: PLAY B on Phrase 2 (bar 9,
   // beat 32) with its fader down, and the blend on Phrase 3 (bar 17, beat 64).
@@ -219,7 +219,7 @@ async function syncBlendCheck(page: Page, name: string, moves: (fromBeat: number
   await expect(page.locator(".lesson-cue")).toHaveText("Set up: SYNC B on, CUE 🎧 B on");
   await page.getByRole("button", { name: "Channel B headphone cue" }).click();
   await page.getByRole("button", { name: "Deck B beat sync" }).click();
-  await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("B").syncOn)).toBe(true);
+  await expect.poll(async () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("B").syncOn)).toBe(true);
   await readyFromPhraseStart(page, "check", 0);
   await expect(page.locator(".lesson-cue")).toHaveText("Phrase 1: just count. Press , at Phrase 2, bar 1", { timeout: 20_000 });
   await expect(page.getByTestId("phrase-count")).toContainText("Phrase 1 · bar");

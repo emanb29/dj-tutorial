@@ -439,7 +439,7 @@ interface SkillProfile {
 | Void attempts (suspended context, hidden tab, abandoned) are not recorded as fails | Failures should reflect skill, not browser hiccups |
 | Review trigger = 3 consecutive gating fails on one criterion | Catalogue Q6 |
 
-## 11. Questions for the owner
+## 11. Questions for the maintainer
 
 1. **Warm-up time per session.** Is about 10 minutes of warm-ups (at most 3 skills) at the start of
    each session OK, or would you rather cap it at 5 minutes, which spreads them over more sessions?
@@ -449,16 +449,16 @@ interface SkillProfile {
 3. **Showing Merit and Distinction.** After `final-mix`, do you want to see a Pass/Merit/Distinction
    band, or only pass/fail plus the measured numbers?
 
-## Decisions (owner, 2026-10-16)
+## Decisions (maintainer, 2026-10-16)
 
 - **C1:** warm-ups are capped at **5 minutes** per session (at most 2 skills), framed as a quick "remember this?" challenge. This replaces the 10-minute default in §7.2.
 - **C2:** the cold `final-mix` re-play, at least a day after the first pass, **is the recorded final project**. The app records the master bus to a downloadable file. The first pass is a rehearsal.
 - **C3:** the Pass / Merit / Distinction band is shown after `final-mix`.
 - **Lesson format (ISS-55):** controller-first and tuned for ADHD. Attempts last under a minute, practice runs straight into the Check with no screen in between, live feedback is instant, and the Coach says at most one line after a Check.
 
-### Input leeway (owner, 2026-10-16)
+### Input leeway (maintainer, 2026-10-16)
 
-The owner noted that on a MacBook trackpad, and on a simulated deck generally, leeway is needed. This amends the thresholds above until hardware controllers arrive:
+The maintainer noted that on a MacBook trackpad, and on a simulated deck generally, leeway is needed. This amends the thresholds above until hardware controllers arrive:
 
 - **Keyboard for timing-critical actions.** Play, cue, tap, hot cues and "cut" (snap a channel fader fully open or closed) get key bindings, and Lessons teach them first. A key press is the most precise input a laptop has.
 - **Faders are judged on intent, not completion.** A channel-fader or crossfader move is timed from the moment it starts (first movement, or crossing 10% of travel), not when it finishes. A drag that starts on time passes even if it lands late.

@@ -1,11 +1,11 @@
-# Learn to DJ
+# DJ Tutorial
 
 A teaching wizard that takes a learner from no DJ skills to mixing real tracks on a simulated two-deck setup, one or two concepts at a time. DJ terms follow industry usage (manufacturer manuals, DJ schools), not internal coinages.
 
 ## Teaching
 
 **Learner**:
-The person being taught. The first learner is the project owner; the design must generalize to others.
+The person being taught. The first learner is the maintainer (`docs/maintainer-profile.md`); the design must generalize to others.
 _Avoid_: User, student, player
 
 **Lesson**:

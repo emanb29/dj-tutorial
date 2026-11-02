@@ -10,7 +10,7 @@ const TO_SYNC_BLEND = [...FIRST_SIX, "cut-on-phrase", "tempo-fader", "sync-blend
 const BEAT_SEC = 60 / 124;
 
 async function command(page: Page, sent: Record<string, unknown>): Promise<void> {
-  const ok = await page.evaluate((payload) => (window as LessonWindow).learnToDjLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
+  const ok = await page.evaluate((payload) => (window as LessonWindow).djTutorialLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
   expect(ok, JSON.stringify(sent)).toBe(true);
 }
 
@@ -23,7 +23,7 @@ async function keyAtLoopWrap(page: Page, loopEndBeat: number, code: string): Pro
   await playingPast(page, "check", loopEndBeat - 3, { before: loopEndBeat });
   await page.evaluate(
     async ({ end, key }) => {
-      const lesson = (window as LessonWindow).learnToDjLesson;
+      const lesson = (window as LessonWindow).djTutorialLesson;
       if (lesson === undefined) throw new Error("No Lesson is open.");
       const beatMs = 60_000 / lesson.track.grid.bpm;
       const now = performance.now();
@@ -47,7 +47,7 @@ async function commandsAtLoopWrap(page: Page, loopEndBeat: number, commands: rea
   await playingPast(page, "check", loopEndBeat - 3, { before: loopEndBeat });
   const refused = await page.evaluate(
     async ({ end, sent }) => {
-      const lesson = (window as LessonWindow).learnToDjLesson;
+      const lesson = (window as LessonWindow).djTutorialLesson;
       if (lesson === undefined) throw new Error("No Lesson is open.");
       const beatMs = 60_000 / lesson.track.grid.bpm;
       const reading = lesson.engine.playhead("A");
@@ -80,7 +80,7 @@ test("hot-cues: three pads set at the stops, then pressed on A's phrase starts, 
   const cue = page.locator(".lesson-cue");
   for (const [index, lead] of [1.37, 2.62, 0.71].entries()) {
     await expect(cue).toContainText(`Pad ${String(index + 1)}:`);
-    await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing)).toBe(false);
+    await expect.poll(async () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("A").playing)).toBe(false);
     await command(page, { control: "jog-search", deck: "A", value: lead * BEAT_SEC });
     await page.keyboard.press(`Digit${String(index + 1)}`);
     await page.keyboard.press("KeyR");
@@ -124,7 +124,7 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   // (on screen, ▶) doubles it back. Shift + D is the FLX4's IN ADJ, not in v1: "not yet", the loop stays.
   const loopSec = async () =>
     page.evaluate(() => {
-      const loop = (window as LessonWindow).learnToDjLesson?.engine.deckState("A").loop;
+      const loop = (window as LessonWindow).djTutorialLesson?.engine.deckState("A").loop;
       return loop === null || loop === undefined ? null : loop.end - loop.start;
     });
   if ((await loopSec()) === null) await page.keyboard.press("KeyG");
@@ -146,7 +146,7 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   await readyFromPhraseStart(page, "check", 224);
   await keysAtBeats(page, [256], { codes: ["KeyD"] });
   await keysAtBeats(page, [272], { codes: ["KeyF"] });
-  await expect.poll(async () => page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").loop)).not.toBeNull();
+  await expect.poll(async () => page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("A").loop)).not.toBeNull();
   // B on the loop's 1 (the next wrap), EXIT on the one after; then fader A down.
   await keyAtLoopWrap(page, 272, "Comma");
   await keyAtLoopWrap(page, 272, "KeyG");

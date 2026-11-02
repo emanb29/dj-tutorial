@@ -16,7 +16,7 @@ export interface LoudnessFrame {
 
 export const METER_FRAMES_PER_SECOND = 50;
 /** Registered name of the AudioWorklet processor in meter-processor.ts. */
-export const METER_PROCESSOR_NAME = "learn-to-dj-loudness-meter";
+export const METER_PROCESSOR_NAME = "dj-tutorial-loudness-meter";
 const MOMENTARY_FRAMES = 20; // 400 ms
 const SHORT_TERM_FRAMES = 150; // 3 s
 

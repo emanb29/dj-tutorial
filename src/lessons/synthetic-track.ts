@@ -69,7 +69,7 @@ export function syntheticLessonTrack(layout: SyntheticLayout): LessonTrack {
   return {
     trackId: layout.id ?? SYNTHETIC_TRACK_ID,
     title: layout.title ?? "Practice Groove (synthetic)",
-    attribution: { text: "A practice groove generated in the browser by learn-to-dj", url: null },
+    attribution: { text: "A practice groove generated in the browser by dj-tutorial", url: null },
     source: "synthetic",
     durationSec,
     grid,

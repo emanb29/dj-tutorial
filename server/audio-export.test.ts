@@ -23,8 +23,8 @@ const PROJECT: FinalProject = {
   durationSec: 1,
   audio: { mimeType: "audio/webm", bytes: 100 },
   tracks: [
-    { title: "Set Groove C", artist: "Learn to DJ", bpm: 124, credit: "", shareable: true },
-    { title: "Set Groove Am", artist: "Learn to DJ", bpm: 124, credit: "", shareable: true },
+    { title: "Set Groove C", artist: "DJ Tutorial", bpm: 124, credit: "", shareable: true },
+    { title: "Set Groove Am", artist: "DJ Tutorial", bpm: 124, credit: "", shareable: true },
   ],
   transitions: [],
 };
@@ -71,12 +71,12 @@ describe.skipIf(missingReason !== null)("exporting the final project with ffmpeg
     const response = await server.app.request("/api/learners/default/final-project/export.mp3");
     expect(response.status, await response.clone().text()).toBe(200);
     expect(response.headers.get("content-type")).toBe("audio/mpeg");
-    expect(response.headers.get("content-disposition")).toBe('attachment; filename="learn-to-dj-set-2026-10-17.mp3"');
+    expect(response.headers.get("content-disposition")).toBe('attachment; filename="dj-tutorial-set-2026-10-17.mp3"');
     const bytes = Buffer.from(await response.arrayBuffer());
     expect(bytes.subarray(0, 3).toString("latin1")).toBe("ID3");
     const text = bytes.toString("utf16le") + bytes.toString("latin1");
     expect(text).toContain("My first set");
-    expect(text).toContain("Learn to DJ");
+    expect(text).toContain("DJ Tutorial");
     expect(text).toContain("Set Groove Am");
     // 320 kbit/s CBR: the first MPEG frame header's bitrate index is 14 (MPEG-1 Layer III).
     const id3Size = ((bytes[6] ?? 0) << 21) | ((bytes[7] ?? 0) << 14) | ((bytes[8] ?? 0) << 7) | (bytes[9] ?? 0);

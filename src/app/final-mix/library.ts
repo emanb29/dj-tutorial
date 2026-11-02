@@ -74,14 +74,14 @@ function syntheticItems(): LibraryItem[] {
       key: track.trackId,
       source: "synthetic",
       title: track.title,
-      artist: "learn-to-dj",
+      artist: "dj-tutorial",
       bpm: layout.bpm,
       camelot,
       genre: "house",
       prepare: ({ sampleRate }) =>
         Promise.resolve({
           ok: true,
-          prepared: { candidate: { track, artist: "learn-to-dj", genre: "house", camelot, shareable: true }, loadAudio: () => Promise.resolve(audio(sampleRate)) },
+          prepared: { candidate: { track, artist: "dj-tutorial", genre: "house", camelot, shareable: true }, loadAudio: () => Promise.resolve(audio(sampleRate)) },
         }),
     };
   });

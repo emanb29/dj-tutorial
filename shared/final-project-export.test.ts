@@ -4,7 +4,7 @@ import { exportFileName, exportTags, finalProjectExportPath } from "./final-proj
 const project = {
   recordedAt: "2026-10-17T20:15:00.000Z",
   tracks: [
-    { title: "Set Groove C", artist: "Learn to DJ", bpm: 124, credit: "", shareable: true },
+    { title: "Set Groove C", artist: "DJ Tutorial", bpm: 124, credit: "", shareable: true },
     { title: "Night\u0007 Drive", artist: "", bpm: 124, credit: "", shareable: true },
   ],
 };
@@ -14,7 +14,7 @@ describe("the export's tags", () => {
     expect(exportTags(project)).toEqual({
       title: "My first set — 2026-10-17",
       artist: "",
-      comment: "Learn to DJ – Set Groove C\nUnknown artist – Night Drive",
+      comment: "DJ Tutorial – Set Groove C\nUnknown artist – Night Drive",
       date: "2026-10-17",
     });
   });
@@ -24,7 +24,7 @@ describe("the export's tags", () => {
   });
 
   it("names the file and the route by format", () => {
-    expect(exportFileName(project, "mp3")).toBe("learn-to-dj-set-2026-10-17.mp3");
+    expect(exportFileName(project, "mp3")).toBe("dj-tutorial-set-2026-10-17.mp3");
     expect(finalProjectExportPath("default", "wav")).toBe("/api/learners/default/final-project/export.wav");
   });
 });

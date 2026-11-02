@@ -1,4 +1,4 @@
-// Lessons 12–20 as the owner plays them: a Learner who does exactly what each live caption says, when
+// Lessons 12–20 as the maintainer plays them: a Learner who does exactly what each live caption says, when
 // they hear it, passes the Check, at 48 kHz with a wired output (40 ms) and Bluetooth headphones
 // (250 ms). Real engine and recorder, rendered offline (never the speakers).
 import { afterEach, describe, expect, it } from "vitest";

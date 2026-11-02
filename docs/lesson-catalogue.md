@@ -1,6 +1,6 @@
 # Lesson catalogue (v1)
 
-Status: **proposal**. Nothing here is decided until the owner answers the questions in §4.
+Status: **proposal**. Nothing here is decided until the maintainer answers the questions in §4.
 Terms follow `GLOSSARY.md` (Learner, Lesson, Lesson catalogue, Curriculum, Placement, Check,
 Skill profile, Coach). DJ terms follow Pioneer DJ / AlphaTheta wording, as listed in
 `docs/research/dj-terminology-and-curriculum.md` (branch `research/dj-terminology-and-curriculum`).
@@ -38,7 +38,7 @@ the FLX4 layout and in v1 scope.
 Sync column: **n/a** = tracks share one BPM, so there is nothing to sync; **on** = the Lesson uses
 sync; **avail** = unlocked, the Learner may use it; **off** = locked off.
 
-Thresholds are starting values to tune after the owner plays through (Q9).
+Thresholds are starting values to tune after the maintainer plays through (Q9).
 
 | # | id | Title | Concepts | Controls unlocked | Prereqs | Sync | Check (what is measured, rough threshold) | LCME |
 |---|---|---|---|---|---|---|---|---|
@@ -160,7 +160,7 @@ Check measures it too.
 | 14 | Key clash | Not caught in v1: harmonic mixing is out of scope. Lesson track sets are chosen key-compatible; `final-mix` warns only | — |
 | 15 | Overusing one technique | `final-mix` requires a blend and a cut; the Coach reads technique counts from the Skill profile | Coach feedback only |
 
-## 4. Open questions for the owner
+## 4. Open questions for the maintainer
 
 Each question is worded so that "yes" accepts the recommendation.
 
@@ -193,7 +193,7 @@ Each question is worded so that "yes" accepts the recommendation.
    edits never? *Recommended: yes.* Vocals from bar 1 make a beginner's blend clash.
 9. **Thresholds as starting values.** Accept the thresholds in §1 (taps ±40 ms, phase <25 ms for 85%
    of a blend, bass clash ≤1 beat, levels within 1.5–2 dB) as starting values, to be tuned once
-   after the owner plays through? *Recommended: yes.*
+   after the maintainer plays through? *Recommended: yes.*
 10. **Which standing criteria fail a Check.** Clipping, dead air and off-phrase starts fail any
     Check after the Lesson that taught them; the other mistakes in §3 only produce warnings until
     `final-mix`? *Recommended: yes.*
@@ -233,9 +233,9 @@ _Avoid_: Remedial lesson, retry
 The fixed, hand-checked tracks (beat grid, downbeats, phrase markers) that a Lesson's Check is run on.
 _Avoid_: Playlist, sample pack
 
-## Decisions (owner, 2026-10-16)
+## Decisions (maintainer, 2026-10-16)
 
-The 15 open questions above are all resolved as recommended. Q7 (dubstep stays out of graded Checks) was the owner's deferral to the recommendation; revisit it once the Learner can judge.
+The 15 open questions above are all resolved as recommended. Q7 (dubstep stays out of graded Checks) was the maintainer's deferral to the recommendation; revisit it once the Learner can judge.
 
 Additions from `/teach` (see GLOSSARY.md):
 - **Passed vs. retained.** Passing a Check unlocks dependent Lessons straight away, so progress is never time-gated. A skill is *retained* only after a cold re-pass at least a day later. The course is done when every skill on the final-mix route is retained.
@@ -245,15 +245,13 @@ Additions from `/teach` (see GLOSSARY.md):
 - Placement opens by asking for the Learner's **Mission**: a goal, not a self-rating.
 - After `final-mix`, the app links to DJ communities. Sharing a recording waits on set recording, which is out of scope.
 
-### Final project (owner, 2026-10-16)
+### Final project (maintainer, 2026-10-16)
 
-The owner's Mission is to post their own mixes and edits (DJ remixes, not produced remixes) to SoundCloud. So `final-mix` becomes the **final project**: the app records the Learner's mix from the master bus to an audio file they can download. Set recording is in v1 scope **for the final project only**. A general set-recording feature stays out. Uploading to SoundCloud is done by hand, and licensing is handled outside this map. Produced (DAW) remixes are a possible future effort.
+The maintainer's Mission is to post their own mixes and edits (DJ remixes, not produced remixes) to SoundCloud (`docs/maintainer-profile.md`), and sharing a mix is a common goal for any Learner. So `final-mix` becomes the **final project**: the app records the Learner's mix from the master bus to an audio file they can download. Set recording is in v1 scope **for the final project only**. A general set-recording feature stays out. Uploading to SoundCloud is done by hand, and licensing is handled outside this map. Produced (DAW) remixes are a possible future effort.
 
 ### Genre focus (revised 2026-10-17)
 
-An earlier revision (Q7b) leaned toward bass music based on about 45 SoundCloud flips the owner shared. The owner then said Spotify, not SoundCloud, is the source of truth for their taste. Their Spotify listening (about 2,190 h, 2014–2023) is indie/alt 41%, pop 18%, rock/metal 9%, house 3.2% and bass music 1.6%.
-
-- **The course centres on house (120–126 BPM)** for every graded Lesson up to and including `final-mix`. It is closest in tempo and feel to the owner's indie and pop listening, their biggest club genre, and the easiest phrasing to learn on.
-- **Remix targets** for the remix finder and Lesson track sets are house, indie-dance and nu-disco remixes of indie, pop and rock songs.
-- **Bass music** (the owner's SoundCloud flips plus composer tracks) is practice material and an optional second genre after `blend-by-ear`. The final project defaults to house; the Learner may choose bass music instead.
+- **The course centres on house (120–126 BPM)** for every graded Lesson up to and including `final-mix`, whatever the Learner's taste. Its steady four-on-the-floor kick, long mixable intros and regular 8- and 16-bar phrases make it the easiest genre to learn on, and the easiest to grade fairly to the millisecond. Swung, half-time and broken-beat genres are harder to count and to grade, so they stay out of graded Checks.
+- **Remix targets** for the remix finder and Lesson track sets follow the Learner's taste. The default is the maintainer's (`docs/maintainer-profile.md`): house, indie-dance and nu-disco remixes of indie, pop and rock songs.
+- **Bass music** (shared flips plus composer tracks) is practice material and an optional second genre after `blend-by-ear`. The final project defaults to house; the Learner may choose bass music instead.
 - The `loop-transition` and `hot-cues` electives are placed early only if the Learner chooses bass music.

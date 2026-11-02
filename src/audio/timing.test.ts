@@ -192,7 +192,7 @@ describe("output clock", () => {
     expect(tap).toBeCloseTo(10.02, 9);
   });
 
-  // The owner's Lesson 2 voids: a heard "now" past what was rendered put the Check's start after the
+  // The maintainer's Lesson 2 voids: a heard "now" past what was rendered put the Check's start after the
   // cue the session had just scheduled (currentTime + lookahead), so the Check never found its cue.
   it("never hears past what has been rendered, even extrapolating a stale timestamp", () => {
     const clock = clockReading([{ contextTime: 10, performanceTime: 1_000 }], 10.02);

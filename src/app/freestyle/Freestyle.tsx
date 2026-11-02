@@ -31,7 +31,7 @@ const SHOWN_LIMIT = 200;
 
 type Status = { readonly kind: "starting"; readonly line: string } | { readonly kind: "ready" } | { readonly kind: "failed"; readonly message: string };
 
-/** What end-to-end tests read, like the Lesson player's handle (window.learnToDjLesson). */
+/** What end-to-end tests read, like the Lesson player's handle (window.djTutorialLesson). */
 interface FreestyleHandle {
   readonly engine: AudioEngine;
   readonly deckTrack: (deck: DeckId) => string | null;
@@ -142,9 +142,9 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
   useEffect(() => {
     if (engine === null || session === null) return;
     const handle: FreestyleHandle = { engine, deckTrack: (deck) => session.track(deck)?.trackId ?? null };
-    (window as { learnToDjLesson?: unknown }).learnToDjLesson = handle;
+    (window as { djTutorialLesson?: unknown }).djTutorialLesson = handle;
     return () => {
-      delete (window as { learnToDjLesson?: unknown }).learnToDjLesson;
+      delete (window as { djTutorialLesson?: unknown }).djTutorialLesson;
     };
   }, [engine, session]);
 

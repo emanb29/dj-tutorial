@@ -14,3 +14,4 @@ __screenshots__/
 # Model files are fetched or exported, never committed (src/analysis/index.ts).
 public/models/
 .vitest/
+!.env.example

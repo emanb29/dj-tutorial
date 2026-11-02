@@ -1,9 +1,8 @@
-import { existsSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { CoachService } from "./coach/coach-service.ts";
-import { requireRuntimeConfig, requireServerConfig } from "./config.ts";
+import { loadEnvFile, requireRuntimeConfig, requireServerConfig } from "./config.ts";
 import { consoleLogger } from "./logger.ts";
 import { FinalProjectStore } from "./final-projects.ts";
 import { AudioExporter } from "./audio-export.ts";
@@ -11,10 +10,7 @@ import { ProfileStore } from "./profile-store.ts";
 import { sameOriginPolicy } from "./same-origin.ts";
 import { SpendLedger } from "./spend-ledger.ts";
 
-// The owner mounts a 1Password Environment as `.env` at the repo root. It is gitignored; values
-// already in the environment win over it.
-const ENV_FILE = ".env";
-if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+loadEnvFile();
 
 const { host, port } = requireServerConfig(process.env);
 const runtime = requireRuntimeConfig(process.env);

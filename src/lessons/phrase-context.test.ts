@@ -1,4 +1,4 @@
-// The phrase-context rules (owner, 2026-10-18: "It's not possible to identify a phrase in synthesized
+// The phrase-context rules (maintainer, 2026-10-18: "It's not possible to identify a phrase in synthesized
 // music from only a bar or two"; "Lesson 7 does not give enough prep time"), over every Lesson plan on
 // the synthetic tracks and on every committed Original's grid and sections:
 // 1. A Check and its practice start on a phrase start of deck A (the deck the Learner counts).

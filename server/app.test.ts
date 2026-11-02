@@ -242,7 +242,7 @@ describe("Learner profile routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toBe(
-      'attachment; filename="learn-to-dj-default-2026-10-17.json"',
+      'attachment; filename="dj-tutorial-default-2026-10-17.json"',
     );
     expect(await response.json()).toEqual({
       success: true,

@@ -20,7 +20,7 @@ export const LearnerIdSchema = z
   });
 export type LearnerId = z.infer<typeof LearnerIdSchema>;
 
-/** The one Learner every fresh store starts with: the project owner. */
+/** The one Learner every fresh store starts with (on a personal install, its owner). */
 export const DEFAULT_LEARNER_ID: LearnerId = "default";
 
 export const LEARNER_RECORD_SCHEMA_VERSION = 1;
@@ -156,7 +156,7 @@ export type FinalProject = z.output<typeof FinalProjectSchema>;
 
 /**
  * The optional "do it in rekordbox" cards (ISS-97): one per Lesson that has one. "library" was a
- * one-time folder set-up card, retired by the owner as too prescriptive; it stays here so records
+ * one-time folder set-up card, retired by the maintainer as too prescriptive; it stays here so records
  * that answered it still parse.
  */
 export const REKORDBOX_CARD_IDS = ["cut-on-phrase", "sync-blend", "blend-by-ear", "final-mix", "library"] as const;

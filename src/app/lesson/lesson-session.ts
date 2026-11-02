@@ -1701,7 +1701,7 @@ export class LessonSession {
     });
     const outcome = runCheck(spec, attempt);
     if ("criteria" in outcome || outcome.outcome.reason !== "sectionNotHeard") return outcome;
-    // What the Check saw of its own cue and the clock, so an owner's report of a void can be diagnosed.
+    // What the Check saw of its own cue and the clock, so a maintainer's report of a void can be diagnosed.
     const { context } = this.engine;
     const heard = this.engine.heardTime();
     const lastA = attempt.decks.A?.playhead.segments.slice(-4) ?? [];

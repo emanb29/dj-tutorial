@@ -106,7 +106,7 @@ const ANSWERS_KEPT = 64;
  * can run ahead of it (a stale timestamp extrapolated across a late render callback, or the high side
  * of a jump that the ordering above holds on to), and a heard time past `currentTime` puts the present
  * after changes the engine has only just scheduled (`currentTime` + lookahead): a Check's own cue then
- * falls before its attempt starts, the Check cannot find it and voids (`sectionNotHeard`, the owner's
+ * falls before its attempt starts, the Check cannot find it and voids (`sectionNotHeard`, the maintainer's
  * Lesson 2 report). `currentTime` only grows, so the cap keeps the ordering.
  */
 export function audioContextClock(context: AudioContext): OutputClock {

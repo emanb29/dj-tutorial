@@ -149,7 +149,7 @@ controller keeps its own pad mode and sends the mode's notes.
   - The Controller page's **Sync from controller** lists the mapped faders and knobs and ticks each as
     it reports ("wiggle each knob"), and says in one line that the FLX4 cannot report positions until
     they move.
-  - The Mixxx SysEx request was tried on the owner's FLX4-N on 2026-10-17 and got no answer, so it was removed.
+  - The Mixxx SysEx request was tried on the maintainer's FLX4-N on 2026-10-17 and got no answer, so it was removed.
 
 ## USB audio
 
@@ -166,8 +166,8 @@ controller keeps its own pad mode and sends the mode's notes.
   MASTER CUE [X3]. Mixxx's mapping sends HEADPHONES MIXING (`B6 0C`/`2C`) to its software `headMix`
   and maps no HEADPHONES LEVEL at all [X2], which suggests MIX is mixed in software and LEVEL in the
   unit. MASTER CUE "sends master output to headphones" in the unit [X3]. None of it is confirmed on
-  the owner's unit **(unverified)**. The app maps HEADPHONES MIX to its own cue mix either way.
-- **What the app does with them (2026-10-19, owner: "make the headphone level dial actually be
+  the maintainer's unit **(unverified)**. The app maps HEADPHONES MIX to its own cue mix either way.
+- **What the app does with them (2026-10-19, maintainer: "make the headphone level dial actually be
   respected"):** HEADPHONES LEVEL and MIXING drive the app's values at once, with no soft takeover
   (`HARDWARE_FIRST` in `src/app/controller/hardware.ts`). Before, the app started at LEVEL 12 o'clock
   and MIXING fully to CUE, and the knobs did nothing until turned past those points. Going by Mixxx's
@@ -193,7 +193,7 @@ controller keeps its own pad mode and sends the mode's notes.
 
 ## Browser APIs (Chrome, Edge, Arc on macOS)
 
-- **Web MIDI:** `navigator.requestMIDIAccess()` needs a secure context (dj.example.com is HTTPS)
+- **Web MIDI:** `navigator.requestMIDIAccess()` needs a secure context (a `PUBLIC_HOSTS` name must be served over HTTPS)
   and, in current Chrome, a permission prompt. `MIDIMessageEvent.timeStamp` is a
   `DOMHighResTimeStamp` on the `performance.now()` clock, the same domain as keyboard
   `event.timeStamp`, so `audioContextClock().heardTime(timeStamp)` maps it to heard time unchanged,

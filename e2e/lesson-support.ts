@@ -12,7 +12,7 @@ interface Grid {
 }
 
 export interface LessonWindow {
-  learnToDjLesson?: {
+  djTutorialLesson?: {
     engine: {
       playhead(deck: DeckId): { ok: boolean; beat?: number | null; positionSec?: number };
       deckState(deck: DeckId): { playing: boolean; cuePointSec: number; masterTempo?: boolean; syncOn?: boolean; tempoRate?: number; masterTempoAvailability?: { available: boolean }; loop?: { start: number; end: number } | null };
@@ -50,7 +50,7 @@ export async function openLesson(page: Page, learnerId: string, lessonId: string
   await ensureProfile(page, learnerId);
   await page.goto(`/?learner=${learnerId}&track=synthetic`);
   await page.locator(`li[data-lesson="${lessonId}"]`).getByRole("button").click();
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson !== undefined);
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson !== undefined);
   if (options.waitForHook !== false) await expect(page.locator("main.lesson")).not.toHaveAttribute("data-phase", "loading");
 }
 
@@ -90,7 +90,7 @@ export async function seedPassed(page: Page, learnerId: string, lessonIds: reado
 export async function keysAtBeats(page: Page, beats: readonly number[], options: { deck?: DeckId; codes?: readonly string[] } = {}): Promise<void> {
   await page.evaluate(
     async ({ targets, deck, codes }) => {
-      const lesson = (window as LessonWindow).learnToDjLesson;
+      const lesson = (window as LessonWindow).djTutorialLesson;
       if (lesson === undefined) throw new Error("No Lesson is open.");
       const beatMs = 60_000 / lesson.track.grid.bpm;
       /**
@@ -132,7 +132,7 @@ export async function keysAtBeats(page: Page, beats: readonly number[], options:
 export async function commandsAtBeats(page: Page, timed: readonly { readonly beat: number; readonly command: Record<string, unknown> }[], options: { deck?: DeckId } = {}): Promise<void> {
   const refused = await page.evaluate(
     async ({ items, deck }) => {
-      const lesson = (window as LessonWindow).learnToDjLesson;
+      const lesson = (window as LessonWindow).djTutorialLesson;
       if (lesson === undefined) throw new Error("No Lesson is open.");
       const grid = lesson.deckTrack(deck)?.grid ?? lesson.track.grid;
       const beatMs = 60_000 / grid.bpm;
@@ -165,7 +165,7 @@ export async function playingPast(page: Page, phase: string, beat: number, optio
   const before = options.before ?? Number.POSITIVE_INFINITY;
   await page.waitForFunction(
     ({ expected, past, until, on }) => {
-      const lesson = (window as LessonWindow).learnToDjLesson;
+      const lesson = (window as LessonWindow).djTutorialLesson;
       const reading = lesson?.engine.playhead(on);
       const heard = reading?.beat ?? 0;
       return lesson?.phase() === expected && reading?.ok === true && heard > past && heard < until;
@@ -194,14 +194,14 @@ export async function checkPlayingPast(page: Page, beat: number, deck: DeckId = 
  */
 export async function readyFromPhraseStart(page: Page, phase: string, beat: number, options: { readonly byItself?: boolean } = {}): Promise<void> {
   // The step shows (it cannot go on by itself before a whole phrase has played).
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true, undefined, { timeout: 30_000, polling: 20 });
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.settingUp?.() === true, undefined, { timeout: 30_000, polling: 20 });
   if (options.byItself === true) {
     await expect(caption(page)).toContainText("All set: starts on the next phrase");
-  } else if (await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true)) {
+  } else if (await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.settingUp?.() === true)) {
     await page.keyboard.press("KeyR");
   }
   // A phrase of 8 bars at the slowest tempo here, and some.
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: options.byItself === true ? 30_000 : 10_000, polling: 20 });
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.settingUp?.() === false, undefined, { timeout: options.byItself === true ? 30_000 : 10_000, polling: 20 });
   // The jump back is heard an output latency after R: until then the heard playhead is the set-up loop's.
   await page.waitForTimeout(250);
   await playingPast(page, phase, beat + 0.5, { before: beat + 8 });

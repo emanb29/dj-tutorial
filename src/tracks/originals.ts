@@ -1,4 +1,4 @@
-// Originals: tracks the owner's generator made, served by the API (server/originals.ts). Their
+// Originals: tracks the maintainer's generator made, served by the API (server/originals.ts). Their
 // meta.json holds the exact grid and phrases, so load() returns a KnownBeatGrid and the track needs
 // no analysis.
 import { z } from "zod";
@@ -24,13 +24,13 @@ function toTrack(summary: OriginalSummary): Track {
     id: summary.id,
     source: "original",
     title: summary.title,
-    artist: "learn-to-dj original",
+    artist: "dj-tutorial original",
     bpmHint: summary.bpm,
     ...(keyHint === undefined ? {} : { keyHint }),
     genre: summary.genre,
     ...(summary.subgenre === undefined ? {} : { subgenre: summary.subgenre }),
     licence: "Original, made for this app",
-    attribution: { text: `"${summary.title}", an original made for learn-to-dj`, url: null },
+    attribution: { text: `"${summary.title}", an original made for dj-tutorial`, url: null },
     shareable: true,
     durationSec: summary.durationSec,
     analysisCacheKey: null,

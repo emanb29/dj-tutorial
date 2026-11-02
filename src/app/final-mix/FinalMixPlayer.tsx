@@ -46,7 +46,7 @@ type Phase =
 /** Everything after Lesson 20 is on the controller (catalogue §1), minus the exam's covered aids and the Lesson tap key. */
 const SET_UNLOCKS: ReadonlySet<ControlId> = new Set(ALL_CONTROL_IDS.filter((id) => id !== "tap" && !FINAL_MIX.lockedOff.includes(id)));
 
-/** What end-to-end tests read, like the Lesson player's handle (window.learnToDjLesson). */
+/** What end-to-end tests read, like the Lesson player's handle (window.djTutorialLesson). */
 interface SetHandle {
   readonly engine: AudioEngine;
   readonly track: LessonTrack;
@@ -158,9 +158,9 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
     const first = session.playedTracks()[0]?.entry.candidate.track;
     if (first === undefined) return;
     const handle: SetHandle = { engine, track: first, phase: () => phaseRef.current, deckTrack };
-    (window as { learnToDjLesson?: unknown }).learnToDjLesson = handle;
+    (window as { djTutorialLesson?: unknown }).djTutorialLesson = handle;
     return () => {
-      delete (window as { learnToDjLesson?: unknown }).learnToDjLesson;
+      delete (window as { djTutorialLesson?: unknown }).djTutorialLesson;
     };
   }, [engine, session, tick]);
 
@@ -248,7 +248,7 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
       }
       setKeep({ kind: "idle" });
       // The recorded set, for end-to-end tests that explain a failed Check.
-      (window as { learnToDjSet?: unknown }).learnToDjSet = { attempt: graded.attempt, transitions: graded.transitions };
+      (window as { djTutorialSet?: unknown }).djTutorialSet = { attempt: graded.attempt, transitions: graded.transitions };
       setPhase({ kind: "result", graded });
     });
   }, [gradingTimedOut, session, onLearnerChange]);
@@ -281,7 +281,7 @@ export function FinalMixPlayer({ learner, onLearnerChange, trackPreference, onEx
     if (result === null) return "";
     const title = (id: string) => titles.get(id) ?? id;
     return setNotesText({
-      title: "My set, made with learn-to-dj",
+      title: "My set, made with dj-tutorial",
       recordedAt: result.attempt.startedAt,
       tracks: result.played.map(({ entry }) => ({ title: entry.candidate.track.title, artist: entry.candidate.artist, bpm: entry.candidate.track.grid.bpm, credit: entry.candidate.track.attribution.text })),
       transitions: result.transitions.map((transition) => ({ ...transition, from: title(transition.fromTrackId), to: title(transition.toTrackId) })),

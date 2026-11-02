@@ -8,13 +8,13 @@ const T1 = "Set Groove C (synthetic)";
 const T2 = "Set Groove Am (synthetic)";
 
 interface FreestyleWindow {
-  learnToDjLesson?: {
+  djTutorialLesson?: {
     engine: { deckState(deck: "A" | "B"): { playing: boolean } };
     deckTrack(deck: "A" | "B"): string | null;
   };
 }
 
-const deckTrack = (page: Page, deck: "A" | "B") => page.evaluate((which) => (window as FreestyleWindow).learnToDjLesson?.deckTrack(which) ?? null, deck);
+const deckTrack = (page: Page, deck: "A" | "B") => page.evaluate((which) => (window as FreestyleWindow).djTutorialLesson?.deckTrack(which) ?? null, deck);
 
 /** No sideways scrolling: the page fits the screen's width. */
 async function expectNoSidewaysScroll(page: Page): Promise<void> {
@@ -44,7 +44,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 360, height: 740 
 
     // Every control is unlocked: deck A's PLAY works, and a playing deck takes no new track.
     await page.locator('[data-control="A.play"]').click();
-    await page.waitForFunction(() => (window as FreestyleWindow).learnToDjLesson?.engine.deckState("A").playing === true);
+    await page.waitForFunction(() => (window as FreestyleWindow).djTutorialLesson?.engine.deckState("A").playing === true);
     await expect(page.getByRole("button", { name: `Load ${T2} onto deck A` })).toBeDisabled();
     await expect(page.getByRole("button", { name: `Load ${T2} onto deck A` })).toHaveAttribute("title", "Pause deck A first");
     await expectNoSidewaysScroll(page);

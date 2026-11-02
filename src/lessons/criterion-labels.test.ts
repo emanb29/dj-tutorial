@@ -20,7 +20,7 @@ describe("the Graded line", () => {
     expect(gradedLine(lessonDefinition("beats-and-bars"), ["deck-basics"])).toBe("Graded: taps on the beat · then only the 1");
   });
 
-  // Owner feedback: the level is graded once gain-staging is passed, and nothing said so.
+  // Maintainer feedback: the level is graded once gain-staging is passed, and nothing said so.
   it("announces a standing criterion the Check grades", () => {
     const passed = ["deck-basics", "beats-and-bars", "phrases", "gain-staging"] as const;
     expect(gradedLine(lessonDefinition("headphone-cue"), passed)).toBe("Graded: taps on B's kick · B off the master · master out of the red");

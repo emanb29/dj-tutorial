@@ -75,7 +75,7 @@ export interface LessonHandle {
 declare global {
   interface Window {
     /** Set while a Lesson is open, like the playground's handle: lets end-to-end tests read the engine. */
-    learnToDjLesson?: LessonHandle;
+    djTutorialLesson?: LessonHandle;
   }
 }
 
@@ -269,7 +269,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
           withDeckB,
         );
         session = created;
-        window.learnToDjLesson = { engine, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip(), settingUp: () => created.setUpPending() !== null };
+        window.djTutorialLesson = { engine, track, phase: () => phaseRef.current.kind, deckTrack: (deck) => created.deckTrack(deck), clip: () => created.playingClip(), settingUp: () => created.setUpPending() !== null };
         setMasterTempoMissing(missing);
         setSetup({ kind: "ready", session: created });
         if (checkAfterRoll.current) {
@@ -286,7 +286,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
     return () => {
       abort.abort();
       session?.close();
-      delete window.learnToDjLesson;
+      delete window.djTutorialLesson;
     };
   }, [engine, listed, trackPreference, roll, ownMusic]);
 

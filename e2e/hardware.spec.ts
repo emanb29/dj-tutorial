@@ -23,7 +23,7 @@ interface TimingCheckHandle {
 declare global {
   interface Window {
     __flx4?: FakeFlx4;
-    learnToDjTimingCheck?: TimingCheckHandle;
+    djTutorialTimingCheck?: TimingCheckHandle;
   }
 }
 
@@ -175,7 +175,7 @@ type TapControl = keyof typeof TAP_PRESSES;
 async function tapsAtBeats(page: Page, control: TapControl, beats: readonly number[], stamp: "event" | "zero"): Promise<void> {
   await page.evaluate(
     async ({ targets, zero, press }) => {
-      const lesson = (window as LessonWindow).learnToDjLesson;
+      const lesson = (window as LessonWindow).djTutorialLesson;
       const flx4 = window.__flx4;
       if (lesson === undefined || flx4 === undefined) throw new Error("No Lesson or no fake FLX4.");
       const beatMs = 60_000 / (lesson.deckTrack("A")?.grid ?? lesson.track.grid).bpm;
@@ -260,7 +260,7 @@ test("every TAP (pad, BEAT ▶, SHIFT + BEAT ▶, a 0-stamped press, Space) leav
   await expect(marks).toHaveCount(5);
 
   // Finish the hook on the pads (four beats, then three 1s) to reach practice.
-  const beat = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.playhead("A").beat ?? 0);
+  const beat = await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.playhead("A").beat ?? 0);
   const next = Math.ceil(beat) + 2;
   const firstOne = Math.ceil((next + 5) / 4) * 4;
   await tapsAtBeats(page, "pad", [next, next + 1, next + 2, next + 3, firstOne, firstOne + 4, firstOne + 8], "event");
@@ -358,7 +358,7 @@ test("the Timing check: TAP (SHIFT + BEAT ▶) along a click track stores the of
   // Steady taps 30 ms after each counted click (100 BPM, the first click at 0.5 s, 4 to listen), timed on
   // the click track as heard: headless Chromium's audio clock drifts from the page's clock.
   await page.evaluate(async () => {
-    const engine = window.learnToDjTimingCheck?.engine;
+    const engine = window.djTutorialTimingCheck?.engine;
     if (engine === undefined) throw new Error("the Timing check's clicks are not playing");
     const heardPosition = () => {
       const heard = engine.heardTime();
@@ -368,7 +368,7 @@ test("the Timing check: TAP (SHIFT + BEAT ▶) along a click track stores the of
     for (let click = 4; click < 22; click++) {
       const target = 0.5 + click * 0.6 + 0.03;
       // The check stops its clicks once it has 16 taps.
-      if (window.learnToDjTimingCheck === undefined) return;
+      if (window.djTutorialTimingCheck === undefined) return;
       while (heardPosition() < target) {
         if (performance.now() > deadline) throw new Error(`the clicks stalled at ${String(heardPosition())} s, waiting for ${String(target)} s (heard: ${JSON.stringify(engine.heardTime())})`);
         await new Promise((resolve) => setTimeout(resolve, 1));
@@ -551,7 +551,7 @@ test("the whole app from the FLX4: a Lesson from the list, the Check, Ready on L
   await ringTo(page, page.locator('li[data-lesson="cut-on-phrase"]'));
   await expect(html).toHaveAttribute("data-controller-nav", "");
   await midi(page, ...BROWSE_PRESS);
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson !== undefined);
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson !== undefined);
   const lesson = page.locator("main.lesson");
   await expect(lesson).not.toHaveAttribute("data-phase", "loading");
   // The hardware is the source of truth: put its faders and trims where the Lesson starts.
@@ -563,12 +563,12 @@ test("the whole app from the FLX4: a Lesson from the list, the Check, Ready on L
   await midi(page, ...LOAD_A);
   await expect(lesson).toHaveAttribute("data-phase", "check");
   const setUp = page.getByRole("region", { name: "Match your controller" });
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true, undefined, { timeout: 15_000 });
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.settingUp?.() === true, undefined, { timeout: 15_000 });
   await expect(setUp).toContainText("Ready R / LOAD B");
   await midi(page, [0x91, 0x54, 0x7f], [0x91, 0x54, 0x00], ...fader(1, 1));
   await expect(setUp.locator('li[data-state="matched"]')).toHaveCount(await setUp.locator("li").count());
   await midi(page, ...LOAD_B);
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: 5_000 });
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.settingUp?.() === false, undefined, { timeout: 5_000 });
 
   // The result card: the ring starts on Go again (LOAD A names it), one detent on is Practice.
   const card = page.getByRole("region", { name: "Result" });
@@ -582,10 +582,10 @@ test("the whole app from the FLX4: a Lesson from the list, the Check, Ready on L
   await expect(lesson).toHaveAttribute("data-phase", "practice");
 
   // Practice has the same set-up step: LOAD B goes on once it is set.
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === true, undefined, { timeout: 15_000 });
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.settingUp?.() === true, undefined, { timeout: 15_000 });
   await expect(setUp.locator('li[data-state="matched"]')).toHaveCount(await setUp.locator("li").count());
   await midi(page, ...LOAD_B);
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.settingUp?.() === false, undefined, { timeout: 5_000 });
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.settingUp?.() === false, undefined, { timeout: 5_000 });
   await expect(lesson).toHaveAttribute("data-phase", "practice");
 
   // SHIFT + BROWSE press is back (Esc): the list again. There, LOAD A starts the next Lesson.
@@ -669,7 +669,7 @@ test("Freestyle from the FLX4, the rekordbox way: BROWSE through the library, LO
 
   // PLAY on deck A; then LOAD A refuses, as the screen's → A does.
   await midi(page, [0x90, 0x0b, 0x7f], [0x90, 0x0b, 0x00]);
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.engine.deckState("A").playing === true);
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.engine.deckState("A").playing === true);
   await midi(page, ...LOAD_A);
   await expect(page.getByRole("alert")).toHaveText("Pause deck A first");
   await expect(decks.locator('li[data-deck="A"]')).toContainText(first);

@@ -187,7 +187,7 @@ function mountLearnerRoutes(app: Hono, services: AppServices): void {
     const learnerId = context.get("learnerId");
     const exportedAt = now();
     const day = exportedAt.toISOString().slice(0, 10);
-    context.header("Content-Disposition", `attachment; filename="learn-to-dj-${learnerId}-${day}.json"`);
+    context.header("Content-Disposition", `attachment; filename="dj-tutorial-${learnerId}-${day}.json"`);
     context.header("Cache-Control", "no-store");
     return context.json({
       success: true,
@@ -227,7 +227,7 @@ function mountLearnerRoutes(app: Hono, services: AppServices): void {
       const extension = kept.meta.mimeType.split("/")[1] ?? "audio";
       return context.body(new Uint8Array(kept.bytes), 200, {
         "Content-Type": kept.meta.mimeType,
-        "Content-Disposition": `attachment; filename="learn-to-dj-${learnerId}-final-project.${extension === "mp4" ? "m4a" : extension}"`,
+        "Content-Disposition": `attachment; filename="dj-tutorial-${learnerId}-final-project.${extension === "mp4" ? "m4a" : extension}"`,
         "Cache-Control": "no-store",
       });
     });

@@ -15,7 +15,7 @@ const T3 = "Set Groove Em (synthetic)";
 const bar9 = (bpm: number) => (32 * 60) / bpm;
 
 async function command(page: Page, sent: Record<string, unknown>): Promise<void> {
-  const ok = await page.evaluate((payload) => (window as LessonWindow).learnToDjLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
+  const ok = await page.evaluate((payload) => (window as LessonWindow).djTutorialLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
   expect(ok, JSON.stringify(sent)).toBe(true);
 }
 
@@ -29,7 +29,7 @@ async function cueAt(page: Page, deck: "A" | "B", pos: number): Promise<void> {
 /** Nudges deck A into phase with deck B with the jog wheel, by ear as it were: read, bend, release. */
 async function nudgeIntoPhase(page: Page): Promise<number> {
   return page.evaluate(async () => {
-    const lesson = (window as LessonWindow).learnToDjLesson;
+    const lesson = (window as LessonWindow).djTutorialLesson;
     if (lesson === undefined) throw new Error("No set is open.");
     const beatMs = 60_000 / 124;
     const errorMs = () => {
@@ -87,7 +87,7 @@ test("final-mix: a three-track set with a cut and a blend, by ear, passes, and t
   await expect(page.locator("main.final-mix")).toHaveAttribute("data-phase", "warm-up");
   await expect(page.getByTestId("graded-line")).toContainText("Graded: 3 tracks, 16 bars each · one genre · tempos within 2% · a blend and a cut");
   await expect(page.getByTestId("graded-line")).toContainText("no drift");
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B") != null);
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.deckTrack("B") != null);
   // The exam covers the BPM displays and the phase meter.
   await expect(page.locator('[data-control="A.bpm"] .readout-number')).toBeHidden();
   // SYNC withheld (BEAT SYNC B stays open for Master Tempo, held).
@@ -108,7 +108,7 @@ test("final-mix: a three-track set with a cut and a blend, by ear, passes, and t
   const load = page.getByRole("button", { name: `Load "${T3}" onto deck A` });
   await expect(load).toBeEnabled();
   await load.click();
-  await page.waitForFunction(() => (window as LessonWindow).learnToDjLesson?.deckTrack("A")?.trackId === "synthetic/set-124e" && !document.body.innerText.includes("Loading…"));
+  await page.waitForFunction(() => (window as LessonWindow).djTutorialLesson?.deckTrack("A")?.trackId === "synthetic/set-124e" && !document.body.innerText.includes("Loading…"));
   await command(page, { control: "seek", deck: "A", value: 0 });
   await page.getByRole("button", { name: "Channel A headphone cue" }).click();
   await keysAtBeats(page, [64], { deck: "B", codes: ["KeyX"] });
@@ -131,7 +131,7 @@ test("final-mix: a three-track set with a cut and a blend, by ear, passes, and t
 
   // The recording: a download with its notes, then kept on the server with the track list.
   const download = card.getByRole("link", { name: "Download the mix" });
-  await expect(download).toHaveAttribute("download", /^learn-to-dj-set-\d{4}-\d{2}-\d{2}\.(webm|m4a|ogg)$/);
+  await expect(download).toHaveAttribute("download", /^dj-tutorial-set-\d{4}-\d{2}-\d{2}\.(webm|m4a|ogg)$/);
   await expect(card.getByRole("link", { name: "Download the track list" })).toBeVisible();
   await card.getByRole("button", { name: "Keep as my final project" }).click();
   await expect(card.getByRole("button", { name: "Kept as your final project" })).toBeVisible();
@@ -157,7 +157,7 @@ test("final-mix: a three-track set with a cut and a blend, by ear, passes, and t
     return;
   }
   await expect(card).toContainText("upload the WAV for best quality, or the MP3");
-  await expect(card.getByRole("link", { name: "Download as WAV" })).toHaveAttribute("download", /^learn-to-dj-set-\d{4}-\d{2}-\d{2}\.wav$/);
+  await expect(card.getByRole("link", { name: "Download as WAV" })).toHaveAttribute("download", /^dj-tutorial-set-\d{4}-\d{2}-\d{2}\.wav$/);
   const mp3Link = card.getByRole("link", { name: "Download as MP3" });
   const mp3 = await page.request.get((await mp3Link.getAttribute("href")) ?? "");
   expect(mp3.status()).toBe(200);
@@ -182,7 +182,7 @@ test.describe("on a phone", () => {
         band: "pass",
         durationSec: 60,
         audio: { mimeType: "audio/webm", bytes: 64 },
-        tracks: [{ title: "Set Groove C (synthetic)", artist: "Learn to DJ", bpm: 123, credit: "", shareable: true }],
+        tracks: [{ title: "Set Groove C (synthetic)", artist: "DJ Tutorial", bpm: 123, credit: "", shareable: true }],
         transitions: [],
       };
       const profile = await fetch(`/api/learners/${id}/profile`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...record, finalProject }) });
@@ -199,7 +199,7 @@ test.describe("on a phone", () => {
         const box = await kept.getByRole("link", { name }).boundingBox();
         expect(box?.height ?? 0, name).toBeGreaterThanOrEqual(44);
       }
-      await expect(kept.getByRole("link", { name: "Download as MP3" })).toHaveAttribute("download", "learn-to-dj-set-2026-10-17.mp3");
+      await expect(kept.getByRole("link", { name: "Download as MP3" })).toHaveAttribute("download", "dj-tutorial-set-2026-10-17.mp3");
     } else {
       await expect(kept.getByRole("note")).toContainText("No WAV or MP3 download");
     }

@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 /** Where the API server listens. Vite's dev and preview proxies read the same values. */
 export interface ServerConfig {
   readonly host: string;
@@ -12,6 +14,14 @@ export const DEFAULT_API_HOST = "127.0.0.1";
 export const DEFAULT_API_PORT = 5180;
 
 type Environment = Readonly<Record<string, string | undefined>>;
+
+/** The operator's settings, at the project root; gitignored. `.env.example` lists every variable. */
+export const ENV_FILE = ".env";
+
+/** Loads `.env` into `process.env` if there is one. Values already in the environment win over it. */
+export function loadEnvFile(): void {
+  if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+}
 
 /** Reads `API_HOST` and `API_PORT`, collecting every problem instead of stopping at the first. */
 export function loadServerConfig(env: Environment): ServerConfigResult {
@@ -51,12 +61,37 @@ export function requireServerConfig(env: Environment): ServerConfig {
   return result.config;
 }
 
-/** Pages that may call the API: the dev app, the owner's tunnel and the end-to-end preview. */
-export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
-  "http://127.0.0.1:5179",
-  "https://dj.example.com",
-  "http://127.0.0.1:4179",
-];
+/** Pages that may call the API: the dev app and the end-to-end preview. PUBLIC_HOSTS adds more. */
+export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = ["http://127.0.0.1:5179", "http://127.0.0.1:4179"];
+
+export type PublicHostsResult =
+  | { readonly ok: true; readonly hosts: readonly string[] }
+  | { readonly ok: false; readonly problems: readonly string[] };
+
+/**
+ * Reads `PUBLIC_HOSTS`: the host names a reverse proxy or tunnel serves the app at (comma-separated,
+ * such as `dj.example.com`). Vite accepts requests for them, and the API lets `https://<host>` call it.
+ */
+export function loadPublicHosts(env: Environment): PublicHostsResult {
+  const hosts = (env["PUBLIC_HOSTS"] ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter((host) => host !== "");
+  const problems = hosts
+    .filter((host) => !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(host))
+    .map(
+      (host) =>
+        `PUBLIC_HOSTS contains "${host}", which is not a host name. Use comma-separated names like dj.example.com (no scheme, port or path).`,
+    );
+  return problems.length > 0 ? { ok: false, problems } : { ok: true, hosts };
+}
+
+/** For entry points: returns the public hosts or throws, since a wrong one would lock the page out. */
+export function requirePublicHosts(env: Environment): readonly string[] {
+  const result = loadPublicHosts(env);
+  if (!result.ok) throw new ServerConfigError(result.problems);
+  return result.hosts;
+}
 export const DEFAULT_DATA_DIR = ".local/data";
 export const DEFAULT_ORIGINALS_DIR = ".local/tracks/originals";
 export const DEFAULT_COACH_MONTHLY_CAP_USD = 5;
@@ -78,6 +113,8 @@ export interface RuntimeConfig {
   readonly coachMonthlyCapUsd: number;
   readonly coachLogPayloads: boolean;
   readonly allowedOrigins: readonly string[];
+  /** Host names a reverse proxy or tunnel serves the app at (PUBLIC_HOSTS). */
+  readonly publicHosts: readonly string[];
   /** How many Learners the profile store may hold. */
   readonly maxLearners: number;
 }
@@ -88,7 +125,7 @@ export type RuntimeConfigResult =
 
 /**
  * Reads `DATA_DIR`, `ORIGINALS_DIR`, `ANTHROPIC_API_KEY`, `COACH_MONTHLY_CAP_USD`, `COACH_LOG_PAYLOADS`,
- * `ALLOWED_ORIGINS` and `MAX_LEARNERS`, collecting every problem. Problems never include the key's value.
+ * `ALLOWED_ORIGINS`, `PUBLIC_HOSTS` and `MAX_LEARNERS`, collecting every problem. Problems never include the key's value.
  */
 export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
   const problems: string[] = [];
@@ -121,10 +158,14 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
     problems.push(`COACH_LOG_PAYLOADS is "${rawLogPayloads}", but it must be 1 (log Coach payloads) or 0. Unset it for 0.`);
   }
 
+  const publicHosts = loadPublicHosts(env);
+  if (!publicHosts.ok) problems.push(...publicHosts.problems);
+  const publicOrigins = publicHosts.ok ? publicHosts.hosts.map((host) => `https://${host}`) : [];
+
   const rawOrigins = env["ALLOWED_ORIGINS"];
   const allowedOrigins =
     rawOrigins === undefined
-      ? DEFAULT_ALLOWED_ORIGINS
+      ? [...DEFAULT_ALLOWED_ORIGINS, ...publicOrigins]
       : rawOrigins
           .split(",")
           .map((origin) => origin.trim())
@@ -159,6 +200,7 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
           coachMonthlyCapUsd,
           coachLogPayloads: rawLogPayloads === "1",
           allowedOrigins,
+          publicHosts: publicHosts.ok ? publicHosts.hosts : [],
           maxLearners,
         },
       };

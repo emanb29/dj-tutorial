@@ -20,8 +20,8 @@ const PREVIEW_PORT = portFromEnv("E2E_APP_PORT", 4179);
 const API_PORT = portFromEnv("E2E_API_PORT", 4180);
 const previewUrl = `http://127.0.0.1:${String(PREVIEW_PORT)}`;
 const isCi = process.env["CI"] !== undefined;
-// The API keeps profiles in a throwaway folder (never the owner's .local/data) and serves no Originals.
-const e2eData = join(tmpdir(), `learn-to-dj-e2e-${String(process.pid)}`);
+// The API keeps profiles in a throwaway folder (never the maintainer's .local/data) and serves no Originals.
+const e2eData = join(tmpdir(), `dj-tutorial-e2e-${String(process.pid)}`);
 // The Originals player has its own API and preview (4182/4181), serving a tiny fixture folder that
 // e2e/originals.spec.ts writes and changes, so the Lessons never pick up those tracks. Set once, in
 // the runner, so the workers (which re-read this file) inherit the same folder.
@@ -30,7 +30,7 @@ const ORIGINALS_API_PORT = portFromEnv("E2E_ORIGINALS_API_PORT", 4182);
 const originalsUrl = `http://127.0.0.1:${String(ORIGINALS_PREVIEW_PORT)}`;
 // e2e/originals.spec.ts reads its base URL from here.
 process.env["E2E_ORIGINALS_BASE_URL"] = originalsUrl;
-process.env["E2E_ORIGINALS_DIR"] ??= join(tmpdir(), `learn-to-dj-e2e-originals-${String(process.pid)}`);
+process.env["E2E_ORIGINALS_DIR"] ??= join(tmpdir(), `dj-tutorial-e2e-originals-${String(process.pid)}`);
 const e2eOriginals = process.env["E2E_ORIGINALS_DIR"];
 
 export default defineConfig({

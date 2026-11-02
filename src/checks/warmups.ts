@@ -1,4 +1,4 @@
-// Warm-up scheduling (check-design §7.2, owner decision C1): at most 5 minutes, about 2 skills.
+// Warm-up scheduling (check-design §7.2, maintainer decision C1): at most 5 minutes, about 2 skills.
 import { LESSON_IDS, type IsoTime, type LessonId } from "@shared/attempt.ts";
 import type { SkillProfile } from "@shared/skill-profile.ts";
 import { criterionRecords } from "./profile.ts";

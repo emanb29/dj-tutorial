@@ -2,7 +2,7 @@
  * Audius: search and stream tracks through the public API (docs/research on branch
  * research/audius-terms has the terms behind these rules).
  *
- * - Search: `GET {baseUrl}/v1/tracks/search?query=…&app_name=learn-to-dj`. Only tracks that are
+ * - Search: `GET {baseUrl}/v1/tracks/search?query=…&app_name=dj-tutorial`. Only tracks that are
  *   freely streamable come back: `is_streamable`, not `is_stream_gated`, no `stream_conditions`,
  *   `access.stream` not false, not deleted or unavailable. Gating is never worked around.
  * - Load: `GET {baseUrl}/v1/tracks/{id}/stream?app_name=…&skip_play_count=true`. It redirects to a
@@ -23,7 +23,7 @@ import { decodeAndHash, decodeOffline, fetchBytes, fetchJson, type AudioDecoder 
 import { createRateLimiter, type RateLimiter } from "./rate-limiter.ts";
 import type { Result, Track, TrackSource } from "./types.ts";
 
-export const AUDIUS_APP_NAME = "learn-to-dj";
+export const AUDIUS_APP_NAME = "dj-tutorial";
 export const AUDIUS_DEFAULT_BASE_URL = "https://api.audius.co";
 export const AUDIUS_PRIVACY_POLICY_URL = "https://audius.co/legal/privacy-policy";
 export const AUDIUS_API_TERMS_URL = "https://audius.co/legal/api-terms";

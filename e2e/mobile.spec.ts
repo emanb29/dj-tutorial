@@ -1,6 +1,6 @@
 import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 
-// The Lesson player on a phone (touch, portrait and landscape) and on the owner's laptop, muted, on
+// The Lesson player on a phone (touch, portrait and landscape) and on the maintainer's laptop, muted, on
 // the synthetic groove. On a phone the controller must fit the width without any part on top of
 // another, the control to touch next must be on screen and big enough for a finger, and captions name
 // the control ("Tap PLAY") instead of a key.
@@ -53,7 +53,7 @@ async function openLesson(page: Page, lessonId: string, options: { readonly touc
   await page.goto(`/?learner=${learnerId}&track=synthetic`);
   const start = page.locator(`li[data-lesson="${lessonId}"]`).getByRole("button");
   await (options.touch ? start.tap() : start.click());
-  await page.waitForFunction(() => "learnToDjLesson" in window);
+  await page.waitForFunction(() => "djTutorialLesson" in window);
   await expect(page.locator("main.lesson")).toHaveAttribute("data-phase", "hook");
 }
 
@@ -269,7 +269,7 @@ test.describe("Lesson 2 on a phone", () => {
 /** An engine command from the test, standing in for a knob turn the touch tests cannot drag. */
 async function command(page: Page, sent: Record<string, unknown>): Promise<void> {
   const ok = await page.evaluate(
-    (payload) => (window as unknown as { learnToDjLesson?: { engine: { command(c: unknown, i: { device: string }): { ok: boolean } } } }).learnToDjLesson?.engine.command(payload, { device: "touch" }).ok,
+    (payload) => (window as unknown as { djTutorialLesson?: { engine: { command(c: unknown, i: { device: string }): { ok: boolean } } } }).djTutorialLesson?.engine.command(payload, { device: "touch" }).ok,
     sent,
   );
   expect(ok, JSON.stringify(sent)).toBe(true);

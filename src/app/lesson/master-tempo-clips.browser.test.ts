@@ -1,6 +1,6 @@
 // Lesson 8's Master Tempo clips must land on music with a pitch: 8% faster with Master Tempo off is a
 // semitone higher than on only where something holds a note. Drums alone sound the same either way
-// (the owner's report: the clips sat in the Originals' drum-only intros). Each clip's fast half is
+// (the maintainer's report: the clips sat in the Originals' drum-only intros). Each clip's fast half is
 // rendered offline (never the speakers) on the synthetic groove and on the Originals' stand-ins
 // (rotated-tracks.harness.ts: their real grids and sections, a pad wherever the real drop has chords),
 // and the chord is read where it should be: up 8% with Master Tempo off, where it was with it on.

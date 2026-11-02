@@ -20,7 +20,7 @@ import { syntheticLessonTrack, SYNTHETIC_HOUSE } from "./synthetic-track.ts";
 
 function candidate(id: string, bpm: number, overrides: Partial<SetCandidate> = {}): SetCandidate {
   const track = syntheticLessonTrack({ ...SYNTHETIC_HOUSE, bpm, id, title: id });
-  return { track, artist: "learn-to-dj", genre: "house", camelot: "8A", shareable: true, ...overrides };
+  return { track, artist: "dj-tutorial", genre: "house", camelot: "8A", shareable: true, ...overrides };
 }
 
 describe("the final-mix set builder", () => {

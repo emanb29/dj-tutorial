@@ -1,4 +1,4 @@
-// The unclocked set-up step (owner, 2026-10-18: "Lesson 7 does not give enough prep time"; 2026-10-19:
+// The unclocked set-up step (maintainer, 2026-10-18: "Lesson 7 does not give enough prep time"; 2026-10-19:
 // "Don't require a press of R after matching the controller"): Lesson 7 (Your first transition: the
 // cut) opens its Check and its practice with "Set up: …". Deck A loops its first phrase meanwhile,
 // nothing is recorded and no timeout runs. Once everything the caption asks is done, the step goes on

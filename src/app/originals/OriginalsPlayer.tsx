@@ -126,7 +126,7 @@ export function OriginalsPlayer() {
 
   useEffect(() => {
     const previous = document.title;
-    document.title = "Originals · Learn to DJ";
+    document.title = "Originals · DJ Tutorial";
     return () => {
       document.title = previous;
     };

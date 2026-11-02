@@ -10,7 +10,7 @@ import { caption, commandsAtBeats, keysAtBeats, learner, openLesson, readyFromPh
 const BEFORE = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase", "tempo-fader", "sync-blend", "eq-basics"];
 
 async function command(page: Page, sent: Record<string, unknown>): Promise<void> {
-  const ok = await page.evaluate((payload) => (window as LessonWindow).learnToDjLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
+  const ok = await page.evaluate((payload) => (window as LessonWindow).djTutorialLesson?.engine.command(payload, { device: "trackpad" }).ok, sent);
   expect(ok, JSON.stringify(sent)).toBe(true);
 }
 
@@ -22,7 +22,7 @@ test("bass-swap: LOW B cut, PLAY B on Phrase 2, fader B on Phrase 3, the LOWs sw
   const learnerId = learner("bassswap");
   await seedPassed(page, learnerId, BEFORE, { headphones: true });
   await openLesson(page, learnerId, "bass-swap");
-  expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B")?.grid.bpm)).toBe(121);
+  expect(await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.deckTrack("B")?.grid.bpm)).toBe(121);
 
   // The hook: LOW B down, PLAY B, then a swap.
   await expect(caption(page)).toContainText("Turn LOW B all the way down");

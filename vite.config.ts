@@ -1,6 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { requireServerConfig } from "./server/config.ts";
+import { loadEnvFile, requirePublicHosts, requireServerConfig } from "./server/config.ts";
 
 // Cross-origin isolation enables SharedArrayBuffer for the analysis threads, while
 // `credentialless` still allows CORS-enabled audio from Audius and archive.org (ADR 0001).
@@ -9,8 +9,9 @@ const crossOriginIsolationHeaders = {
   "Cross-Origin-Embedder-Policy": "credentialless",
 };
 
-// The owner develops remotely: a reverse proxy forwards https://dj.example.com to 127.0.0.1:5179.
-const allowedHosts = ["dj.example.com"];
+// For remote access, a reverse proxy or tunnel forwards each of PUBLIC_HOSTS (in .env) to 127.0.0.1:5179.
+loadEnvFile();
+const allowedHosts = [...requirePublicHosts(process.env)];
 
 const api = requireServerConfig(process.env);
 const proxy = { "/api": { target: `http://${api.host}:${String(api.port)}` } };

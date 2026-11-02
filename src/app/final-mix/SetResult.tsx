@@ -112,11 +112,11 @@ export function SetResult({ outcome, transitions, titles, recording, recordingPr
               {minutes(recording.durationSec)} recorded{recording.truncated ? " (the end was cut off: the recording hit its size limit)" : ""}.
             </p>
             <div className="result-actions">
-              <a className="btn" href={audioUrl} download={`learn-to-dj-set-${day}.${fileExtensionOf(recording.mimeType)}`}>
+              <a className="btn" href={audioUrl} download={`dj-tutorial-set-${day}.${fileExtensionOf(recording.mimeType)}`}>
                 Download the mix
               </a>
               {notesUrl === null ? null : (
-                <a className="btn" href={notesUrl} download={`learn-to-dj-set-${day}.txt`}>
+                <a className="btn" href={notesUrl} download={`dj-tutorial-set-${day}.txt`}>
                   Download the track list
                 </a>
               )}

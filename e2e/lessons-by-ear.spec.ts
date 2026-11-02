@@ -18,7 +18,7 @@ const phase = (page: Page) => page.locator("main.lesson");
  */
 async function startNudging(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const lesson = (window as LessonWindow).learnToDjLesson;
+    const lesson = (window as LessonWindow).djTutorialLesson;
     if (lesson === undefined) throw new Error("No Lesson is open.");
     const control = { stop: false };
     (window as unknown as { nudging?: typeof control }).nudging = control;
@@ -82,7 +82,7 @@ async function tempoBTo(page: Page, bpm: number): Promise<void> {
 
 const bpmOf = async (page: Page, deck: "A" | "B") =>
   page.evaluate((on) => {
-    const lesson = (window as LessonWindow).learnToDjLesson;
+    const lesson = (window as LessonWindow).djTutorialLesson;
     const grid = lesson?.deckTrack(on)?.grid;
     return grid === undefined ? 0 : grid.bpm * (lesson?.engine.deckState(on).tempoRate ?? 1);
   }, deck);
@@ -126,7 +126,7 @@ test("tempo-by-ear: BPM and phase meter covered, a guess and a match in practice
   const learnerId = learner("tempoear");
   await seedPassed(page, learnerId, [...FIRST_ELEVEN, "nudge-phase"]);
   await openLesson(page, learnerId, "tempo-by-ear");
-  expect(await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.deckTrack("B")?.grid.bpm)).toBe(BPM_B);
+  expect(await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.deckTrack("B")?.grid.bpm)).toBe(BPM_B);
 
   // Covered: no BPM to read, the phase meter held.
   await expect(page.locator('[data-control="B.bpm"] .readout-number')).toHaveText("–");
@@ -198,7 +198,7 @@ test("blend-by-ear: B matched in the headphones, a 16-bar blend with the bass sw
   await page.keyboard.press("Enter");
   await expect(phase(page)).toHaveAttribute("data-phase", "check");
   await expect(page.locator(".lesson-cue")).toHaveText("Set up: LOW B all the way down");
-  const lowB = await page.evaluate(() => (window as LessonWindow).learnToDjLesson?.engine.command({ control: "eq-low", deck: "B", value: -1 }, { device: "trackpad" }).ok);
+  const lowB = await page.evaluate(() => (window as LessonWindow).djTutorialLesson?.engine.command({ control: "eq-low", deck: "B", value: -1 }, { device: "trackpad" }).ok);
   expect(lowB).toBe(true);
   await readyFromPhraseStart(page, "check", 0);
   await expect(page.locator(".lesson-cue")).toHaveText("B's in your headphones. Now match B: TEMPO B, then jog B");
