@@ -71,3 +71,7 @@ A live dev server (one reached at a `PUBLIC_HOSTS` name) can run from a main che
 - **Expedited:** anything else (screens, layout, captions, content, track selection, new optional features). Before pushing, run `npm run typecheck`, `npm run lint` and the tests for the files you touched. The PR then merges without waiting for CI, and the live checkout fast-forwards to the merge at once (`git merge --ff-only`), ahead of green main.
 - If main's full run then fails, fix it or revert it before merging anything else, and tell the maintainer.
 - Never tell the maintainer a change is live until the live checkout holds it.
+
+### Pull requests (maintainer policy, 2026-11-03)
+
+- Agents may branch, commit and push without asking, but each pull request and merge needs the maintainer's consent. That consent gates only the PR, never the work: build a feature on a pushed branch, show it working (a demo or a preview server), then ask for its PR. Never leave unblocked work waiting on PR consent.
