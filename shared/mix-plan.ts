@@ -47,8 +47,11 @@ export const LOOP_BEATS: readonly number[] = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
 /** A track's level match, dB: the trim knob's span (src/lessons/track.ts trimKnobFor). */
 export const GAIN_DB_RANGE = { min: -24, max: 9 } as const;
 
-/** The ready-made Transitions (mix-plan-recipes.ts). Crossfades are named by their length in bars. */
-export const RECIPE_IDS = ["crossfade-8", "crossfade-16", "crossfade-32", "bass-swap", "cut-on-the-1", "filter-sweep", "echo-out"] as const;
+/**
+ * The ready-made Transitions (mix-plan-recipes.ts). Crossfades are named by their length in bars; a
+ * 16-bar crossfade is the long blend. Adding one is not a migration: older plans stay valid.
+ */
+export const RECIPE_IDS = ["crossfade-8", "crossfade-16", "crossfade-32", "bass-swap", "cut-on-the-1", "filter-sweep", "echo-out", "loop-to-extend", "tempo-ride"] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
 const finite = z.number().refine(Number.isFinite, { message: "Must be a finite number." });

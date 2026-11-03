@@ -31,7 +31,14 @@ describe("selectSpecs", () => {
   it("runs the library browser's spec, and its pickers', for the browser", () => {
     expect(selectSpecs(["src/app/library-browser/LibraryBrowser.tsx"])).toEqual({
       all: false,
-      specs: ["e2e/freestyle.spec.ts", "e2e/hardware.spec.ts", "e2e/library-browser.spec.ts", "e2e/music-folder.spec.ts"],
+      specs: [
+        "e2e/final-mix.spec.ts",
+        "e2e/freestyle.spec.ts",
+        "e2e/hardware.spec.ts",
+        "e2e/library-browser.spec.ts",
+        "e2e/mobile.spec.ts",
+        "e2e/music-folder.spec.ts",
+      ],
     });
   });
 

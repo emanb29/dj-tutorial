@@ -92,6 +92,41 @@ describe("Transition recipes", () => {
     ]);
   });
 
+  it("loop to extend: a 1-bar loop on the outgoing track while the faders trade, let go at the end, 8 bars", () => {
+    expect(RECIPES["loop-to-extend"].lengthBeats).toBe(32);
+    expect(lanesOf("loop-to-extend")).toEqual([
+      {
+        track: "outgoing",
+        param: "loop",
+        loopBeats: 4,
+        keyframes: [
+          { beat: 0, value: 1, curve: "jump" },
+          { beat: 32, value: 0, curve: "jump" },
+        ],
+      },
+      fade("incoming", 0, 1, 0, 16),
+      fade("outgoing", 1, 0, 16, 32),
+    ]);
+  });
+
+  it("tempo ride: a 16-bar crossfade at the outgoing tempo, then the incoming track rides back to its own over a phrase", () => {
+    expect(RECIPES["tempo-ride"].lengthBeats).toBe(96);
+    expect(transitionFromRecipe("tempo-ride", { ...place, tempos: { outgoing: 124, incoming: 128 } }).lanes).toEqual([
+      {
+        track: "incoming",
+        param: "tempo",
+        keyframes: [
+          { beat: 0, value: 124, curve: "jump" },
+          { beat: 64, value: 124, curve: "jump" },
+          { beat: 96, value: 128, curve: "linear" },
+        ],
+      },
+      fade("incoming", 0, 1, 0, 32),
+      fade("outgoing", 1, 0, 32, 64),
+    ]);
+    expect(() => transitionFromRecipe("tempo-ride", place)).toThrow(/BPMs/);
+  });
+
   it("scales lanes to a length other than the usual one", () => {
     expect(transitionFromRecipe("bass-swap", { ...place, lengthBeats: 32 }).lanes[3]).toEqual(fade("outgoing", 1, 0, 16, 32));
   });

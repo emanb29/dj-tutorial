@@ -83,5 +83,13 @@ The designed handover from one track to the next, anchored to beat-grid position
 _Avoid_: Blend (a blend is one kind of Transition), segue
 
 **Transition recipe**:
-A named, ready-made set of lanes (crossfade, bass swap, cut on the 1, filter sweep, echo out). Picking one gives a good Transition with no lane editing.
+A named, ready-made set of lanes (crossfade, bass swap, cut on the 1, filter sweep, echo out, loop to extend, tempo ride). Picking one gives a good Transition with no lane editing.
 _Avoid_: Preset, template
+
+**Execution plan**:
+The controller moves a planned transition needs, derived from its lanes: which DDJ-FLX4 control, which hand, when, and how precisely, plus where each control starts. Derived every time, never stored.
+_Avoid_: Script, macro
+
+**Complexity rating**:
+How hard a planned transition is to perform live, 1 to 5, computed from its Execution plan, with a reason for each thing that makes it hard. It is per Learner (a control whose Lesson isn't Passed counts), and it warns but never blocks.
+_Avoid_: Difficulty level, score

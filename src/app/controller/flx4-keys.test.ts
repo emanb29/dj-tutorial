@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Flx4Decoder } from "@midi";
-import { buttonForKey, CONTROLLER_KEYS, flx4Command, shortButtonForKey } from "./flx4-keys.ts";
+import { CHECKLIST, Flx4Decoder } from "@midi";
+import { isControlId } from "./control-ids.ts";
+import { buttonForKey, CONTROLLER_KEYS, FLX4_LAYOUT, flx4Command, flx4LayoutControl, shortButtonForKey } from "./flx4-keys.ts";
 
 // AlphaTheta's bytes (docs/research/flx4-midi.md, "Mixer and browse"): BROWSE turn B6 40, press 96 41
 // (SHIFT 96 42), LOAD deck 1 96 46 (SHIFT 96 68), LOAD deck 2 96 47 (SHIFT 96 7A).
@@ -52,5 +53,31 @@ describe("the names hints give", () => {
   it("every key in the table is one the decoder can send, and no press is two keys", () => {
     const presses = CONTROLLER_KEYS.map(({ press }) => `${press.control}:${String(press.deck)}:${String(press.shift)}`);
     expect(new Set(presses).size).toBe(presses.length);
+  });
+});
+
+describe("FLX4_LAYOUT, the controls a planned move uses", () => {
+  it("names each control as captions do, with its deck", () => {
+    expect(flx4LayoutControl("B.eq-low").name).toBe("LOW B");
+    expect(flx4LayoutControl("A.channel-fader").name).toBe("fader A");
+    expect(flx4LayoutControl("B.loop-exit").name).toBe("4 BEAT/EXIT B");
+    expect(flx4LayoutControl("crossfader").name).toBe("crossfader");
+    expect(flx4LayoutControl("beat-fx-on").name).toBe("BEAT FX ON");
+  });
+
+  it("puts deck A's side on the left, deck B's and Beat FX on the right, and the crossfader in the middle", () => {
+    for (const control of FLX4_LAYOUT) {
+      const expected = control.deck === "A" ? "left" : control.id === "crossfader" ? "centre" : "right";
+      expect(control.side, control.id).toBe(expected);
+    }
+  });
+
+  it("uses only the app's control ids, each once, and only physical controls the MIDI decoder reports", () => {
+    const physical = new Set(CHECKLIST.map(({ id }) => id));
+    for (const control of FLX4_LAYOUT) {
+      expect(isControlId(control.id), control.id).toBe(true);
+      for (const id of control.physical) expect(physical.has(id), `${control.id} → ${id}`).toBe(true);
+    }
+    expect(new Set(FLX4_LAYOUT.map(({ id }) => id)).size).toBe(FLX4_LAYOUT.length);
   });
 });
