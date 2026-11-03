@@ -80,6 +80,40 @@ With Master Tempo on, no lag within ±20 ms lines the two renders up either (bes
 so this is phase, not timing. A 20 ms linear crossfade across the seam dips by about 6 dB at its
 worst 2 ms, which is a short, audible notch on tonal music, not a seamless join.
 
+## The Learner's own files: formats, sample rates, long tracks
+
+The Render runs on the Learner's local library, so the same path was checked on decoded files rather
+than on buffers built in the test. These were 10-minute stereo 440 Hz files made with ffmpeg: MP3 and
+AAC (`.m4a`) at 44.1 kHz and 192 kbit/s, and WAV at 44.1 and 48 kHz. Each was decoded the way the app
+does it (`decoderAt(rate)` in `src/tracks/load-audio.ts`), loaded with Master Tempo on, sought to 9:50,
+and rendered for 5 s at +4%. The check was a one-off and is not in the suite, since the files run to
+100 MB.
+
+| File | Render at 48 kHz | Render at 44.1 kHz |
+| --- | --- | --- |
+| MP3, 44.1 kHz | 440.5 Hz, decode 1.7 s | 440.5 Hz, decode 0.9 s |
+| AAC, 44.1 kHz | 440.3 Hz, decode 1.7 s | 440.5 Hz, decode 1.1 s |
+| WAV, 44.1 kHz | 440.5 Hz, decode 1.1 s | 440.5 Hz, decode 0.6 s |
+| WAV, 48 kHz | 440.5 Hz, decode 0.6 s | 440.5 Hz, decode 1.2 s |
+
+- **Pitch:** every case kept the key. The 457.6 Hz (+4%) bin was 60 to 100 dB below the 440 Hz one,
+  and the playhead read 594.97 s at the end, as the model says.
+- **Load:** 35 to 55 ms, including the transfer of the 10-minute track into the stretch worklet.
+- **Sample rate:** one render runs at one rate, and `engine.load` refuses a buffer at any other rate
+  (with a message that says to decode it with the engine's context). `decodeAudioData` resamples a file
+  to the decoding context's rate, so files at 44.1 and 48 kHz mix freely, as long as the Render decodes
+  every track at the render's rate. 44.1 kHz suits most libraries, since most files are 44.1 kHz and
+  that rate needs no resampling for them. 48 kHz also works.
+- **Codecs:** Playwright's Chromium decoded AAC as well as MP3 and WAV. A format the browser cannot
+  decode fails in `decodeAudioData`, before the engine, so the Render must report it per track.
+- **Length and memory:** 10 minutes worked at both rates. With Master Tempo, a loaded track is held
+  twice: the deck's `AudioBuffer`, plus a copy per channel in the worklet. At 48 kHz stereo float that
+  is about 23 MB a minute per copy, so about 460 MB for a 10-minute track. The recommended stretch
+  pass adds its output (about 220 MB for that track at +4%). Only the two overlapping tracks should be
+  loaded at once, and the earlier ones' buffers released.
+- **Stretch pass speed:** the stretcher alone over a 10-minute track at +4% (577 s of output) rendered
+  in 18 s, about 32× real time, and kept 440.4 Hz to the end.
+
 ## Options for the segmented Render
 
 1. **Stretch each track in one pass, then mix in segments without Master Tempo (recommended).** For each
@@ -109,6 +143,10 @@ worst 2 ms, which is a short, audible notch on tonal music, not a seamless join.
   so in the result.
 - In the stretch pass, build the time map from the tempo lane up front; ramps become rate steps (one
   per beat is finer than a hand on the fader).
+- Decode every track at the render's rate (44.1 kHz suggested) and report an undecodable file per
+  track. Run the stretch passes one at a time. At 44.1 kHz, one pass over a 10-minute
+  track holds about 630 MB (the input, the worklet's copy and the output). The mix pass then holds only
+  the two overlapping stretched tracks, about 420 MB, since it plays them without the worklet.
 - Await `engine.settled()` inside every `suspend()` that sends stretch messages, as the test does.
 - Keep the stretched buffer's offset against the model under test (transients within 2 ms, as
   `deck.browser.test.ts` checks for the deck).
