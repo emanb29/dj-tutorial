@@ -1,9 +1,10 @@
 // The set builder: pick 3+ tracks of one genre from the library (BPM and key shown), put them in
 // order, tag a genre where the source has none, and nudge a file's phrase anchor by whole bars (track
 // prep, check-design §5.4). Tempo gaps over ±2% and key clashes are warnings; only the set rules block.
-import { useState } from "react";
+import { useMemo } from "react";
 import { SET_GENRES, SET_RULES, setProblems, warningText, type SetEntry } from "@lessons";
-import type { Library, LibraryItem, PreparedTrack } from "./library.ts";
+import { LibraryBrowser } from "../library-browser/LibraryBrowser.tsx";
+import { libraryRow, type Library, type LibraryItem, type PreparedTrack } from "./library.ts";
 
 export interface PickedTrack {
   readonly key: string;
@@ -25,11 +26,16 @@ interface SetBuilderProps {
 const bpmText = (bpm: number | null) => (bpm === null ? "BPM ?" : `${bpm.toFixed(1)} BPM`);
 
 export function SetBuilder({ library, picked, preparing, problem, onAdd, onFiles, onChange, onStart }: SetBuilderProps) {
-  const [filter, setFilter] = useState("");
   const entries = picked.map((track) => track.entry);
   const { blocking, warnings } = setProblems(entries);
   const inSet = new Set(picked.map((track) => track.key));
-  const shown = library.items.filter((item) => `${item.title} ${item.artist} ${item.genre ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase()));
+  const rows = useMemo(() => library.items.map(libraryRow), [library]);
+  const itemsByKey = useMemo(() => new Map(library.items.map((item) => [item.key, item])), [library]);
+  const full = picked.length >= SET_RULES.maxTracks;
+  const add = (key: string) => {
+    const item = itemsByKey.get(key);
+    if (item !== undefined && !inSet.has(key) && preparing === null && !full) onAdd(item);
+  };
   const move = (index: number, by: number) => {
     const next = [...picked];
     const [moved] = next.splice(index, 1);
@@ -139,9 +145,8 @@ export function SetBuilder({ library, picked, preparing, problem, onAdd, onFiles
 
       <section className="set-library" aria-label="Library">
         <h2>Library</h2>
-        <div className="set-library-tools">
-          <input type="search" placeholder="Search" aria-label="Search the library" value={filter} onChange={(event) => { setFilter(event.target.value); }} />
-          {library.files === null ? null : (
+        {library.files === null ? null : (
+          <div className="set-library-tools">
             <label className="btn set-files">
               Add your files
               <input
@@ -154,37 +159,41 @@ export function SetBuilder({ library, picked, preparing, problem, onAdd, onFiles
                 }}
               />
             </label>
-          )}
-        </div>
+          </div>
+        )}
         {preparing === null ? null : (
           <p className="set-preparing" role="status">
             {preparing}
           </p>
         )}
-        {shown.length === 0 ? <p className="set-empty">No tracks here yet. Add your own files.</p> : null}
-        <ul>
-          {shown.map((item) => (
-            <li key={item.key} data-library={item.key}>
-              <span className="set-title">
-                {item.title}
-                <small>
-                  {item.artist} · {bpmText(item.bpm)} · {item.camelot ?? "key ?"} · {item.genre ?? "no genre"}
-                </small>
-              </span>
-              <button
-                type="button"
-                className="btn"
-                aria-label={`Add ${item.title}`}
-                disabled={inSet.has(item.key) || preparing !== null || picked.length >= SET_RULES.maxTracks}
-                onClick={() => {
-                  onAdd(item);
-                }}
-              >
-                {inSet.has(item.key) ? "Added" : "Add"}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <LibraryBrowser
+          picker="final-mix"
+          rows={rows}
+          emptyText="No tracks here yet. Add your own files."
+          controllerHint={
+            <>
+              FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd> adds it to the set
+            </>
+          }
+          onLoad={(row) => {
+            add(row.key);
+          }}
+          actions={(row) => (
+            <button
+              type="button"
+              className="btn"
+              tabIndex={-1}
+              data-nav-skip
+              aria-label={`Add ${row.title}`}
+              disabled={inSet.has(row.key) || preparing !== null || full}
+              onClick={() => {
+                add(row.key);
+              }}
+            >
+              {inSet.has(row.key) ? "Added" : "Add"}
+            </button>
+          )}
+        />
       </section>
     </div>
   );
