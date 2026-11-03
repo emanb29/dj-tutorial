@@ -22,6 +22,8 @@ const ControllerPage = lazy(() => import("./controller-page/ControllerPage.tsx")
 const MixGradePage = lazy(() => import("./mix-grade/MixGradePage.tsx").then((module) => ({ default: module.MixGradePage })));
 // Freestyle: both decks, every control, the library, no grading. Its own chunk.
 const Freestyle = lazy(() => import("./freestyle/Freestyle.tsx").then((module) => ({ default: module.Freestyle })));
+// Mix plans (the Mix Editor's saved sets), its own chunk.
+const MixPlansPage = lazy(() => import("./mix-plans/MixPlansPage.tsx").then((module) => ({ default: module.MixPlansPage })));
 const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
@@ -49,6 +51,8 @@ export const CONTROLLER_PAGE_PATH = "/controller";
 export const MIX_GRADE_PATH = "/mix";
 /** Freestyle (a small rekordbox), from the Lesson list: no Lesson, no grading. */
 export const FREESTYLE_PATH = "/freestyle";
+/** Mix plans (ISS-186), from the Lesson list: sets planned from the music folder, kept on this device. */
+export const MIX_PLANS_PATH = "/plans";
 /** Re-taking Placement, from the Lesson list. A first run (no profile yet) shows it at "/". */
 export const PLACEMENT_PATH = "/placement";
 
@@ -192,6 +196,9 @@ export function App() {
   const freestyle = useCallback(() => {
     navigate(FREESTYLE_PATH);
   }, [navigate]);
+  const mixPlans = useCallback(() => {
+    navigate(MIX_PLANS_PATH);
+  }, [navigate]);
 
   if (playgroundEnabled({ pathname: path, search: window.location.search }, import.meta.env.DEV)) {
     return (
@@ -250,6 +257,14 @@ export function App() {
     );
   }
 
+  if (path.replace(/\/$/, "") === MIX_PLANS_PATH) {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening your mix plans…</p>}>
+        <MixPlansPage onExit={exit} />
+      </Suspense>
+    );
+  }
+
   if (path.replace(/\/$/, "") === MIX_GRADE_PATH && learner.kind === "ready") {
     return (
       <Suspense fallback={<p className="lesson-loading">Opening the mix grader…</p>}>
@@ -294,7 +309,7 @@ export function App() {
         </a>
         <HealthIndicator />
       </header>
-      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} onGradeMix={gradeMix} onFreestyle={freestyle} /> : <p>Loading your progress…</p>}
+      {learner.kind === "ready" ? <LessonList learner={learner.record} offline={learner.offline} onStart={openLesson} onRetakePlacement={retakePlacement} onGradeMix={gradeMix} onFreestyle={freestyle} onMixPlans={mixPlans} /> : <p>Loading your progress…</p>}
     </main>
   );
 }

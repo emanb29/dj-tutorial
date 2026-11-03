@@ -2,23 +2,21 @@ import { describe, expect, it } from "vitest";
 import { ALL_CONTROL_IDS, type ControlId } from "@app/controller/control-ids.ts";
 import { type Flx4Control, flx4LayoutControl } from "@app/controller/flx4-keys.ts";
 import { seededRandom } from "@app/lesson/track-rotation.ts";
+import { type Keyframe, type Lane, type LaneParam, RECIPE_IDS, type RecipeId, type Transition } from "@shared/mix-plan.ts";
+import { transitionFromRecipe } from "@shared/mix-plan-recipes.ts";
 import { type ComplexityReason } from "./complexity.ts";
 import { deriveExecution, type ExecutionStep, type KeyframeRef, type SetUpItem, type StepSource } from "./execution-plan.ts";
-import type { Keyframe, KeyframeCurve, Lane, LaneParam, LaneTrack, Transition } from "./lanes.ts";
-import { RECIPE_IDS, recipeLanes } from "./recipes.ts";
 
 // Every golden Transition starts on bar 17 (a phrase start) of the outgoing track on deck A, with the
-// incoming track on deck B from its bar 1.
+// incoming track on deck B from its bar 1. The recipes are shared/mix-plan-recipes.ts's.
 const DECKS = { outgoing: "A", incoming: "B" } as const;
 const EVERYTHING: ReadonlySet<ControlId> = new Set(ALL_CONTROL_IDS);
-const TEMPOS = { outgoing: 124, incoming: 128 };
+const PLACE = { outgoingAt: { bar: 17, beat: 1 }, incomingAt: { bar: 1, beat: 1 }, tempos: { outgoing: 124, incoming: 128 } } as const;
 
-const placed = (lanes: Pick<Transition, "recipe" | "lengthBeats" | "lanes">): Transition => ({ ...lanes, outgoingAt: { bar: 17, beat: 1 }, incomingAt: { bar: 1, beat: 1 } });
-const recipe = (id: Parameters<typeof recipeLanes>[0]) => placed(recipeLanes(id, TEMPOS));
-const custom = (lengthBeats: number, lanes: Lane[]) => placed({ recipe: "custom", lengthBeats, lanes });
-const kf = (beat: number, value: number, curve: KeyframeCurve = "linear"): Keyframe => ({ beat, value, curve });
-const lane = (track: LaneTrack, param: LaneParam, keyframes: Keyframe[], echoBeats?: number): Lane =>
-  echoBeats === undefined ? { track, param, keyframes } : { track, param, keyframes, echoBeats };
+const recipe = (id: RecipeId) => transitionFromRecipe(id, PLACE);
+const custom = (lengthBeats: number, lanes: Lane[]): Transition => ({ recipe: "custom", outgoingAt: PLACE.outgoingAt, incomingAt: PLACE.incomingAt, lengthBeats, lanes });
+const kf = (beat: number, value: number, curve: Keyframe["curve"] = "linear"): Keyframe => ({ beat, value, curve });
+const lane = (track: Lane["track"], param: LaneParam, keyframes: Keyframe[], extra: Pick<Lane, "echoBeats" | "loopBeats"> = {}): Lane => ({ track, param, keyframes, ...extra });
 
 const ref = (laneIndex: number, keyframe: number): KeyframeRef => ({ lane: laneIndex, keyframe });
 const deckOf = (control: Flx4Control) => flx4LayoutControl(control).deck;
@@ -45,116 +43,148 @@ const reason = (factor: ComplexityReason["factor"], beat: number, lanes: number[
 const FINE = 1 / 8;
 const LOOSE = 1 / 2;
 const CUED = setUp("B.cue", true, "incoming-start");
+const CENTRED = setUp("crossfader", 0.5, null);
 const PLAY_B_UNHEARD = step("B.play", "right", [0, 0], [false, true], LOOSE, "incoming-start");
 
 describe("golden Execution plans and ratings, one per recipe", () => {
-  it("a plain 16-bar volume blend: fader B up over a phrase, then fader A down; rated 1", () => {
-    const plan = deriveExecution(recipe("long-blend"), DECKS, EVERYTHING);
-    expect(plan.setUp).toEqual([CUED, setUp("crossfader", 0.5, null), setUp("A.channel-fader", 1, ref(0, 0), [ref(0, 1)]), setUp("B.channel-fader", 0, ref(1, 0))]);
+  it("a plain 16-bar volume blend (crossfade-16): fader B up over a phrase, then fader A down; rated 1", () => {
+    const plan = deriveExecution(recipe("crossfade-16"), DECKS, EVERYTHING);
+    expect(plan.setUp).toEqual([CUED, CENTRED, setUp("B.channel-fader", 0, ref(0, 0)), setUp("A.channel-fader", 1, null, [ref(1, 0)])]);
     expect(plan.steps).toEqual([
       PLAY_B_UNHEARD,
-      step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(1, 1)),
-      step("A.channel-fader", "left", [32, 64], [1, 0], LOOSE, ref(0, 2)),
+      step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(0, 1)),
+      step("A.channel-fader", "left", [32, 64], [1, 0], LOOSE, ref(1, 1)),
     ]);
     expect(plan.complexity).toEqual({ rating: 1, score: 0, weightsVersion: 1, reasons: [] });
   });
 
-  it("a bass swap: both LOW knobs turn on bar 5's 1, one hand each; rated 2", () => {
+  it("a bass swap: both LOW knobs turn on the second phrase's 1, one hand each; rated 2", () => {
     const plan = deriveExecution(recipe("bass-swap"), DECKS, EVERYTHING);
     expect(plan.setUp).toEqual([
       CUED,
-      setUp("crossfader", 0.5, null),
+      CENTRED,
       setUp("B.channel-fader", 0, ref(0, 0)),
       setUp("B.eq-low", -1, ref(1, 0)),
-      setUp("A.eq-low", 0, ref(2, 0)),
-      setUp("A.channel-fader", 1, ref(3, 0), [ref(3, 1)]),
+      setUp("A.eq-low", 0, null),
+      setUp("A.channel-fader", 1, null, [ref(3, 0)]),
     ]);
     expect(plan.steps).toEqual([
       PLAY_B_UNHEARD,
-      step("B.channel-fader", "right", [0, 16], [0, 1], LOOSE, ref(0, 1)),
-      step("B.eq-low", "right", [16, 16], [-1, 0], FINE, ref(1, 1)),
-      step("A.eq-low", "left", [16, 16], [0, -1], FINE, ref(2, 1)),
-      step("A.channel-fader", "left", [16, 32], [1, 0], LOOSE, ref(3, 2)),
+      step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(0, 1)),
+      step("B.eq-low", "right", [32, 32], [-1, 0], FINE, ref(1, 1)),
+      step("A.eq-low", "left", [32, 32], [0, -1], FINE, ref(2, 0)),
+      step("A.channel-fader", "left", [32, 64], [1, 0], LOOSE, ref(3, 1)),
     ]);
     expect(plan.complexity).toEqual({
       rating: 2,
       score: 3,
       weightsVersion: 1,
-      reasons: [reason("dense-bar", 16, [1, 2, 3], 1), reason("fine-timing", 16, [1], 1), reason("fine-timing", 16, [2], 1)],
+      reasons: [reason("dense-bar", 32, [1, 2, 3], 1), reason("fine-timing", 32, [1], 1), reason("fine-timing", 32, [2], 1)],
     });
   });
 
-  it("a cut on the 1: one crossfader snap realises both volume jumps; rated 2", () => {
-    const plan = deriveExecution(recipe("cut-on-the-one"), DECKS, EVERYTHING);
+  it("a cut on the 1: PLAY B and a crossfader snap on the phrase's 1, fader B already up; rated 2", () => {
+    const plan = deriveExecution(recipe("cut-on-the-1"), DECKS, EVERYTHING);
+    expect(plan.setUp).toEqual([CUED, CENTRED, setUp("A.channel-fader", 1, null), setUp("B.channel-fader", 1, ref(1, 0))]);
+    expect(plan.steps).toEqual([
+      step("B.play", "right", [0, 0], [false, true], FINE, "incoming-start"),
+      step("crossfader", "left", [0, 0], [0.5, 1], FINE, ref(0, 0)),
+    ]);
+    expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("fine-timing", 0, [], 1), reason("fine-timing", 0, [0], 1)] });
+  });
+
+  it("a cut on the 1 after a phrase with B unheard: one crossfader snap realises both volume jumps", () => {
+    const plan = deriveExecution(
+      custom(32, [lane("outgoing", "volume", [kf(32, 0, "jump")]), lane("incoming", "volume", [kf(0, 0, "jump"), kf(32, 1, "jump")])]),
+      DECKS,
+      EVERYTHING,
+    );
     // The crossfader starts on A's side with fader B already up, so B is unheard until the snap.
-    expect(plan.setUp).toEqual([CUED, setUp("crossfader", 0, ref(1, 0)), setUp("A.channel-fader", 1, ref(0, 0)), setUp("B.channel-fader", 1, null)]);
-    expect(plan.steps).toEqual([PLAY_B_UNHEARD, step("crossfader", "left", [32, 32], [0, 1], FINE, ref(0, 1), [ref(1, 1)])]);
+    expect(plan.setUp).toEqual([CUED, setUp("crossfader", 0, ref(1, 0)), setUp("A.channel-fader", 1, null), setUp("B.channel-fader", 1, null)]);
+    expect(plan.steps).toEqual([PLAY_B_UNHEARD, step("crossfader", "left", [32, 32], [0, 1], FINE, ref(0, 0), [ref(1, 1)])]);
     expect(plan.complexity).toEqual({ rating: 2, score: 1, weightsVersion: 1, reasons: [reason("fine-timing", 32, [0, 1], 1)] });
   });
 
-  it("a filter sweep: CFX A and fader B together over a phrase, then a crossfader cut on the next; rated 2", () => {
+  it("a filter sweep: CFX A and fader B together over a phrase, then the crossfader and LOW B on the next 1; rated 2", () => {
     const plan = deriveExecution(recipe("filter-sweep"), DECKS, EVERYTHING);
-    expect(plan.setUp).toEqual([CUED, setUp("crossfader", 0.5, null), setUp("A.filter", 0, ref(0, 0)), setUp("B.channel-fader", 0, ref(1, 0)), setUp("A.channel-fader", 1, ref(2, 0))]);
+    expect(plan.setUp).toEqual([
+      CUED,
+      CENTRED,
+      setUp("A.filter", 0, null, [ref(0, 0)]),
+      setUp("A.channel-fader", 1, null),
+      setUp("B.channel-fader", 0, ref(2, 0)),
+      setUp("B.eq-low", -1, ref(3, 0)),
+    ]);
     expect(plan.steps).toEqual([
       PLAY_B_UNHEARD,
-      step("A.filter", "left", [0, 32], [0, 0.8], LOOSE, ref(0, 1)),
-      step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(1, 1)),
-      step("crossfader", "left", [32, 32], [0.5, 1], FINE, ref(2, 1)),
+      step("A.filter", "left", [0, 32], [0, 1], LOOSE, ref(0, 1)),
+      step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(2, 1)),
+      // LOW B has the right hand on the 1, so the crossfader goes to the left.
+      step("crossfader", "left", [32, 32], [0.5, 1], FINE, ref(1, 0)),
+      step("B.eq-low", "right", [32, 32], [-1, 0], FINE, ref(3, 1)),
     ]);
     expect(plan.complexity).toEqual({
       rating: 2,
-      score: 2,
+      score: 3,
       weightsVersion: 1,
-      reasons: [reason("dense-bar", 0, [0, 1], 1), reason("fine-timing", 32, [2], 1)],
+      reasons: [reason("dense-bar", 0, [0, 2], 1), reason("fine-timing", 32, [1], 1), reason("fine-timing", 32, [3], 1)],
     });
   });
 
-  it("an echo out: BEAT FX ON on the last bar's 1, then a crossfader cut; rated 2", () => {
+  it("an echo out: BEAT FX ON on the 1, fader A cut a bar later, then echo off and fader B up; rated 2", () => {
     const plan = deriveExecution(recipe("echo-out"), DECKS, EVERYTHING);
     expect(plan.setUp).toEqual([
       CUED,
-      setUp("crossfader", 0, ref(2, 0)),
-      setUp("beat-fx-on", false, ref(0, 0)),
+      CENTRED,
+      setUp("beat-fx-on", false, null),
       setUp("beat-fx-channel", 1, null),
       setUp("beat-fx-beat", 1, null),
-      setUp("beat-fx-depth", 0.5, null),
-      setUp("A.channel-fader", 1, ref(1, 0)),
-      setUp("B.channel-fader", 1, null),
+      setUp("beat-fx-depth", 1, null),
+      setUp("A.channel-fader", 1, null),
+      setUp("B.channel-fader", 0, null),
     ]);
     expect(plan.steps).toEqual([
       PLAY_B_UNHEARD,
-      step("beat-fx-on", "right", [28, 28], [false, true], FINE, ref(0, 1)),
-      step("crossfader", "left", [32, 32], [0, 1], FINE, ref(1, 1), [ref(2, 1)]),
+      // PLAY B has the right hand on the 1, so the left one reaches across for BEAT FX ON.
+      step("beat-fx-on", "left", [0, 0], [false, true], FINE, ref(0, 0)),
+      step("A.channel-fader", "left", [4, 4], [1, 0], FINE, ref(1, 0)),
+      step("beat-fx-on", "right", [8, 8], [true, false], LOOSE, ref(0, 1)),
+      step("B.channel-fader", "left", [8, 8], [0, 1], FINE, ref(2, 0)),
     ]);
-    expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("fine-timing", 28, [0], 1), reason("fine-timing", 32, [1, 2], 1)] });
+    expect(plan.complexity).toEqual({
+      rating: 2,
+      score: 3,
+      weightsVersion: 1,
+      reasons: [reason("fine-timing", 0, [0], 1), reason("fine-timing", 4, [1], 1), reason("fine-timing", 8, [2], 1)],
+    });
   });
 
   it("a loop to extend: 4 BEAT on the 1, the faders trade, EXIT once A is silent; rated 2", () => {
     const plan = deriveExecution(recipe("loop-to-extend"), DECKS, EVERYTHING);
-    expect(plan.setUp).toEqual([CUED, setUp("crossfader", 0.5, null), setUp("A.channel-fader", 1, ref(1, 0), [ref(1, 1)]), setUp("B.channel-fader", 0, ref(2, 0))]);
+    expect(plan.setUp).toEqual([CUED, CENTRED, setUp("A.loop-exit", false, null), setUp("B.channel-fader", 0, ref(1, 0)), setUp("A.channel-fader", 1, null, [ref(2, 0)])]);
     expect(plan.steps).toEqual([
       PLAY_B_UNHEARD,
       step("A.loop-exit", "left", [0, 0], [false, true], FINE, ref(0, 0)),
-      step("B.channel-fader", "right", [0, 16], [0, 1], LOOSE, ref(2, 1)),
-      step("A.channel-fader", "left", [16, 32], [1, 0], LOOSE, ref(1, 2)),
+      step("B.channel-fader", "right", [0, 16], [0, 1], LOOSE, ref(1, 1)),
+      step("A.channel-fader", "left", [16, 32], [1, 0], LOOSE, ref(2, 1)),
       step("A.loop-exit", "left", [32, 32], [true, false], LOOSE, ref(0, 1)),
     ]);
-    expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("dense-bar", 0, [0, 2], 1), reason("fine-timing", 0, [0], 1)] });
+    expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("dense-bar", 0, [0, 1], 1), reason("fine-timing", 0, [0], 1)] });
   });
 
   it("a tempo ride: the blend at A's tempo, then TEMPO B back to its own once A is gone; rated 1", () => {
     const plan = deriveExecution(recipe("tempo-ride"), DECKS, EVERYTHING);
     expect(plan.setUp).toEqual([
       CUED,
-      setUp("crossfader", 0.5, null),
+      CENTRED,
       setUp("B.tempo", 124, ref(0, 0), [ref(0, 1)]),
-      setUp("A.channel-fader", 1, ref(1, 0), [ref(1, 1)]),
-      setUp("B.channel-fader", 0, ref(2, 0)),
+      setUp("B.channel-fader", 0, ref(1, 0)),
+      setUp("A.channel-fader", 1, null, [ref(2, 0)]),
     ]);
     expect(plan.steps).toEqual([
       PLAY_B_UNHEARD,
-      step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(2, 1)),
-      step("A.channel-fader", "left", [32, 64], [1, 0], LOOSE, ref(1, 2)),
+      step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(1, 1)),
+      step("A.channel-fader", "left", [32, 64], [1, 0], LOOSE, ref(2, 1)),
       step("B.tempo", "right", [64, 96], [124, 128], LOOSE, ref(0, 2)),
     ]);
     expect(plan.complexity.rating).toBe(1);
@@ -165,7 +195,7 @@ describe("golden Execution plans and ratings, one per recipe", () => {
       custom(32, [
         lane("outgoing", "filter", [kf(0, 0), kf(32, 1)]),
         lane("incoming", "volume", [kf(0, 0), kf(32, 1)]),
-        lane("outgoing", "echo-send", [kf(0, 0), kf(28, 0.5, "jump")], 1),
+        lane("outgoing", "echo-send", [kf(0, 0), kf(28, 0.5, "jump")], { echoBeats: 1 }),
         lane("outgoing", "volume", [kf(0, 1), kf(32, 0, "jump")]),
       ]),
       DECKS,
@@ -225,10 +255,10 @@ describe("golden Execution plans and ratings, one per recipe", () => {
 
 describe("locked controls", () => {
   it("a control whose Lesson isn't Passed raises the rating, for that Learner only", () => {
-    const blend = recipe("long-blend");
+    const blend = recipe("crossfade-16");
     const withoutFaderB = new Set(ALL_CONTROL_IDS.filter((id) => id !== "B.channel-fader"));
     const plan = deriveExecution(blend, DECKS, withoutFaderB);
-    expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("not-unlocked", 0, [1], 2)] });
+    expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("not-unlocked", 0, [0], 2)] });
     // The step is still there, and the plan is otherwise the same.
     expect(plan.steps).toEqual(deriveExecution(blend, DECKS, EVERYTHING).steps);
   });
@@ -261,14 +291,22 @@ describe("hands", () => {
   });
 
   it("the crossfader goes to the free hand", () => {
-    const plan = deriveExecution(
-      custom(48, [lane("outgoing", "volume", [kf(0, 1), kf(16, 1), kf(32, 0, "jump")]), lane("incoming", "filter", [kf(0, -1), kf(24, -1), kf(40, 0)])]),
+    const busyRight = deriveExecution(
+      custom(48, [
+        lane("outgoing", "volume", [kf(16, 1), kf(32, 0, "jump")]),
+        lane("incoming", "filter", [kf(0, -1), kf(24, -1), kf(40, 0)]),
+        lane("incoming", "volume", [kf(0, 1)]),
+      ]),
       DECKS,
       EVERYTHING,
     );
-    expect(plan.steps.find(({ control }) => control === "crossfader")?.hand).toBe("left");
+    expect(busyRight.steps.find(({ control }) => control === "crossfader")?.hand).toBe("left");
     const busyLeft = deriveExecution(
-      custom(48, [lane("outgoing", "volume", [kf(0, 1), kf(32, 0, "jump")]), lane("outgoing", "filter", [kf(0, 0), kf(24, 0), kf(40, 1)])]),
+      custom(48, [
+        lane("outgoing", "volume", [kf(32, 0, "jump")]),
+        lane("outgoing", "filter", [kf(24, 0), kf(40, 1)]),
+        lane("incoming", "volume", [kf(0, 1)]),
+      ]),
       DECKS,
       EVERYTHING,
     );
@@ -278,8 +316,8 @@ describe("hands", () => {
   it("more than two moves at once are all still emitted, and only rated", () => {
     const plan = deriveExecution(
       custom(16, [
-        lane("outgoing", "eq-low", [kf(0, 0), kf(8, -1, "jump")]),
-        lane("outgoing", "eq-mid", [kf(0, 0), kf(8, -1, "jump")]),
+        lane("outgoing", "eq-low", [kf(8, -1, "jump")]),
+        lane("outgoing", "eq-mid", [kf(8, -1, "jump")]),
         lane("incoming", "eq-low", [kf(0, -1), kf(8, 0, "jump")]),
         lane("incoming", "eq-mid", [kf(0, -1), kf(8, 0, "jump")]),
       ]),
@@ -296,61 +334,77 @@ describe("hands", () => {
   });
 
   it("a button right where a ramp starts or ends on the same hand is not two moves at once", () => {
-    const plan = deriveExecution(recipe("long-blend"), DECKS, EVERYTHING);
-    expect(plan.complexity.reasons).toEqual([]);
+    expect(deriveExecution(recipe("crossfade-16"), DECKS, EVERYTHING).complexity.reasons).toEqual([]);
+  });
+});
+
+describe("where controls start", () => {
+  it("an incoming keyframe on the 1 is set up, but an outgoing one is a move on the 1", () => {
+    const plan = deriveExecution(custom(16, [lane("incoming", "eq-high", [kf(0, -1, "jump")]), lane("outgoing", "eq-high", [kf(0, -1, "jump")])]), DECKS, EVERYTHING);
+    expect(plan.setUp).toContainEqual(setUp("B.eq-high", -1, ref(0, 0)));
+    expect(plan.setUp).toContainEqual(setUp("A.eq-high", 0, null));
+    expect(plan.steps).toContainEqual(step("A.eq-high", "left", [0, 0], [0, -1], FINE, ref(1, 0)));
+  });
+
+  it("a first keyframe that ramps ramps from the resting value at beat 0", () => {
+    const plan = deriveExecution(custom(16, [lane("outgoing", "filter", [kf(16, 1)])]), DECKS, EVERYTHING);
+    expect(plan.steps).toContainEqual(step("A.filter", "left", [0, 16], [0, 1], LOOSE, ref(0, 0)));
   });
 });
 
 describe("splitting and merging gestures", () => {
   it("an echo that fades in is BEAT FX ON plus LEVEL/DEPTH from 0", () => {
-    const plan = deriveExecution(custom(16, [lane("outgoing", "echo-send", [kf(0, 0), kf(8, 0), kf(16, 0.6)], 0.5)]), DECKS, EVERYTHING);
+    const plan = deriveExecution(custom(16, [lane("outgoing", "echo-send", [kf(8, 0, "jump"), kf(16, 0.6)], { echoBeats: 0.5 })]), DECKS, EVERYTHING);
     expect(plan.setUp).toContainEqual(setUp("beat-fx-depth", 0, null));
     expect(plan.setUp).toContainEqual(setUp("beat-fx-beat", 0.5, null));
     expect(plan.steps.slice(1)).toEqual([
-      step("beat-fx-on", "right", [8, 8], [false, true], FINE, ref(0, 2)),
-      step("beat-fx-depth", "right", [8, 16], [0, 0.6], LOOSE, ref(0, 2)),
+      step("beat-fx-on", "right", [8, 8], [false, true], FINE, ref(0, 1)),
+      step("beat-fx-depth", "right", [8, 16], [0, 0.6], LOOSE, ref(0, 1)),
     ]);
   });
 
   it("a loop other than 4 beats is LOOP IN, then LOOP OUT where it ends", () => {
-    const plan = deriveExecution(custom(16, [lane("outgoing", "loop", [kf(0, 0), kf(8, 2, "jump"), kf(16, 0, "jump")])]), DECKS, EVERYTHING);
-    expect(plan.setUp).toContainEqual(setUp("A.loop-exit", false, ref(0, 0)));
+    const plan = deriveExecution(custom(16, [lane("outgoing", "loop", [kf(8, 1, "jump"), kf(16, 0, "jump")], { loopBeats: 2 })]), DECKS, EVERYTHING);
+    expect(plan.setUp).toContainEqual(setUp("A.loop-exit", false, null));
     expect(plan.steps.slice(1)).toEqual([
-      step("A.loop-in", "left", [8, 8], [false, true], FINE, ref(0, 1)),
-      step("A.loop-out", "left", [10, 10], [false, true], FINE, ref(0, 1)),
-      step("A.loop-exit", "left", [16, 16], [true, false], FINE, ref(0, 2)),
+      step("A.loop-in", "left", [8, 8], [false, true], FINE, ref(0, 0)),
+      step("A.loop-out", "left", [10, 10], [false, true], FINE, ref(0, 0)),
+      step("A.loop-exit", "left", [16, 16], [true, false], FINE, ref(0, 1)),
     ]);
   });
 
   it("a volume jump off the phrase, or with the other track not full, stays on the faders", () => {
-    const offPhrase = deriveExecution(custom(32, [lane("outgoing", "volume", [kf(0, 1), kf(30, 0, "jump")]), lane("incoming", "volume", [kf(0, 0), kf(30, 1, "jump")])]), DECKS, EVERYTHING);
+    const offPhrase = deriveExecution(custom(32, [lane("outgoing", "volume", [kf(30, 0, "jump")]), lane("incoming", "volume", [kf(30, 1, "jump")])]), DECKS, EVERYTHING);
     expect(offPhrase.steps.map(({ control }) => control)).toEqual(["B.play", "A.channel-fader", "B.channel-fader"]);
-    const notFull = deriveExecution(custom(32, [lane("outgoing", "volume", [kf(0, 1), kf(32, 0, "jump")]), lane("incoming", "volume", [kf(0, 0), kf(32, 0.5, "jump")])]), DECKS, EVERYTHING);
+    const notFull = deriveExecution(custom(32, [lane("outgoing", "volume", [kf(32, 0, "jump")]), lane("incoming", "volume", [kf(32, 0.5, "jump")])]), DECKS, EVERYTHING);
     expect(notFull.steps.map(({ control }) => control)).toEqual(["B.play", "A.channel-fader", "B.channel-fader"]);
   });
 
-  it("PLAY is fine-timed when the incoming track is heard from its first beat", () => {
-    const plan = deriveExecution(custom(32, [lane("incoming", "volume", [kf(0, 1)])]), DECKS, EVERYTHING);
-    expect(plan.steps).toEqual([step("B.play", "right", [0, 0], [false, true], FINE, "incoming-start")]);
+  it("PLAY is loose when the incoming track starts unheard, fine-timed when it is heard from its first beat", () => {
+    expect(deriveExecution(custom(32, []), DECKS, EVERYTHING).steps).toEqual([PLAY_B_UNHEARD]);
+    expect(deriveExecution(custom(32, [lane("incoming", "volume", [kf(0, 1)])]), DECKS, EVERYTHING).steps).toEqual([
+      step("B.play", "right", [0, 0], [false, true], FINE, "incoming-start"),
+    ]);
   });
 });
 
-// A random but valid Transition: one to five lanes, each with one to six keyframes in its range.
+// A random but valid Transition: one to five lanes, each with up to six keyframes in its range.
 function randomTransition(random: () => number): Transition {
   const pick = <Item>(items: readonly Item[]): Item => items[Math.floor(random() * items.length)] as Item;
   const params: readonly LaneParam[] = ["volume", "eq-low", "eq-mid", "eq-high", "filter", "tempo", "echo-send", "loop"];
   const value = (param: LaneParam): number => {
     if (param === "volume" || param === "echo-send") return pick([0, 0, 0.5, 1, 1, random()]);
     if (param === "tempo") return pick([124, 126, 128]);
-    if (param === "loop") return pick([0, 0, 1, 2, 4, 8]);
+    if (param === "loop") return pick([0, 1]);
     return pick([-1, 0, 0, 1, random() * 2 - 1]);
   };
   const lengthBeats = pick([8, 16, 32, 64]);
   const lanes = Array.from({ length: 1 + Math.floor(random() * 5) }, (): Lane => {
     const param = pick(params);
-    const beats = Array.from({ length: 1 + Math.floor(random() * 6) }, () => Math.round(random() * lengthBeats * 2) / 2).sort((a, b) => a - b);
+    const beats = Array.from({ length: Math.floor(random() * 7) }, () => Math.round(random() * lengthBeats * 2) / 2).sort((a, b) => a - b);
     const keyframes = beats.map((beat) => kf(beat, value(param), pick(["jump", "linear", "ease"] as const)));
-    return lane(pick(["outgoing", "incoming"] as const), param, keyframes, param === "echo-send" ? pick([0.5, 1, 2]) : undefined);
+    const extra = param === "echo-send" ? { echoBeats: pick([0.5, 1, 2]) } : param === "loop" ? { loopBeats: pick([1, 2, 4, 8]) } : {};
+    return lane(pick(["outgoing", "incoming"] as const), param, keyframes, extra);
   });
   return { recipe: "custom", outgoingAt: { bar: pick([1, 9, 17, 18]), beat: pick([1, 3] as const) }, incomingAt: { bar: 1, beat: 1 }, lengthBeats, lanes };
 }
@@ -363,7 +417,9 @@ describe("properties, over 500 random Transitions", () => {
     for (const transition of transitions) {
       const plan = deriveExecution(transition, DECKS, EVERYTHING);
       const realised = new Set(
-        [...plan.steps, ...plan.setUp].flatMap(({ source, alsoRealises }) => [source, ...alsoRealises]).flatMap((entry) => (entry === null || entry === "incoming-start" ? [] : [`${String(entry.lane)}:${String(entry.keyframe)}`])),
+        [...plan.steps, ...plan.setUp]
+          .flatMap(({ source, alsoRealises }) => [source, ...alsoRealises])
+          .flatMap((entry) => (entry === null || entry === "incoming-start" ? [] : [`${String(entry.lane)}:${String(entry.keyframe)}`])),
       );
       transition.lanes.forEach(({ keyframes }, laneIndex) => {
         keyframes.forEach((_, keyframe) => {
@@ -397,6 +453,6 @@ describe("properties, over 500 random Transitions", () => {
   });
 });
 
-it("every recipe derives", () => {
+it("every shared recipe derives", () => {
   for (const id of RECIPE_IDS) expect(deriveExecution(recipe(id), DECKS, EVERYTHING).steps.length).toBeGreaterThan(0);
 });

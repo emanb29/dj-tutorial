@@ -10,8 +10,8 @@ import type { ControllerUnlocks } from "@app/controller/control-ids.ts";
 import { flx4LayoutControl } from "@app/controller/flx4-keys.ts";
 import type { ExecutionStep, Hand } from "./execution-plan.ts";
 import { type Occupancy, occupancy, overlaps } from "./hands.ts";
-import { BEATS_PER_PHRASE, gridBeat, isPhraseStart, type Transition, trackVolume, volumeLaneIndex } from "./lanes.ts";
-import { BEATS_PER_BAR } from "@lessons/track.ts";
+import { BEATS_PER_BAR, BEATS_PER_PHRASE, beatIndexOf, type Transition } from "@shared/mix-plan.ts";
+import { isPhraseStart, trackVolume, volumeLaneIndex } from "./lanes.ts";
 
 export const COMPLEXITY_WEIGHTS = {
   version: 1,
@@ -111,7 +111,7 @@ function oneHandTwoMoves(timed: readonly Timed[]): ComplexityReason[] {
 }
 
 function denseBars(steps: readonly ExecutionStep[], transition: Transition): ComplexityReason[] {
-  const start = gridBeat(transition.outgoingAt);
+  const start = beatIndexOf(transition.outgoingAt);
   const bars = new Map<number, ExecutionStep[]>();
   for (const step of steps) {
     const bar = Math.floor((start + step.startBeat) / BEATS_PER_BAR);

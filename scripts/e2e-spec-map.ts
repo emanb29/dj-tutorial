@@ -36,6 +36,10 @@ export const SPEC_RULES: readonly SpecRule[] = [
   { paths: ["**/*.test.ts", "**/*.test.tsx", "src/**/test-support.ts", "src/checks/testing/**", "src/tracks/fixtures/**"], specs: [] },
   // Docs, prototypes and the composer are outside the build.
   { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
+  // Mix plans (ISS-186): no spec yet; its store, resolution and model are unit and browser tested.
+  { paths: ["src/app/mix-plans/**"], specs: [] },
+  // The Mix Editor (ISS-189): so far only pure derivations (Execution plan, Complexity rating), with no screen; unit tested.
+  { paths: ["src/app/mix-editor/**"], specs: [] },
   // The spec itself, when only it changed.
   { paths: ["e2e/*.spec.ts"], specs: "self" },
   // Shared by everything: any change here runs the whole suite.
@@ -90,6 +94,4 @@ export const SPEC_RULES: readonly SpecRule[] = [
   { paths: ["src/app/playground/**"], specs: ["e2e/controller.spec.ts", "e2e/mobile.spec.ts"] },
   // The DDJ-FLX4: the MIDI module and the Controller page (src/app/controller/hardware.ts stays under the shared controller rule).
   { paths: ["src/midi/**", "src/app/controller-page/**"], specs: ["e2e/hardware.spec.ts", "e2e/music-folder.spec.ts"] },
-  // The Mix Editor: so far only pure derivations (Execution plan, Complexity rating), with no screen; its unit tests cover it.
-  { paths: ["src/app/mix-editor/**"], specs: [] },
 ];

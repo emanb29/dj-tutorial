@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ALL_CONTROL_IDS, type ControlId } from "@app/controller/control-ids.ts";
 import { COMPLEXITY_WEIGHTS, ratingFor } from "./complexity.ts";
 import { deriveExecution } from "./execution-plan.ts";
-import type { Keyframe, Lane, Transition } from "./lanes.ts";
+import type { Keyframe, Lane, Transition } from "@shared/mix-plan.ts";
 
 const DECKS = { outgoing: "A", incoming: "B" } as const;
 const EVERYTHING: ReadonlySet<ControlId> = new Set(ALL_CONTROL_IDS);
