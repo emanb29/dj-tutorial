@@ -8,7 +8,7 @@
  * | `local-file` | local-files.ts | the Learner's files, read in the browser, never uploaded | no (licence unknown) |
  * | `audius` | audius.ts | Audius streams, kept in memory for the session only | no |
  * | `original` | originals.ts | the API, from .local/tracks/originals (server/originals.ts) | yes |
- * | `local-file` | music-folder/ | the Learner's music folder, scanned in the background and kept up to date | no |
+ * | `local-file` | music-folder/ | the Learner's music folder (picked here, or the API server's MUSIC_DIR), scanned in the background and kept up to date | no |
  *
  * ## Using it
  *
@@ -63,6 +63,7 @@ export {
   type FolderAccess,
   type FolderFile,
   type FolderOutcome,
+  type FolderSource,
   type MusicFolder,
   type MusicFolderOptions,
   type MusicFolderRekordbox,
@@ -81,7 +82,15 @@ export {
 export type { RekordboxCue, RekordboxLibrary, RekordboxTrack } from "./rekordbox/xml.ts";
 export { indexedDbEntryCache, memoryEntryCache, type EntryCache, type EntryRecord } from "./music-folder/entry-cache.ts";
 export { scanAnywhere } from "./music-folder/scanner.ts";
-export { POLL_EVERY_MS, watchFolder, type FolderWatch } from "./music-folder/watch.ts";
+export {
+  isServerRoot,
+  probeServerLibrary,
+  scanServerLibrary,
+  type ServerLibraryOptions,
+  type ServerLibraryProbe,
+  type ServerLibraryRoot,
+} from "./music-folder/server-library.ts";
+export { POLL_EVERY_MS, pollFolder, watchFolder, type FolderWatch } from "./music-folder/watch.ts";
 export { createOriginalsSource, knownGridFromMeta, type OriginalsOptions } from "./originals.ts";
 export { createRateLimiter, type RateLimiter } from "./rate-limiter.ts";
 export { createStarterPackSource, type StarterPackOptions } from "./starter-pack.ts";

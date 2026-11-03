@@ -33,6 +33,10 @@ process.env["E2E_ORIGINALS_BASE_URL"] = originalsUrl;
 process.env["E2E_ORIGINALS_DIR"] ??= join(tmpdir(), `dj-tutorial-e2e-originals-${String(process.pid)}`);
 const e2eOriginals = process.env["E2E_ORIGINALS_DIR"];
 
+// Never the maintainer's music library from .env: empty values win over .env and mean none.
+// e2e/music-folder.spec.ts stands in for the server's library itself.
+const NO_MUSIC_LIBRARY = { MUSIC_DIR: "", REKORDBOX_XML: "" };
+
 export default defineConfig({
   testDir: "e2e",
   forbidOnly: isCi,
@@ -57,7 +61,7 @@ export default defineConfig({
       command: "npm run start:api",
       // The preview's origin, whichever port it is on, is the one the API accepts writes from.
       // Every test makes a fresh Learner (a first run is one with no profile): room for all of them.
-      env: { API_PORT: String(API_PORT), ALLOWED_ORIGINS: previewUrl, DATA_DIR: join(e2eData, "data"), ORIGINALS_DIR: join(e2eData, "originals"), MAX_LEARNERS: "1000" },
+      env: { API_PORT: String(API_PORT), ALLOWED_ORIGINS: previewUrl, DATA_DIR: join(e2eData, "data"), ORIGINALS_DIR: join(e2eData, "originals"), MAX_LEARNERS: "1000", ...NO_MUSIC_LIBRARY },
       url: `http://127.0.0.1:${String(API_PORT)}/api/health`,
       reuseExistingServer: false,
     },
@@ -74,6 +78,7 @@ export default defineConfig({
         ALLOWED_ORIGINS: originalsUrl,
         DATA_DIR: join(e2eOriginals, "data"),
         ORIGINALS_DIR: join(e2eOriginals, "originals"),
+        ...NO_MUSIC_LIBRARY,
       },
       url: `http://127.0.0.1:${String(ORIGINALS_API_PORT)}/api/health`,
       reuseExistingServer: false,

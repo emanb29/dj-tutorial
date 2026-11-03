@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -183,3 +183,72 @@ test("without a folder picker (Android Chrome), a folder is imported once and th
     rmSync(folder, { recursive: true, force: true });
   }
 });
+
+// The server's music library (MUSIC_DIR): the e2e API has none (playwright.config.ts), so the page's
+// requests to /api/music-library are answered here as the server would, in shared/music-library.ts's
+// shape (server/music-library.test.ts tests the real route). A real MP3 so its BPM can be found.
+const MP3 = readFileSync(join(import.meta.dirname, "fixtures", "original.mp3"));
+
+async function serveLibrary(page: Page): Promise<string[]> {
+  const asked: string[] = [];
+  await page.route("**/api/music-library**", async (route) => {
+    const url = new URL(route.request().url());
+    asked.push(`${url.pathname}${url.search}`);
+    if (url.pathname === "/api/music-library") {
+      await route.fulfill({
+        json: {
+          success: true,
+          data: {
+            configured: true,
+            name: "Server Music",
+            files: [
+              { path: "House/Kay Grove - Brothers.mp3", size: MP3.length, lastModified: 1_700_000_000_000 },
+              { path: "Broken - Not Music.mp3", size: 9, lastModified: 1_700_000_000_000 },
+            ],
+            xml: [],
+            rekordboxXml: null,
+            skipped: 0,
+            truncated: false,
+          },
+        },
+      });
+      return;
+    }
+    const path = url.searchParams.get("path");
+    if (path === "House/Kay Grove - Brothers.mp3") await route.fulfill({ body: MP3, contentType: "audio/mpeg" });
+    else if (path === "Broken - Not Music.mp3") await route.fulfill({ body: "not music", contentType: "audio/mpeg" });
+    else await route.fulfill({ status: 404, json: { success: false, error: "No such file." } });
+  });
+  return asked;
+}
+
+test("the server's music library: every device gets it with nothing to pick, and its files are analysed from the server", async ({ page }) => {
+  test.setTimeout(120_000);
+  const id = learner("music-server");
+  // A browser with no folder picker (a phone) gets the same library.
+  await page.addInitScript(() => {
+    delete (window as { showDirectoryPicker?: unknown }).showDirectoryPicker;
+  });
+  const asked = await serveLibrary(page);
+  await ensureProfile(page, id);
+
+  await page.goto(`/controller?learner=${id}`);
+  const setting = page.getByRole("region", { name: "Music folder" });
+  await expect(setting.getByRole("status")).toContainText("“Server Music” on the server: 2 tracks");
+  await expect(setting).toContainText("The server's MUSIC_DIR sets this library");
+  await expect(setting.getByRole("button", { name: /Pick a folder|Forget folder/ })).toHaveCount(0);
+  await expect(setting.getByText("Import a folder")).toHaveCount(0);
+  await expect(setting.getByRole("button", { name: "Rescan now" })).toBeVisible();
+
+  await page.goto(`/?learner=${id}&track=synthetic`);
+  await page.getByRole("button", { name: "Freestyle" }).click();
+  await expect(page.locator("main.freestyle")).toHaveAttribute("data-phase", "ready");
+  const library = page.getByRole("region", { name: "Library" });
+  await expect(library.getByRole("listitem", { name: "Brothers" })).toBeVisible();
+  await expect(library.getByRole("listitem", { name: "Not Music" })).toBeVisible();
+
+  // The background pass (no deck playing) fetches each file from the server and analyses it.
+  await expect(folderPanel(page).getByRole("status")).toContainText("BPM for 1 · 1 with no BPM", { timeout: 60_000 });
+  expect(asked).toContain("/api/music-library/file?path=House%2FKay%20Grove%20-%20Brothers.mp3");
+});
+

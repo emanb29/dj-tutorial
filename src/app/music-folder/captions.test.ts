@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { MusicFolderSnapshot } from "@tracks";
-import { folderCaption, folderCounts, rekordboxLine } from "./MusicFolderPanel.tsx";
+import { SERVER_LINE, folderCaption, folderCounts, refreshLine, rekordboxLine } from "./MusicFolderPanel.tsx";
 
 const snapshot = (overrides: Partial<MusicFolderSnapshot> = {}): MusicFolderSnapshot => ({
   version: 1,
+  source: "device",
   canPick: true,
   folder: "Music",
   access: "granted",
@@ -64,5 +65,23 @@ describe("music folder captions", () => {
 
   it("says when a huge folder was cut short", () => {
     expect(folderCounts(snapshot({ found: 20_000, truncated: true }))).toContain("first 20,000 only");
+  });
+});
+
+describe("the server's library", () => {
+  const server = (overrides: Partial<MusicFolderSnapshot> = {}) => snapshot({ source: "server", canPick: false, ...overrides });
+
+  it("names the folder as the server's, with the same counts", () => {
+    expect(folderCaption(server({ found: 120, analysed: 30 }))).toBe("“Music” on the server: 120 tracks · BPM for 30");
+    expect(folderCaption(server({ scanning: true, found: 50 }))).toBe("Looking in “Music” on the server… 50 tracks so far");
+  });
+
+  it("says it can't be read when the server has a library it could not list", () => {
+    expect(folderCaption(server({ folder: null, access: "none" }))).toBe("The server's music library can't be read.");
+  });
+
+  it("says the server sets it, and how often it is checked", () => {
+    expect(refreshLine(server())).toBe(SERVER_LINE);
+    expect(refreshLine(server({ access: "none", folder: null }))).toBeNull();
   });
 });

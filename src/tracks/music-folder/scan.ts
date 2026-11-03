@@ -1,12 +1,13 @@
 // The cheap first pass over a music folder: walk it, open only files with an audio extension, and
 // note each one's path, size and lastModified. Nothing is decoded here. It runs in a worker
 // (scan.worker.ts) for real folders, or inline (fake folders in tests, the e2e's in-memory one).
+import { MAX_LIBRARY_DEPTH, MAX_LIBRARY_FILES, MAX_LIBRARY_XML_FILES } from "@shared/music-library.ts";
 import { hasAudioExtension, type DirectoryHandleLike, type FileHandleLike } from "../local-files.ts";
 
-/** A folder this big is still walked, but only this far; the rest waits for a smaller folder. */
-export const MAX_FOLDER_FILES = 20_000;
+/** A folder this big is still walked, but only this far; the rest waits for a smaller folder. The server's walk has the same limits. */
+export const MAX_FOLDER_FILES = MAX_LIBRARY_FILES;
 /** Subfolders deeper than this are passed over (a picked home folder cannot walk forever). */
-export const MAX_FOLDER_DEPTH = 12;
+export const MAX_FOLDER_DEPTH = MAX_LIBRARY_DEPTH;
 const BATCH_SIZE = 50;
 
 /** What a file looks like on disk: enough to tell whether it changed since the last scan. */
@@ -34,7 +35,7 @@ export interface ScanSummary {
 }
 
 /** XML files noted per walk at most: a rekordbox export is one file, not hundreds. */
-export const MAX_XML_FILES = 20;
+export const MAX_XML_FILES = MAX_LIBRARY_XML_FILES;
 const isXml = (name: string) => name.toLowerCase().endsWith(".xml");
 
 export interface ScanOptions {

@@ -22,6 +22,10 @@
  * The folder's handle is remembered (HandleStore). On a later visit `start()` reads it again only
  * if the browser still allows it; otherwise `access` is "needs-permission" and `allowAccess()`,
  * from a click, asks. Local tracks are not shareable: their licence is unknown.
+ *
+ * The server's library (`server`, server-library.ts): when the API server has a MUSIC_DIR, `start()`
+ * opens that instead, for every browser, and nothing is picked, imported or forgotten here; the
+ * folder belongs to the server's .env. Without one (or with the API out of reach), as above.
  */
 import { abortedError, decodeAndHash, matchesQuery, type AudioDecoder } from "../load-audio.ts";
 import { isAudioFile, memoryHandleStore, trackForFile, type DirectoryHandleLike, type HandleStore } from "../local-files.ts";
@@ -32,6 +36,7 @@ import type { LoadedTrack, Result, Track, TrackError, TrackSource } from "../typ
 import { entryKey, memoryEntryCache, type EntryCache, type EntryRecord } from "./entry-cache.ts";
 import { createPullWorker } from "./pull-worker.ts";
 import { diffScan, MAX_FOLDER_FILES, type FileStamp, type ScannedFile, type ScanOptions, type ScanSummary } from "./scan.ts";
+import type { ServerLibraryProbe } from "./server-library.ts";
 import type { FolderWatch, WatchFolder } from "./watch.ts";
 
 /** What analysing one file found. `failed` is kept (not tried again until the file changes); `aborted` is not. */
@@ -57,6 +62,8 @@ export interface MusicFolderOptions {
   readonly notifyEveryMs?: number;
   /** The Learner's rekordbox collection; the scan offers it the folder's .xml files. */
   readonly rekordbox?: RekordboxLink;
+  /** Asks the API server for its music library (server-library.ts); unset = this browser's folder only. */
+  readonly server?: () => Promise<ServerLibraryProbe>;
 }
 
 /** rekordbox's part of the snapshot: the collection's status, and how many folder tracks it knows. */
@@ -64,9 +71,13 @@ export type MusicFolderRekordbox = RekordboxStatus & { readonly matched: number 
 
 export type FolderAccess = "none" | "needs-permission" | "granted" | "imported";
 
+/** Whose library this is: the API server's (MUSIC_DIR, the same on every device) or a folder this browser picked. */
+export type FolderSource = "server" | "device";
+
 export interface MusicFolderSnapshot {
   /** Changes whenever anything below does. */
   readonly version: number;
+  readonly source: FolderSource;
   /** Whether this browser can pick (and watch) a folder; false on Android Chrome. */
   readonly canPick: boolean;
   readonly folder: string | null;
@@ -188,6 +199,12 @@ const NEEDS_GESTURE: TrackError = {
   fix: "Click or tap Pick a folder.",
 };
 
+const ON_SERVER: TrackError = {
+  kind: "unsupported",
+  message: "This app's music library is the server's folder (MUSIC_DIR), the same on every device.",
+  fix: "To change it, set MUSIC_DIR in the server's .env and restart the API.",
+};
+
 const isDomError = (error: unknown, ...names: readonly string[]) => error instanceof DOMException && names.includes(error.name);
 
 const filled = (text: string) => text.trim() !== "";
@@ -232,6 +249,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
   const listeners = new Set<() => void>();
 
   let handle: DirectoryHandleLike | null = null;
+  let librarySource: FolderSource = "device";
   let access: FolderAccess = "none";
   let folderName: string | null = null;
   let problem: TrackError | null = null;
@@ -507,7 +525,8 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     const states = [...entries.values()].map((entry) => entry.state);
     cached = {
       version,
-      canPick: picker !== null,
+      source: librarySource,
+      canPick: librarySource === "device" && picker !== null,
       folder: folderName,
       access,
       scanning: scanning !== null,
@@ -563,6 +582,18 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
           console.warn("tracks.folder.rekordboxNotRestored", { error });
         });
       }
+      const probe: ServerLibraryProbe = (await options.server?.()) ?? { kind: "none" };
+      if (handle !== null || disposed) return;
+      if (probe.kind !== "none") {
+        librarySource = "server";
+        if (probe.kind === "library") {
+          await open(probe.root);
+        } else {
+          problem = probe.error;
+          changed();
+        }
+        return;
+      }
       let remembered: DirectoryHandleLike | null;
       try {
         remembered = await handleStore.get();
@@ -570,7 +601,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
         console.warn("tracks.folder.notRestored", { error });
         return;
       }
-      if (remembered === null || handle !== null) return;
+      if (remembered === null || currentHandle() !== null) return;
       const permission = (await remembered.queryPermission?.({ mode: "read" })) ?? "granted";
       if (currentHandle() !== null) return;
       if (permission === "granted") {
@@ -584,6 +615,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     },
 
     async pick() {
+      if (librarySource === "server") return { ok: false, error: ON_SERVER };
       if (picker === null) {
         return {
           ok: false,
@@ -608,6 +640,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     },
 
     async allowAccess() {
+      if (librarySource === "server") return { ok: false, error: ON_SERVER };
       const root = handle;
       if (root === null) return { ok: false, error: { kind: "not-found", message: "No music folder was picked yet.", fix: "Pick a folder." } };
       const permission = (await root.requestPermission?.({ mode: "read" })) ?? "granted";
@@ -621,6 +654,10 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     },
 
     importFiles(files) {
+      if (librarySource === "server") {
+        console.warn("tracks.folder.importRefused", { reason: ON_SERVER.message });
+        return;
+      }
       stopWatching();
       scanAbort.abort();
       scanAbort = new AbortController();
@@ -652,6 +689,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     rescan: scan,
 
     async forget() {
+      if (librarySource === "server") return;
       stopWatching();
       scanAbort.abort();
       scanAbort = new AbortController();

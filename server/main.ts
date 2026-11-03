@@ -28,6 +28,7 @@ const app = createApp({
   sameOrigin: sameOriginPolicy(runtime.allowedOrigins, [ownAddress, `localhost:${String(port)}`]),
   services: { profiles, coach, logger: consoleLogger, finalProjects: FinalProjectStore.forDataDir(runtime.dataDir), audioExport },
   originalsDir: runtime.originalsDir,
+  musicLibrary: { root: runtime.musicDir, rekordboxXml: runtime.rekordboxXml },
 });
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
@@ -35,6 +36,8 @@ serve({ fetch: app.fetch, hostname: host, port }, (info) => {
     url: `http://${info.address}:${String(info.port)}`,
     dataDir: runtime.dataDir,
     originalsDir: runtime.originalsDir,
+    musicDir: runtime.musicDir ?? "none",
+    rekordboxXml: runtime.rekordboxXml ?? "none",
     coach: client === null ? "noKey" : "key",
     monthlyCapUsd: runtime.coachMonthlyCapUsd,
     audioExport: audioExport.status.available ? "ffmpeg" : "unavailable",

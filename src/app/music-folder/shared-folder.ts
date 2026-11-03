@@ -1,5 +1,7 @@
 // The one music folder for the app (the setting on /controller, the library in Freestyle), made on
 // first use and kept for the page's life, so a scan goes on while the Learner moves between pages.
+// When the API server has a music library (MUSIC_DIR), that is the folder, on every device; the
+// server sends its files, and they are analysed here as a picked folder's are.
 // Its analyser is the Lessons' own: decode at 44.1 kHz, hash the file, analyse with the shared
 // analysis cache, so loading the track onto a deck later finds its grid there. A linked rekordbox
 // collection's grid, where it matches a file, is used in place of that one (src/tracks/rekordbox).
@@ -12,8 +14,12 @@ import {
   indexedDbEntryCache,
   indexedDbHandleStore,
   indexedDbRekordboxCache,
+  isServerRoot,
   parseRekordboxFile,
+  pollFolder,
+  probeServerLibrary,
   scanAnywhere,
+  scanServerLibrary,
   watchFolder,
   type AnalyseFileResult,
   type MusicFolder,
@@ -54,8 +60,10 @@ export function musicFolder(): MusicFolder {
       analyse: analyseFile,
       entryCache: indexedDbEntryCache(),
       handleStore: indexedDbHandleStore(HANDLE_KEY),
-      scan: scanAnywhere,
-      watch: watchFolder,
+      scan: (root, options) => (isServerRoot(root) ? scanServerLibrary()(root, options) : scanAnywhere(root, options)),
+      // No browser observer can watch the server's disk: it is asked again every 30 s.
+      watch: (root, onChange) => (isServerRoot(root) ? Promise.resolve(pollFolder(onChange)) : watchFolder(root, onChange)),
+      server: () => probeServerLibrary(),
       // The Learner's rekordbox collection: parsed in a worker, kept in IndexedDB, never sent anywhere.
       rekordbox: createRekordboxLink({
         parse: parseRekordboxFile,

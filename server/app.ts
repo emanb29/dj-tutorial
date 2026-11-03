@@ -25,6 +25,8 @@ import { requireSameOrigin, sameOriginPolicy, type SameOriginPolicy } from "./sa
 import { DEFAULT_ALLOWED_ORIGINS } from "./config.ts";
 import { originalsRoutes } from "./originals.ts";
 import { ORIGINALS_PATH } from "@shared/originals.ts";
+import { MUSIC_LIBRARY_PATH } from "@shared/music-library.ts";
+import { musicLibraryRoutes } from "./music-library.ts";
 
 export const MAX_BODY_BYTES = 32 * 1024;
 /**
@@ -52,6 +54,8 @@ export interface AppOptions {
   readonly services?: AppServices;
   /** Folder holding the generator's Originals (shared/originals.ts). Unset = no `/api/originals`. */
   readonly originalsDir?: string;
+  /** The music library every browser gets (shared/music-library.ts). Unset = `/api/music-library` says it has none. */
+  readonly musicLibrary?: { readonly root: string | null; readonly rekordboxXml: string | null };
   /** Used when there are no services; otherwise `services.logger` wins. */
   readonly logger?: Logger;
 }
@@ -129,6 +133,7 @@ export function createApp(options: AppOptions = {}): Hono {
 
   if (options.services !== undefined) mountLearnerRoutes(app, options.services);
   if (options.originalsDir !== undefined) app.route(ORIGINALS_PATH, originalsRoutes(options.originalsDir, logger));
+  app.route(MUSIC_LIBRARY_PATH, musicLibraryRoutes({ root: options.musicLibrary?.root ?? null, rekordboxXml: options.musicLibrary?.rekordboxXml ?? null, logger }));
 
   app.notFound((context) =>
     failure(context, 404, "notFound", `No API route matches ${context.req.method} ${context.req.path}.`),

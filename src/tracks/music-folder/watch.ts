@@ -45,7 +45,8 @@ function browserEnvironment(): WatchEnvironment {
   };
 }
 
-function poll(onChange: () => void, environment: WatchEnvironment): FolderWatch {
+/** A metadata rescan every 30 s while the page is visible: for a folder no observer can watch (the server's library). */
+export function pollFolder(onChange: () => void, environment: WatchEnvironment = browserEnvironment()): FolderWatch {
   const every = environment.intervalMs ?? POLL_EVERY_MS;
   let last = environment.now();
   const tick = () => {
@@ -91,5 +92,5 @@ export async function watchFolder(root: DirectoryHandleLike, onChange: () => voi
       console.warn("tracks.folder.observerRefused", { folder: root.name, reason: error instanceof Error ? error.message : String(error) });
     }
   }
-  return poll(onChange, environment);
+  return pollFolder(onChange, environment);
 }

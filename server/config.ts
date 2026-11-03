@@ -108,6 +108,10 @@ export interface RuntimeConfig {
   readonly dataDir: string;
   /** The generator's Originals, served under /api/originals. */
   readonly originalsDir: string;
+  /** The music library every browser gets (MUSIC_DIR), served under /api/music-library; null = none. */
+  readonly musicDir: string | null;
+  /** A rekordbox export outside the music folder (REKORDBOX_XML); null = none. */
+  readonly rekordboxXml: string | null;
   /** `null` = no-key mode: every Coach answer comes from the deterministic Coach. */
   readonly anthropicApiKey: string | null;
   readonly coachMonthlyCapUsd: number;
@@ -124,7 +128,7 @@ export type RuntimeConfigResult =
   | { readonly ok: false; readonly problems: readonly string[] };
 
 /**
- * Reads `DATA_DIR`, `ORIGINALS_DIR`, `ANTHROPIC_API_KEY`, `COACH_MONTHLY_CAP_USD`, `COACH_LOG_PAYLOADS`,
+ * Reads `DATA_DIR`, `ORIGINALS_DIR`, `MUSIC_DIR`, `REKORDBOX_XML`, `ANTHROPIC_API_KEY`, `COACH_MONTHLY_CAP_USD`, `COACH_LOG_PAYLOADS`,
  * `ALLOWED_ORIGINS`, `PUBLIC_HOSTS` and `MAX_LEARNERS`, collecting every problem. Problems never include the key's value.
  */
 export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
@@ -141,6 +145,14 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
   if (originalsDir === "") {
     problems.push(`ORIGINALS_DIR is set but empty. Unset it to use ${DEFAULT_ORIGINALS_DIR}, or set it to a directory.`);
   }
+
+  // Unset or empty = none, so an empty value in the environment overrides one in .env (the e2e API does).
+  const optionalPath = (name: string) => {
+    const raw = env[name]?.trim();
+    return raw === undefined || raw === "" ? null : raw;
+  };
+  const musicDir = optionalPath("MUSIC_DIR");
+  const rekordboxXml = optionalPath("REKORDBOX_XML");
 
   const rawKey = env["ANTHROPIC_API_KEY"]?.trim();
   const anthropicApiKey = rawKey === undefined || rawKey === "" ? null : rawKey;
@@ -196,6 +208,8 @@ export function loadRuntimeConfig(env: Environment): RuntimeConfigResult {
         config: {
           dataDir,
           originalsDir,
+          musicDir,
+          rekordboxXml,
           anthropicApiKey,
           coachMonthlyCapUsd,
           coachLogPayloads: rawLogPayloads === "1",

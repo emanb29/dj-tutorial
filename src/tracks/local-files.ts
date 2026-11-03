@@ -13,10 +13,10 @@
  */
 import { abortedError, decodeAndHash, decodeOffline, matchesQuery, type AudioDecoder } from "./load-audio.ts";
 import type { Result, Track, TrackError, TrackSource } from "./types.ts";
+import { hasAudioExtension } from "@shared/music-library.ts";
 
 export const LOCAL_FILE_INPUT = { type: "file", multiple: true, accept: "audio/*" } as const;
 
-const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "wave", "flac", "ogg", "oga", "opus", "m4a", "aac", "aif", "aiff", "webm"]);
 /** Folder walks stop here, so a picked home directory cannot hang the page. */
 const MAX_FOLDER_FILES = 2000;
 const MAX_FOLDER_DEPTH = 6;
@@ -134,10 +134,8 @@ export interface LocalFileSource extends TrackSource {
   forgetDirectory(): Promise<void>;
 }
 
-/** Whether a file name ends in an audio extension (for folder walks, before the file is opened). */
-export function hasAudioExtension(name: string): boolean {
-  return AUDIO_EXTENSIONS.has(name.split(".").pop()?.toLowerCase() ?? "");
-}
+// The same list as the server's music library walk (shared/music-library.ts).
+export { hasAudioExtension };
 
 /** Whether a file is audio, by its type or, when the browser gives none, its extension. */
 export function isAudioFile(file: Pick<File, "name" | "type">): boolean {
