@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ensureProfile, learner } from "./lesson-support.ts";
-import { libraryTracks, pickGrooveFolder, stubGrooveFolder } from "./mix-editor-support.ts";
+import { GROOVES, libraryTracks, pickGrooveFolder, stubGrooveFolder, type Groove } from "./mix-editor-support.ts";
 
 // The Mix Editor (ISS-187) end to end, muted: build a plan by keyboard from an in-memory folder of
 // synthetic grooves, make a Transition hard (the warning shows, and the plan still saves), shape it on
@@ -99,6 +99,28 @@ test("Mix Editor: build a plan by keyboard, make a Transition hard, see the warn
   await expect(page.getByRole("region", { name: "Transition editor" }).getByTestId("pair")).toHaveText("Track 2 → Track 3");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("region", { name: "Transition editor" })).toHaveCount(0);
+});
+
+test("Mix Editor: a local track rekordbox does not know still plans, on the app's own grid (no analysis model installed)", async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const grooves: Groove[] = GROOVES.map((groove, index) => (index === 1 ? { ...groove, inRekordbox: false } : groove));
+  const id = learner("mix-editor-local");
+  await stubGrooveFolder(page, grooves);
+  await ensureProfile(page, id);
+  await page.goto(`/?learner=${id}`);
+  await pickGrooveFolder(page, grooves);
+  await page.getByRole("button", { name: "Mix plans" }).click();
+  await page.getByRole("button", { name: "New plan" }).click();
+  await expect(libraryTracks(page)).toHaveCount(3);
+  for (const title of ["Copper Tide", "Glass Orchard"]) await page.getByRole("button", { name: `Add ${title}` }).click();
+  await page.getByRole("button", { name: "Make the plan" }).click();
+  const editor = page.getByRole("region", { name: "Transition editor" });
+  await expect(editor).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Glass Orchard's grid is the app's own (dj-core): its BPM is found and the pair can be previewed.
+  await expect(page.getByRole("list", { name: "Set" }).locator(".me-set-track").nth(1)).toContainText(/120\.0 BPM/, { timeout: 60_000 });
+  await expect(editor.getByRole("button", { name: /Preview/ })).toBeEnabled({ timeout: 60_000 });
 });
 
 test("Mix Editor at phone width: the set, read-only, with no sideways scroll", async ({ page }) => {

@@ -62,6 +62,11 @@ export interface GridSources {
   readonly cachedGrid: (contentHash: string) => Promise<PlanGrid | null>;
   /** Analyses one library file (the folder's `ready`), then gives its entry again; null when it is gone. */
   readonly analyse: (trackId: string) => Promise<FolderFile | null>;
+  /**
+   * A grid for one file whose analysis was not cached (the analysis model is not installed, so its
+   * fallback result is not kept): the dj-core grid of that file alone, so local music still plans.
+   */
+  readonly fallbackGrid?: (file: FolderFile, contentHash: string) => Promise<PlanGrid | null>;
 }
 
 /** The grid a found file plays on: rekordbox's where it has one, else the analysis (run now for this one file if needed). */
@@ -71,5 +76,6 @@ export async function gridForFile(file: FolderFile, track: Pick<PlanTrack, "dura
   const analysed = file.contentHash === null ? await sources.analyse(file.trackId) : file;
   if (analysed === null) return null;
   const { contentHash } = analysed;
-  return contentHash === null ? null : sources.cachedGrid(contentHash);
+  if (contentHash === null) return null;
+  return (await sources.cachedGrid(contentHash)) ?? (await sources.fallbackGrid?.(analysed, contentHash)) ?? null;
 }

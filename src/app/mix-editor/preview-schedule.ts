@@ -5,9 +5,15 @@
 //
 // The preview is the Transition alone, in software, so it can follow edits at once: the outgoing track
 // plays at its own tempo and the incoming one is matched to it (a tempo lane rides it). Values use the
-// mixer's own curves (src/audio/curves.ts): volume is the channel fader with the crossfader left out,
-// EQ the isolator's dB, the filter the CFX knob's cutoff. It is a preview, not the Render (ISS-190):
-// a track with both a loop and a tempo lane plays its loop at the matched tempo.
+// mixer's own curves (src/audio/curves.ts), EQ as the isolator's dB and the filter as the CFX knob's cutoff.
+//
+// The volume mapping, which the Render must match (maintainer, 2026-11-03): a volume lane value v is
+// the channel fader's position, so its gain is channelFaderGain(v) = v² (40·log10(v) dB), and the
+// crossfader plays no part in it (it stays centred, out of the lane's level).
+//
+// TODO(ISS-190): once the Render's scheduler is merged, build the preview on it, so a preview sounds
+// exactly like the Render; until then this is a preview, not the Render (a track with both a loop and
+// a tempo lane, for one, plays its loop at the matched tempo).
 import { channelFaderGain, eqKnobToDecibels, filterKnobSettings } from "@audio/curves.ts";
 import { beatIndexOf, restingValue, secondsAtBeat, type Lane, type LaneParam, type PlanGrid, type Transition } from "@shared/mix-plan.ts";
 import { laneTimeline, valueAt, valueBefore, type LaneTrack } from "./lanes.ts";

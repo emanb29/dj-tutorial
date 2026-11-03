@@ -99,4 +99,18 @@ describe("gridForFile", () => {
     expect(analyse).toHaveBeenCalledExactlyOnceWith(file.trackId);
     expect(await gridForFile({ ...file, trackId: "gone" }, { durationMs: 300_000 }, { cachedGrid, analyse })).toBeNull();
   });
+
+  it("falls back to a dj-core grid of this one file when no analysis was cached (no model installed)", async () => {
+    const hash = "e".repeat(64);
+    const { file } = libraryFile("local.mp3", "Local", { contentHash: hash, durationSec: 200 });
+    const analyse = vi.fn(() => Promise.resolve(null));
+    const fallbackGrid = vi.fn(() => Promise.resolve(testGrid({ bpm: 128, durationSec: 200 })));
+
+    expect(await gridForFile(file, { durationMs: 200_000 }, { cachedGrid, analyse, fallbackGrid })).toEqual(testGrid({ bpm: 128, durationSec: 200 }));
+    expect(fallbackGrid).toHaveBeenCalledExactlyOnceWith(file, hash);
+    // A cached analysis wins: no fallback.
+    fallbackGrid.mockClear();
+    await gridForFile({ ...file, contentHash: "h".repeat(64) }, { durationMs: 200_000 }, { cachedGrid, analyse, fallbackGrid });
+    expect(fallbackGrid).not.toHaveBeenCalled();
+  });
 });

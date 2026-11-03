@@ -13,6 +13,8 @@ export interface Groove {
   readonly toneHz: number;
   readonly genre: string;
   readonly key: string;
+  /** False: rekordbox does not know the file, so its grid comes from the app's own analysis. */
+  readonly inRekordbox?: false;
 }
 
 export const GROOVES: readonly Groove[] = [
@@ -23,7 +25,8 @@ export const GROOVES: readonly Groove[] = [
 
 const fileName = (groove: Groove) => `${groove.artist} - ${groove.title}.wav`;
 
-function rekordboxXml(grooves: readonly Groove[]): string {
+function rekordboxXml(all: readonly Groove[]): string {
+  const grooves = all.filter((groove) => groove.inRekordbox !== false);
   const tracks = grooves
     .map(
       (groove) =>
@@ -109,7 +112,8 @@ export async function pickGrooveFolder(page: Page, grooves: readonly Groove[] = 
   await page.getByRole("link", { name: "Controller" }).click();
   const setting = page.getByRole("region", { name: "Music folder" });
   await setting.getByRole("button", { name: "Pick a folder" }).click();
-  await expect(setting.getByTestId("rekordbox-status")).toHaveText(`rekordbox: matched ${String(grooves.length)} of ${String(grooves.length)}`);
+  const known = grooves.filter((groove) => groove.inRekordbox !== false).length;
+  await expect(setting.getByTestId("rekordbox-status")).toHaveText(`rekordbox: matched ${String(known)} of ${String(grooves.length)}`);
   await page.getByRole("button", { name: /Lessons/ }).click();
 }
 

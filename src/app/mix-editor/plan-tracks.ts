@@ -3,10 +3,10 @@
 // tracks are looked at, and only the two of a previewed Transition are ever decoded (the large-library
 // rule). Found tracks are kept by content hash, so inserting a track resolves only the newcomer.
 import { useEffect, useRef, useState } from "react";
-import { analysisCacheKey, IndexedDbAnalysisCache, type TrackAnalysis } from "@analysis";
+import { IndexedDbAnalysisCache, type TrackAnalysis } from "@analysis";
 import type { MixPlan, PlanGrid, PlanTrack } from "@shared/mix-plan.ts";
 import { decodeOffline, type FolderFile, type MusicFolderSnapshot } from "@tracks";
-import type { PlanLibrary } from "../mix-plans/library.ts";
+import { cachedAnalysis, type PlanLibrary } from "../mix-plans/library.ts";
 import { gridForFile, resolvePlanTracks, type TrackResolution } from "../mix-plans/resolve.ts";
 
 export interface PlanTrackData {
@@ -30,7 +30,7 @@ async function dataFor(track: PlanTrack, resolution: TrackResolution, library: P
   if (resolution.kind === "missing") return { resolution, grid: null, analysis: null, fromRekordbox: false };
   const grid = await gridForFile(resolution.file, track, library);
   const hash = resolution.matchedBy === "hash" ? track.contentHash : (library.files().find((file) => file.trackId === resolution.file.trackId)?.contentHash ?? null);
-  const analysis = hash === null ? null : ((await cache.get(analysisCacheKey(hash))) ?? null);
+  const analysis = hash === null ? null : await cachedAnalysis(cache, hash);
   return { resolution, grid, analysis, fromRekordbox: resolution.file.rekordboxGrid !== null };
 }
 
