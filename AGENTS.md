@@ -41,7 +41,7 @@ The API reads `API_HOST` and `API_PORT` (defaults `127.0.0.1`, `5180`). It also 
   | BROWSE turn | moves the ring between buttons (a library: between tracks); on a list or slider being changed, its value | Tab |
   | BROWSE press | presses the button with the ring; on a list or slider, starts or ends changing it | Space |
   | SHIFT + BROWSE press | back: leaves, closes, skips | Esc |
-  | LOAD A | go: into the Check, again, next, start; Freestyle: loads the track with the ring onto A; Mix plans, the set builder: adds it | Enter |
+  | LOAD A | go: into the Check, again, next, start; Freestyle: loads the track with the ring onto A; Mix plans, the set builder: adds it; the Mix Editor: previews the Transition (its "+ New pair" picker: adds the track) | Enter |
   | LOAD B | Ready; Freestyle: loads it onto B (a playing deck refuses); Mix plans, the set builder: adds it | R |
   | SHIFT + LOAD A | practice | P |
   | SHIFT + LOAD B | Not yet (Placement) | N |

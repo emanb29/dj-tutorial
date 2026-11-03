@@ -3,7 +3,9 @@ import { testGrid, testHash, testPicked, testPlan } from "@shared/mix-plan-test-
 import { RECIPES } from "@shared/mix-plan-recipes.ts";
 import { mixPlanProblems } from "@shared/mix-plan-validate.ts";
 import { BEATS_PER_PHRASE, type MixPlan, type Transition } from "@shared/mix-plan.ts";
+import { deckOf } from "../mix-plans/deck-layout.ts";
 import { editPlan, insertionIndex, type EditorAction } from "./editor-state.ts";
+import { deriveExecution } from "./execution-plan.ts";
 
 const NOW = "2026-11-03T13:00:00.000Z";
 
@@ -170,5 +172,13 @@ describe("editPlan: tracks", () => {
     for (let index = 0; index < 24; index += 1) current = editPlan(current, { kind: "start-phrase", transition: index, phrase: 2 }, grids, NOW);
     expect(performance.now() - started).toBeLessThan(200);
     expect(current.transitions.every((transition) => transition.outgoingAt.bar === BEATS_PER_PHRASE / 4 + 1)).toBe(true);
+  });
+
+  it("derives every Execution plan and rating of a 25-track set quickly (the set view's chips)", () => {
+    const { plan } = testPlan(25, { recipe: "bass-swap" });
+    const started = performance.now();
+    const ratings = plan.transitions.map((transition, index) => deriveExecution(transition, { outgoing: deckOf(index), incoming: deckOf(index + 1) }, new Set()).complexity.rating);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(ratings).toHaveLength(24);
   });
 });

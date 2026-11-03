@@ -58,7 +58,7 @@ export interface ControllerButton {
 
 /** The keys the FLX4 presses, in the order the legend lists them. */
 export const CONTROLLER_KEYS: readonly ControllerButton[] = [
-  { key: "Enter", code: "Enter", press: { control: "load", deck: "A", shift: false }, does: "Go: into the Check, again, next, start · Freestyle: load onto A" },
+  { key: "Enter", code: "Enter", press: { control: "load", deck: "A", shift: false }, does: "Go: into the Check, again, next, start · Freestyle: load onto A · Mix Editor: preview" },
   { key: "R", code: "KeyR", press: { control: "load", deck: "B", shift: false }, does: "Ready · Freestyle: load onto B" },
   { key: "P", code: "KeyP", press: { control: "load", deck: "A", shift: true }, does: "Practice" },
   { key: "N", code: "KeyN", press: { control: "load", deck: "B", shift: true }, does: "Not yet (Placement)" },

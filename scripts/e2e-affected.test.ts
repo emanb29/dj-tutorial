@@ -36,14 +36,19 @@ describe("selectSpecs", () => {
         "e2e/freestyle.spec.ts",
         "e2e/hardware.spec.ts",
         "e2e/library-browser.spec.ts",
+        "e2e/mix-editor.spec.ts",
         "e2e/mobile.spec.ts",
         "e2e/music-folder.spec.ts",
       ],
     });
   });
 
+  it("runs the Mix Editor's spec for its screen and its fixture folder", () => {
+    expect(selectSpecs(["src/app/mix-editor/MixEditorPage.tsx", "e2e/mix-editor-support.ts"])).toEqual({ all: false, specs: ["e2e/mix-editor.spec.ts"] });
+  });
+
   it("runs the library browser's spec for the Mix plans picker and for the folder and rekordbox metadata it lists", () => {
-    expect(selectSpecs(["src/app/mix-plans/MixPlansPage.tsx"])).toEqual({ all: false, specs: ["e2e/library-browser.spec.ts"] });
+    expect(selectSpecs(["src/app/mix-plans/MixPlansPage.tsx"])).toEqual({ all: false, specs: ["e2e/library-browser.spec.ts", "e2e/mix-editor.spec.ts"] });
     for (const path of ["src/tracks/music-folder/music-folder.ts", "src/tracks/rekordbox/xml.ts"]) {
       expect(selectSpecs([path])).toMatchObject({ all: false, specs: expect.arrayContaining(["e2e/library-browser.spec.ts"]) as unknown });
     }

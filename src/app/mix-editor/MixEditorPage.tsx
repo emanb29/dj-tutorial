@@ -4,6 +4,8 @@
 // music folder (resolved by content hash, never uploaded). Planning is for a laptop: on a phone the
 // page shows the set read-only, with Preview.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { WaveformOverview } from "@analysis";
+import { waveformOverview } from "@analysis/waveform.ts";
 import type { ControllerUnlocks } from "@app/controller/control-ids.ts";
 import { mixPlanProblems } from "@shared/mix-plan-validate.ts";
 import type { LearnerRecord } from "@shared/learner.ts";
@@ -93,6 +95,7 @@ export function MixEditorPage({ planId, learner, onExit }: { readonly planId: st
   const [previewLoading, setPreviewLoading] = useState<number | null>(null);
   const [previewProblem, setPreviewProblem] = useState<string | null>(null);
   const [audio] = useState(() => new PreviewAudioCache());
+  const [waveforms, setWaveforms] = useState<ReadonlyMap<string, WaveformOverview>>(new Map());
 
   useEffect(() => {
     let live = true;
@@ -156,6 +159,33 @@ export function MixEditorPage({ planId, learner, onExit }: { readonly planId: st
     return known;
   }, [plan, tracks]);
   const executions = useExecutions(plan, unlocks);
+
+  // The pair being edited, drawn from its audio when no cached analysis has a waveform (only these two are decoded).
+  const editingPair = laptop ? selected : null;
+  useEffect(() => {
+    if (editingPair === null || plan === null) return;
+    let live = true;
+    for (const at of [editingPair, editingPair + 1]) {
+      const track = plan.tracks[at];
+      const data = tracks[at];
+      if (track === undefined || data?.resolution.kind !== "found" || data.analysis !== null || waveforms.has(track.contentHash)) continue;
+      void audio.get(track.contentHash, data.resolution.file).then(
+        (buffer) => {
+          if (!live) return;
+          const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
+          const mono = channels.length === 1 && channels[0] !== undefined ? channels[0] : Float32Array.from({ length: buffer.length }, (_, index) => channels.reduce((sum, channel) => sum + (channel[index] ?? 0), 0) / channels.length);
+          const overview = waveformOverview(mono, buffer.sampleRate);
+          setWaveforms((now) => new Map([...now, [track.contentHash, overview]]));
+        },
+        (error: unknown) => {
+          console.warn("[mix-editor] a track's waveform could not be drawn: it would not decode", error);
+        },
+      );
+    }
+    return () => {
+      live = false;
+    };
+  }, [audio, editingPair, plan, tracks, waveforms]);
   const problems = useMemo(() => (plan === null ? [] : mixPlanProblems(plan, grids)), [plan, grids]);
 
   const dispatch = useCallback(
@@ -354,6 +384,7 @@ export function MixEditorPage({ planId, learner, onExit }: { readonly planId: st
             plan={plan}
             index={editing}
             tracks={tracks}
+            waveforms={waveforms}
             execution={editingExecution}
             dispatch={dispatch}
             previewing={playingIndex === editing}

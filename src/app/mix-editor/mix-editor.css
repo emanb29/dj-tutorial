@@ -618,7 +618,7 @@ button.me-chip {
 }
 
 .me-ghost-right {
-  top: 4px;
+  top: 28px;
   background: color-mix(in srgb, var(--me-incoming) 25%, transparent);
 }
 

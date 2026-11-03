@@ -7,12 +7,12 @@
 // Only what is in view is drawn: the waveforms on one canvas the width of the screen, the phrase labels
 // in view. Keyframes are buttons, so BROWSE and Tab reach them; arrows nudge by beat (Shift: by bar).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { TrackAnalysis } from "@analysis";
+import type { WaveformOverview } from "@analysis";
 import { BEATS_PER_BAR, BEATS_PER_PHRASE, beatIndexOf, CONTROL_RANGES, secondsAtBeat, type Lane, type PlanGrid, type Transition } from "@shared/mix-plan.ts";
 import type { EditorAction } from "./editor-state.ts";
 import { formatLaneValue, laneLabel, positionText, stepLabel } from "./editor-text.ts";
 import type { ExecutionPlan } from "./execution-plan.ts";
-import { laneTimeline, valueAt } from "./lanes.ts";
+import { laneTimeline, valueAt, valueBefore } from "./lanes.ts";
 import {
   beatOfX,
   fitZoom,
@@ -33,7 +33,7 @@ import {
 const RULER_H = 26;
 const WAVE_H = 64;
 const LANE_H = 44;
-const GHOST_H = 30;
+const GHOST_H = 54;
 const LANE_PAD = 6;
 /** The slider's steps from the whole pair (0) to MAX_PX_PER_BEAT (ZOOM_SLIDER_STEPS). */
 const ZOOM_SLIDER_STEPS = 100;
@@ -46,7 +46,7 @@ export interface Selection {
 export interface TimelineTrack {
   readonly label: string;
   readonly grid: PlanGrid | null;
-  readonly analysis: TrackAnalysis | null;
+  readonly waveform: WaveformOverview | null;
 }
 
 export interface TimelineProps {
@@ -119,8 +119,8 @@ function cssColor(element: Element, name: string, fallback: string): string {
 }
 
 /** The waveform overview's peak between two track times. */
-function peakBetween(analysis: TrackAnalysis, fromSec: number, toSec: number): { min: number; max: number } | null {
-  const { bucketSec, min, max } = analysis.waveformOverview;
+function peakBetween(waveform: WaveformOverview, fromSec: number, toSec: number): { min: number; max: number } | null {
+  const { bucketSec, min, max } = waveform;
   const first = Math.max(0, Math.floor(fromSec / bucketSec));
   const last = Math.min(min.length - 1, Math.max(first, Math.floor(toSec / bucketSec)));
   if (first > min.length - 1) return null;
@@ -186,8 +186,8 @@ function draw(input: DrawInput): void {
   for (const row of rows) {
     if (row.kind !== "wave" || row.track === undefined) continue;
     const track = row.track === "outgoing" ? input.outgoing : input.incoming;
-    const { grid, analysis } = track;
-    if (grid === null || analysis === null) continue;
+    const { grid, waveform } = track;
+    if (grid === null || waveform === null) continue;
     const startOnGrid = beatIndexOf(row.track === "outgoing" ? transition.outgoingAt : transition.incomingAt);
     const middle = row.top + row.height / 2;
     const half = row.height / 2 - 4;
@@ -197,7 +197,7 @@ function draw(input: DrawInput): void {
       const fromSec = secondsAtBeat(grid, startOnGrid + beat);
       const toSec = secondsAtBeat(grid, startOnGrid + beatAt(x + 1));
       if (toSec < 0 || fromSec > grid.durationSec) continue;
-      const peak = peakBetween(analysis, Math.max(0, fromSec), toSec);
+      const peak = peakBetween(waveform, Math.max(0, fromSec), toSec);
       if (peak === null) continue;
       // The incoming track is not playing before the Transition starts.
       context.globalAlpha = row.track === "incoming" && beat < 0 ? 0.3 : 0.9;
@@ -214,20 +214,23 @@ function lanePath(lane: Lane, transition: Transition, pxPerBeat: number): string
   const timeline = laneTimeline(lane);
   if (timeline === null) return "";
   const beats = new Set<number>([0, transition.lengthBeats]);
-  for (const keyframe of timeline.keyframes) {
+  timeline.keyframes.forEach((keyframe, index) => {
     beats.add(Math.max(0, keyframe.beat));
-    if (keyframe.curve === "ease") for (let step = 1; step < 8; step += 1) beats.add(keyframe.beat - step / 2);
-  }
+    // An ease is drawn as its curve: eight samples across its ramp.
+    const previous = timeline.keyframes[index - 1];
+    if (keyframe.curve === "ease" && previous !== undefined) {
+      for (let step = 1; step < 8; step += 1) beats.add(previous.beat + ((keyframe.beat - previous.beat) * step) / 8);
+    }
+  });
   const ordered = [...beats].filter((beat) => beat >= 0 && beat <= transition.lengthBeats).sort((a, b) => a - b);
   const points: string[] = [];
-  let last: number | null = null;
+  const point = (beat: number, value: number) => `${(beat * pxPerBeat).toFixed(1)},${yOfValue(lane, value).toFixed(1)}`;
   for (const beat of ordered) {
-    const before = valueAt(timeline.keyframes.filter((keyframe) => keyframe.beat < beat), beat);
     const at = valueAt(timeline.keyframes, beat) ?? 0;
-    const x = beat * pxPerBeat;
-    if (last !== null && before !== null && before !== last) points.push(`${x.toFixed(1)},${yOfValue(lane, last).toFixed(1)}`);
-    points.push(`${x.toFixed(1)},${yOfValue(lane, at).toFixed(1)}`);
-    last = at;
+    // A jump: along at the value before it, then straight up or down.
+    const before = beat > 0 ? valueBefore(timeline.keyframes, beat) : null;
+    if (before !== null && before !== at) points.push(point(beat, before));
+    points.push(point(beat, at));
   }
   return points.length === 0 ? "" : `M${points.join(" L")}`;
 }
@@ -331,7 +334,13 @@ export function Timeline(props: TimelineProps) {
       const beat = playhead();
       if (line !== null) {
         line.hidden = beat === null;
-        if (beat !== null) line.style.transform = `translateX(${String(xOfBeat(beat, span, zoom))}px)`;
+        if (beat !== null) {
+          const x = xOfBeat(beat, span, zoom);
+          line.style.transform = `translateX(${String(x)}px)`;
+          // Followed as rekordbox does: once it leaves the screen, the view jumps to keep it in sight.
+          const view = scroller.current;
+          if (view !== null && drag.current === null && (x < view.scrollLeft || x > view.scrollLeft + view.clientWidth)) view.scrollLeft = Math.max(0, x - view.clientWidth * 0.2);
+        }
       }
       frame = requestAnimationFrame(tick);
     };

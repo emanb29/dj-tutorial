@@ -4,6 +4,7 @@
 // and the Execution strip open on demand; and the timeline, where "Edit moves" opens the lanes.
 // The editor warns past rating 3 and never blocks or changes a design.
 import { useState } from "react";
+import type { WaveformOverview } from "@analysis";
 import { BEATS_PER_BAR, BEATS_PER_PHRASE, beatIndexOf, beatsInTrack, CONTROL_RANGES, LANE_PARAMS, phraseOf, RECIPE_IDS, type LaneParam, type MixPlan } from "@shared/mix-plan.ts";
 import { RECIPES } from "@shared/mix-plan-recipes.ts";
 import { KeyHint } from "../controller/KeyHint.tsx";
@@ -21,6 +22,8 @@ export interface TransitionEditorProps {
   readonly plan: MixPlan;
   readonly index: number;
   readonly tracks: readonly (PlanTrackData | undefined)[];
+  /** Waveforms drawn from the decoded audio, for tracks whose analysis is not cached. */
+  readonly waveforms: ReadonlyMap<string, WaveformOverview>;
   readonly execution: ExecutionPlan;
   readonly dispatch: (action: EditorAction) => void;
   readonly previewing: boolean;
@@ -212,7 +215,6 @@ export function TransitionEditor(props: TransitionEditorProps) {
           {each.name}'s beat grid is uncertain ({String(Math.round(each.confidence * 100))}% sure): check the phrase marks against its waveform. Link its rekordbox grid on the Controller page to use that one.
         </p>
       ))}
-      {why ? <ExecutionStrip transition={transition} execution={execution} onHighlight={highlight} /> : null}
 
       <div className="me-toggles">
         <button type="button" className="btn btn-quiet" aria-pressed={editMoves} onClick={() => {
@@ -237,8 +239,8 @@ export function TransitionEditor(props: TransitionEditorProps) {
       <Timeline
         transitionIndex={index}
         transition={transition}
-        outgoing={{ label: trackName(index), grid: outgoing?.grid ?? null, analysis: outgoing?.analysis ?? null }}
-        incoming={{ label: trackName(index + 1), grid: incoming?.grid ?? null, analysis: incoming?.analysis ?? null }}
+        outgoing={{ label: trackName(index), grid: outgoing?.grid ?? null, waveform: outgoing?.analysis?.waveformOverview ?? props.waveforms.get(outTrack?.contentHash ?? "") ?? null }}
+        incoming={{ label: trackName(index + 1), grid: incoming?.grid ?? null, waveform: incoming?.analysis?.waveformOverview ?? props.waveforms.get(inTrack?.contentHash ?? "") ?? null }}
         editMoves={editMoves}
         ghostMoves={ghostMoves}
         execution={execution}
@@ -248,6 +250,7 @@ export function TransitionEditor(props: TransitionEditorProps) {
         dispatch={dispatch}
         playhead={props.playhead}
       />
+      {why ? <ExecutionStrip transition={transition} execution={execution} onHighlight={highlight} /> : null}
 
       {editMoves ? (
         <div className="me-inspector" aria-label="Keyframe">
