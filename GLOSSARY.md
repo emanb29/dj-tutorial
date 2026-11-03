@@ -93,3 +93,7 @@ _Avoid_: Script, macro
 **Complexity rating**:
 How hard a planned transition is to perform live, 1 to 5, computed from its Execution plan, with a reason for each thing that makes it hard. It is per Learner (a control whose Lesson isn't Passed counts), and it warns but never blocks.
 _Avoid_: Difficulty level, score
+
+**Render**:
+A Mix Plan played offline through the app's own engine and mixer, exactly as planned and with no one at the controls, and kept as one audio file of the whole set, to post or to practise against. Export is the download that follows it (WAV or MP3).
+_Avoid_: Bounce, mixdown

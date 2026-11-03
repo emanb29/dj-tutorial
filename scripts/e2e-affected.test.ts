@@ -43,10 +43,15 @@ describe("selectSpecs", () => {
   });
 
   it("runs the library browser's spec for the Mix plans picker and for the folder and rekordbox metadata it lists", () => {
-    expect(selectSpecs(["src/app/mix-plans/MixPlansPage.tsx"])).toEqual({ all: false, specs: ["e2e/library-browser.spec.ts"] });
+    expect(selectSpecs(["src/app/mix-plans/MixPlansPage.tsx"])).toEqual({ all: false, specs: ["e2e/library-browser.spec.ts", "e2e/mix-render.spec.ts"] });
     for (const path of ["src/tracks/music-folder/music-folder.ts", "src/tracks/rekordbox/xml.ts"]) {
       expect(selectSpecs([path])).toMatchObject({ all: false, specs: expect.arrayContaining(["e2e/library-browser.spec.ts"]) as unknown });
     }
+  });
+
+  it("runs the Render's spec for the Render, and none for its own tests and test support", () => {
+    expect(selectSpecs(["src/app/mix-render/RenderPanel.tsx", "src/app/mix-render/timeline.ts"])).toEqual({ all: false, specs: ["e2e/mix-render.spec.ts"] });
+    expect(selectSpecs(["src/app/mix-render/timeline.test.ts", "src/app/mix-render/render.browser.test.ts", "src/app/mix-render/test-support.ts"])).toEqual({ all: false, specs: [] });
   });
 
   it("runs no end-to-end spec for the library browser's own tests and test support", () => {

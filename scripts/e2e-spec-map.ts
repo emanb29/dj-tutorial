@@ -37,8 +37,12 @@ export const SPEC_RULES: readonly SpecRule[] = [
   // Docs, prototypes and the composer are outside the build.
   { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
   // Mix plans (ISS-186): its store, resolution and model are unit and browser tested; its track picker
-  // is the library browser, played end to end in library-browser.spec.ts.
-  { paths: ["src/app/mix-plans/**"], specs: ["e2e/library-browser.spec.ts"] },
+  // is the library browser, played end to end in library-browser.spec.ts, and its Render panel is
+  // played in mix-render.spec.ts.
+  { paths: ["src/app/mix-plans/**"], specs: ["e2e/library-browser.spec.ts", "e2e/mix-render.spec.ts"] },
+  // The Render (ISS-190): timeline, mixer moves, segments and passes are unit and browser tested; the
+  // page's Render, cancel and downloads are played end to end.
+  { paths: ["src/app/mix-render/**"], specs: ["e2e/mix-render.spec.ts"] },
   // The library browser (ISS-194): its own spec (the Mix plans picker), the other pickers that use it
   // (Freestyle by screen, folder and FLX4; the final-mix set builder), and its phone-width layout.
   {

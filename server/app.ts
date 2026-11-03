@@ -25,6 +25,8 @@ import { requireSameOrigin, sameOriginPolicy, type SameOriginPolicy } from "./sa
 import { DEFAULT_ALLOWED_ORIGINS } from "./config.ts";
 import { originalsRoutes } from "./originals.ts";
 import { ORIGINALS_PATH } from "@shared/originals.ts";
+import { MAX_RENDER_SEGMENT_BYTES, RENDERS_PATH } from "@shared/mix-render.ts";
+import { renderRoutes, type RenderStore } from "./renders.ts";
 
 export const MAX_BODY_BYTES = 32 * 1024;
 /**
@@ -34,6 +36,9 @@ export const MAX_BODY_BYTES = 32 * 1024;
 export const MAX_PROFILE_BODY_BYTES = 1024 * 1024;
 const PROFILE_PATH = /^\/api\/learners\/[^/]+\/profile$/;
 const FINAL_PROJECT_AUDIO_PATH = /^\/api\/learners\/[^/]+\/final-project\/audio$/;
+const RENDER_SEGMENT_PATH = /^\/api\/renders\/[^/]+\/segments\/[^/]+$/;
+/** Starting a Render names every track of the plan (up to 500 of them). */
+export const MAX_RENDER_START_BYTES = 256 * 1024;
 
 export interface AppServices {
   readonly profiles: ProfileStore;
@@ -42,6 +47,8 @@ export interface AppServices {
   readonly finalProjects?: FinalProjectStore;
   /** ffmpeg, found (or not) at startup. Unset = exports report "unavailable". */
   readonly audioExport?: AudioExporter;
+  /** The Mix Editor's Renders, kept for download. Unset = no `/api/renders`. */
+  readonly renders?: RenderStore;
   readonly logger?: Logger;
   readonly now?: () => Date;
 }
@@ -113,9 +120,24 @@ export function createApp(options: AppOptions = {}): Hono {
     onError: (context) =>
       failure(context, 413, "tooLarge", `The recording is over ${String(MAX_FINAL_PROJECT_BYTES / 1024 / 1024)} MB. Record a shorter set.`),
   });
-  // The final project's audio and the whole profile are the bodies that are not small; each has its own (bounded) limit.
-  const limits: MiddlewareHandler = (context, next) =>
-    FINAL_PROJECT_AUDIO_PATH.test(context.req.path) ? audioLimit(context, next) : PROFILE_PATH.test(context.req.path) ? profileLimit(context, next) : jsonLimit(context, next);
+  const segmentLimit = bodyLimit({
+    maxSize: MAX_RENDER_SEGMENT_BYTES,
+    onError: (context) => failure(context, 413, "tooLarge", `A Render segment is over ${String(MAX_RENDER_SEGMENT_BYTES / 1024 / 1024)} MB. Send shorter segments.`),
+  });
+  const renderStartLimit = bodyLimit({
+    maxSize: MAX_RENDER_START_BYTES,
+    onError: (context) => failure(context, 413, "tooLarge", `The Render's track list is over ${String(MAX_RENDER_START_BYTES / 1024)} KB. Shorten the track names.`),
+  });
+  // The final project's audio, the whole profile and a Render's segments and track list are the bodies
+  // that are not small; each has its own (bounded) limit.
+  const limits: MiddlewareHandler = (context, next) => {
+    const { path } = context.req;
+    if (FINAL_PROJECT_AUDIO_PATH.test(path)) return audioLimit(context, next);
+    if (PROFILE_PATH.test(path)) return profileLimit(context, next);
+    if (RENDER_SEGMENT_PATH.test(path)) return segmentLimit(context, next);
+    if (path === RENDERS_PATH) return renderStartLimit(context, next);
+    return jsonLimit(context, next);
+  };
   app.use("/api/*", limits);
 
   app.get(HEALTH_PATH, (context) =>
@@ -128,6 +150,11 @@ export function createApp(options: AppOptions = {}): Hono {
   });
 
   if (options.services !== undefined) mountLearnerRoutes(app, options.services);
+  const renders = options.services?.renders;
+  if (renders !== undefined) {
+    const services = options.services;
+    app.route(RENDERS_PATH, renderRoutes({ store: renders, logger, now: services?.now ?? (() => new Date()), ...(services?.audioExport === undefined ? {} : { exporter: services.audioExport }) }));
+  }
   if (options.originalsDir !== undefined) app.route(ORIGINALS_PATH, originalsRoutes(options.originalsDir, logger));
 
   app.notFound((context) =>

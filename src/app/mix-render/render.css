@@ -1,0 +1,29 @@
+/* The Render panel on the Mix plans page: one column, big targets, phone width up. */
+
+.render-panel {
+  margin-top: var(--space-4);
+}
+
+.render-progress {
+  width: 100%;
+  height: 1.25rem;
+  accent-color: var(--accent);
+}
+
+.render-status {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.render-done {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.render-done p {
+  margin: 0;
+}
+
+.render-player {
+  width: 100%;
+}

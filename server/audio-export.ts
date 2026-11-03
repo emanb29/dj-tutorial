@@ -1,5 +1,6 @@
 // Transcodes the kept final project (a MediaRecorder WebM/Ogg/MP4 file) to WAV or 320 kbit/s MP3 with
-// ffmpeg, for posting to SoundCloud (which does not take WebM). Safety: ffmpeg is spawned with an
+// ffmpeg, for posting to SoundCloud (which does not take WebM), and a Mix Plan's Render (raw 16-bit
+// PCM, server/renders.ts) to MP3. Safety: ffmpeg is spawned with an
 // argument array (no shell), reads only the stored file's path, writes to a private temp file that is
 // unlinked as soon as it is opened for streaming, is killed after a time limit, and stops at a size cap.
 import { spawn } from "node:child_process";
@@ -20,6 +21,15 @@ export type ExportFailure =
   | { readonly kind: "timedOut"; readonly message: string }
   | { readonly kind: "tooLarge"; readonly message: string }
   | { readonly kind: "failed"; readonly message: string };
+
+export interface TranscodeOptions {
+  /** The input is raw 16-bit little-endian stereo PCM at this rate (a Render), not a file ffmpeg recognises itself. */
+  readonly rawPcm?: { readonly sampleRate: number };
+  /** Defaults to the exporter's timeout. */
+  readonly timeoutMs?: number;
+  /** Defaults to MAX_EXPORT_BYTES for the format. */
+  readonly maxBytes?: number;
+}
 
 export type ExportResult = { readonly ok: true; readonly bytes: number; readonly body: ReadableStream<Uint8Array> } | { readonly ok: false; readonly failure: ExportFailure };
 
@@ -80,17 +90,20 @@ export class AudioExporter {
   }
 
   /** Transcodes `inputPath` (a file the server wrote; never a path from a request) to `format` with `tags`. */
-  async transcode(inputPath: string, format: ExportFormat, tags: ExportTags): Promise<ExportResult> {
+  async transcode(inputPath: string, format: ExportFormat, tags: ExportTags, options: TranscodeOptions = {}): Promise<ExportResult> {
     if (!this.status.available) return { ok: false, failure: { kind: "unavailable", message: this.status.reason } };
-    const directory = await mkdtemp(join(tmpdir(), "ltd-export-"));
+    // A Render gets its own prefix, so a final project export and a Render export never share one.
+    const directory = await mkdtemp(join(tmpdir(), options.rawPcm === undefined ? "ltd-export-" : "ltd-render-export-"));
     const output = join(directory, `set.${format}`);
     try {
-      const maxBytes = MAX_EXPORT_BYTES[format];
+      const maxBytes = options.maxBytes ?? MAX_EXPORT_BYTES[format];
+      const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+      const input = options.rawPcm === undefined ? [] : ["-f", "s16le", "-ar", String(options.rawPcm.sampleRate), "-ac", "2"];
       const metadata = (["title", "artist", "comment", "date"] as const).flatMap((key) => (tags[key] === "" ? [] : ["-metadata", `${key}=${tags[key]}`]));
-      const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-i", inputPath, "-vn", "-map_metadata", "-1", ...metadata, ...CODEC_ARGS[format], "-fs", String(maxBytes), "-y", output];
-      const outcome = await run(this.ffmpeg, args, this.timeoutMs);
+      const args = ["-hide_banner", "-nostdin", "-loglevel", "error", ...input, "-i", inputPath, "-vn", "-map_metadata", "-1", ...metadata, ...CODEC_ARGS[format], "-fs", String(maxBytes), "-y", output];
+      const outcome = await run(this.ffmpeg, args, timeoutMs);
       if (outcome.timedOut) {
-        return { ok: false, failure: { kind: "timedOut", message: `Converting the set took over ${String(this.timeoutMs / 1000)} s and was stopped. Try again; if it keeps happening, record a shorter set.` } };
+        return { ok: false, failure: { kind: "timedOut", message: `Converting the set took over ${String(Math.round(timeoutMs / 1000))} s and was stopped. Try again; if it keeps happening, record a shorter set.` } };
       }
       if (outcome.spawnError !== null || outcome.code !== 0) {
         return { ok: false, failure: { kind: "failed", message: `ffmpeg could not convert the set (${outcome.stderr.trim().split("\n").at(-1) ?? "no message"}). Keep the set again, then retry; the server log has details.` } };

@@ -11,6 +11,7 @@ import { memoryLogger } from "./logger.ts";
 import { FinalProjectStore } from "./final-projects.ts";
 import type { AudioExporter } from "./audio-export.ts";
 import { ProfileStore } from "./profile-store.ts";
+import { RenderStore } from "./renders.ts";
 import { sameOriginPolicy } from "./same-origin.ts";
 import { SpendLedger } from "./spend-ledger.ts";
 
@@ -100,6 +101,8 @@ export async function startTestServer(options: {
   timings?: Partial<CoachTimings>;
   now?: () => Date;
   audioExport?: AudioExporter;
+  /** Serve `/api/renders` too, from a store in the test's data folder. */
+  renders?: boolean;
 }): Promise<TestServer> {
   const dataDir = await mkdtemp(join(tmpdir(), "ltd-app-"));
   const profiles = await ProfileStore.open(dataDir);
@@ -113,9 +116,18 @@ export async function startTestServer(options: {
     now,
     ...(options.timings === undefined ? {} : { timings: options.timings }),
   });
+  const renders = options.renders === true ? await RenderStore.open(dataDir, () => now().getTime()) : undefined;
   const app = createApp({
     sameOrigin: sameOriginPolicy([APP_ORIGIN], ["127.0.0.1:5180"]),
-    services: { profiles, coach, logger, now, finalProjects: FinalProjectStore.forDataDir(dataDir, now), ...(options.audioExport === undefined ? {} : { audioExport: options.audioExport }) },
+    services: {
+      profiles,
+      coach,
+      logger,
+      now,
+      finalProjects: FinalProjectStore.forDataDir(dataDir, now),
+      ...(options.audioExport === undefined ? {} : { audioExport: options.audioExport }),
+      ...(renders === undefined ? {} : { renders }),
+    },
   });
   return {
     app,

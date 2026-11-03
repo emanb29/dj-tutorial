@@ -12,6 +12,7 @@ import { LibraryBrowser } from "../library-browser/LibraryBrowser.tsx";
 import { folderRows } from "../library-browser/folder-rows.ts";
 import { useMusicFolder } from "../music-folder/MusicFolderPanel.tsx";
 import { musicFolder } from "../music-folder/shared-folder.ts";
+import { RenderPanel } from "../mix-render/RenderPanel.tsx";
 import { mixPlanFileName, mixPlanFileText, parseMixPlanFile } from "@shared/mix-plan-file.ts";
 import { RECIPES, newMixPlan, type PickedTrack } from "@shared/mix-plan-recipes.ts";
 import { mixPlanProblems, type MixPlanProblem } from "@shared/mix-plan-validate.ts";
@@ -332,6 +333,8 @@ interface Found {
   readonly grid: PlanGrid | null;
   /** Set once the Learner found a missing track by hand: the plan's own file, or another one. */
   readonly picked?: "same" | "different";
+  /** The file found by hand, for the Render. */
+  readonly file?: File;
 }
 
 function OpenPlan({ plan, library }: { readonly plan: MixPlan; readonly library: PlanLibrary }) {
@@ -362,6 +365,14 @@ function OpenPlan({ plan, library }: { readonly plan: MixPlan; readonly library:
     });
     return found === null ? [] : mixPlanProblems(plan, grids);
   }, [found, plan]);
+  const renderable = useMemo(
+    () =>
+      found?.map(({ resolution, grid, file }) => ({
+        file: file === undefined ? (resolution.kind === "found" ? resolution.file : null) : { name: file.name, read: () => Promise.resolve(file) },
+        grid,
+      })) ?? [],
+    [found],
+  );
 
   if (found === null) return <p role="status">Finding the tracks in your music folder…</p>;
   return (
@@ -390,7 +401,7 @@ function OpenPlan({ plan, library }: { readonly plan: MixPlan; readonly library:
                       event.currentTarget.value = "";
                       if (file === undefined) return;
                       void library.checkPicked(file, track).then(({ sameFile, grid }) => {
-                        setFound((now) => now?.map((each, at) => (at === index ? { ...each, grid, picked: sameFile ? "same" : "different" } : each)) ?? now);
+                        setFound((now) => now?.map((each, at) => (at === index ? { ...each, grid, file, picked: sameFile ? "same" : "different" } : each)) ?? now);
                       });
                     }}
                   />
@@ -417,6 +428,7 @@ function OpenPlan({ plan, library }: { readonly plan: MixPlan; readonly library:
           ))}
         </ul>
       )}
+      <RenderPanel plan={plan} tracks={renderable} problems={problems} />
     </section>
   );
 }

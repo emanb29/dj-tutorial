@@ -7,6 +7,7 @@ import { consoleLogger } from "./logger.ts";
 import { FinalProjectStore } from "./final-projects.ts";
 import { AudioExporter } from "./audio-export.ts";
 import { ProfileStore } from "./profile-store.ts";
+import { RenderStore } from "./renders.ts";
 import { sameOriginPolicy } from "./same-origin.ts";
 import { SpendLedger } from "./spend-ledger.ts";
 
@@ -23,10 +24,11 @@ if (client === null) consoleLogger.info("coach.noKey", { message: "Coach: no API
 const coach = new CoachService({ client, ledger, logger: consoleLogger, logPayloads: runtime.coachLogPayloads });
 const audioExport = await AudioExporter.detect();
 if (!audioExport.status.available) consoleLogger.warn("export.unavailable", { message: audioExport.status.reason });
+const renders = await RenderStore.open(runtime.dataDir);
 const ownAddress = `${host}:${String(port)}`;
 const app = createApp({
   sameOrigin: sameOriginPolicy(runtime.allowedOrigins, [ownAddress, `localhost:${String(port)}`]),
-  services: { profiles, coach, logger: consoleLogger, finalProjects: FinalProjectStore.forDataDir(runtime.dataDir), audioExport },
+  services: { profiles, coach, logger: consoleLogger, finalProjects: FinalProjectStore.forDataDir(runtime.dataDir), audioExport, renders },
   originalsDir: runtime.originalsDir,
 });
 

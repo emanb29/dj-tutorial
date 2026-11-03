@@ -26,7 +26,7 @@ npm run dev            # app on http://127.0.0.1:5179, API on 127.0.0.1:5180
   key, the API calls Claude, up to `COACH_MONTHLY_CAP_USD` (default 5) a month.
 - **Beat analysis** of your own tracks uses Beat This! in the browser. `npm run fetch-models` explains
   how to export the model into `public/models/`; without it, a lighter built-in analyser is used.
-- **Recording export** to WAV or MP3 needs `ffmpeg` on the API's `PATH`.
+- **Recording export** to WAV or MP3, and a Mix Plan's Render as MP3, need `ffmpeg` on the API's `PATH` (a Render's WAV does not).
 - **Remote access** (a phone, another laptop): put an HTTPS reverse proxy or tunnel with its own login
   in front of `127.0.0.1:5179`, and add its host name to `PUBLIC_HOSTS` in `.env`.
 

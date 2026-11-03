@@ -138,6 +138,12 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
+      # The Render's MP3 download (e2e/mix-render.spec.ts) is transcoded by ffmpeg on the API, as in
+      # production. Only when that spec runs (SPECS empty is the whole suite), to save the minutes.
+      - name: Install ffmpeg
+        if: needs.plan.outputs.specs == '' || contains(needs.plan.outputs.specs, 'e2e/mix-render.spec.ts')
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       # SPECS is empty for the whole suite. Unquoted on purpose: one argument per spec.
       - name: Run the end-to-end specs
         env:
