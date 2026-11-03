@@ -43,6 +43,26 @@ describe("music folder", () => {
     vi.restoreAllMocks();
   });
 
+  it("lists its files with what is known of each, reading none of them", async () => {
+    const folder = fakeFolder("Music", { "House/a.mp3": "a", "b.mp3": "b" });
+    const { music, analyser } = setUp(folder);
+    await music.pick();
+    await music.settled();
+
+    const known = () => music.files().map(({ name, contentHash, durationSec, rekordboxGrid }) => ({ name, contentHash, durationSec, rekordboxGrid }));
+    expect(known().toSorted((a, b) => a.name.localeCompare(b.name))).toEqual([
+      { name: "a.mp3", contentHash: null, durationSec: null, rekordboxGrid: null },
+      { name: "b.mp3", contentHash: null, durationSec: null, rekordboxGrid: null },
+    ]);
+    expect(analyser.calls).toEqual([]);
+
+    music.setBackgroundPaused(false);
+    await music.settled();
+    const a = music.files().find((file) => file.name === "a.mp3");
+    expect(a).toMatchObject({ contentHash: "hash-a.mp3", durationSec: 200 });
+    expect(await (await a?.read())?.text()).toBe("a");
+  });
+
   it("lists the picked folder's audio as tracks and remembers the folder", async () => {
     const folder = fakeFolder("Music", { "Kay Grove - Brothers.mp3": "a", "House/loop.wav": "b", "cover.jpg": "x" });
     const { music, handleStore } = setUp(folder);

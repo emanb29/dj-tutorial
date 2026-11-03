@@ -98,6 +98,8 @@ export interface MusicFolder {
   readonly rekordbox: RekordboxLink | null;
   /** The library's tracks, in the order they were found. */
   tracks(): readonly Track[];
+  /** The library's files with what is already known about each, read from nothing: for finding a file again (src/app/mix-plans). */
+  files(): readonly FolderFile[];
   /** Re-opens the remembered folder if the browser still allows it. Asks nothing. */
   start(): Promise<void>;
   /** Shows the folder picker. Call from a click: the browser opens it only for a user gesture. */
@@ -142,6 +144,23 @@ interface Entry {
   /** `base` with rekordbox's tags over it: what the library shows. */
   track: Track;
   state: EntryState;
+  /** The analysis cache's key, once the file is analysed (now or on an earlier visit). */
+  contentHash: string | null;
+}
+
+/** One file of the library, as far as it is known without reading it. */
+export interface FolderFile {
+  readonly trackId: string;
+  /** The file's own name (no folder). */
+  readonly name: string;
+  /** Known once analysed, or from rekordbox. */
+  readonly durationSec: number | null;
+  /** The analysis cache's key (shared/track-hash.ts), once analysed; null before. */
+  readonly contentHash: string | null;
+  /** rekordbox's grid for the file, where it is one tempo in 4/4; it wins over the analysis's. */
+  readonly rekordboxGrid: { readonly bpm: number; readonly firstBeatSec: number; readonly downbeatPhase: number } | null;
+  /** Opens the file (nothing is read until something reads it). */
+  readonly read: () => Promise<File>;
 }
 
 /** A wanted track goes ahead of these many others at most; older wishes are dropped (the background gets them). */
@@ -295,6 +314,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
   const withBpm = (entry: Entry, record: EntryRecord) => {
     if (record.outcome === "analysed") {
       entry.state = "analysed";
+      entry.contentHash = record.contentHash;
       entry.base = { ...entry.base, ...(record.bpm === null ? {} : { bpmHint: record.bpm }), durationSec: record.durationSec };
     } else {
       entry.state = "failed";
@@ -369,7 +389,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     for (const { path, name, stamp, read } of fresh) {
       drop(path);
       const track = trackForFile({ name, ...stamp }, path);
-      const entry: Entry = { path, key: track.id, stamp, read, base: track, linked: null, track, state: "pending" };
+      const entry: Entry = { path, key: track.id, stamp, read, base: track, linked: null, track, state: "pending", contentHash: null };
       entries.set(path, entry);
       pathByKey.set(entry.key, path);
       const record = records.get(entry.key);
@@ -511,6 +531,18 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
   };
 
   const tracks = () => [...entries.values()].map((entry) => entry.track);
+  const files = (): FolderFile[] =>
+    [...entries.values()].map((entry) => {
+      const grid = entry.linked === null ? null : rekordboxGrid(entry.linked.tempos);
+      return {
+        trackId: entry.key,
+        name: entry.path.split("/").pop() ?? entry.path,
+        durationSec: entry.track.durationSec ?? null,
+        contentHash: entry.contentHash,
+        rekordboxGrid: grid?.kind === "constant" ? { bpm: grid.bpm, firstBeatSec: grid.firstBeatSec, downbeatPhase: grid.downbeatPhase } : null,
+        read: entry.read,
+      };
+    });
 
   return {
     subscribe: (listener) => {
@@ -520,6 +552,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     snapshot,
     rekordbox,
     tracks,
+    files,
 
     async start() {
       if (rekordbox !== null) {

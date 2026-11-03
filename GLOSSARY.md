@@ -73,3 +73,15 @@ _Avoid_: AI, tutor, assistant
 **Mix Editor**:
 The screen where a Learner plans a set ahead of time: the tracks in order and each transition between them, written in musical terms (beats, phrases, fader and EQ moves) rather than controller terms. A plan can be rendered to one audio file, or practised live with grading. The controller moves each transition needs are derived from the plan, and the Mix Editor warns, without blocking, when a transition is hard to perform live.
 _Avoid_: Mix planner, playlist editor, sequencer
+
+**Mix Plan**:
+An ordered list of tracks from the Learner's own music folder, plus one Transition between each neighbouring pair, saved on the device. It stores musical intent (lanes of keyframes in beats), never controller moves, audio or paths.
+_Avoid_: Playlist, mixtape, project
+
+**Transition**:
+The designed handover from one track to the next, anchored to beat-grid positions in both tracks and described as lanes (volume, EQ, filter, tempo, echo, loop) of keyframes.
+_Avoid_: Blend (a blend is one kind of Transition), segue
+
+**Transition recipe**:
+A named, ready-made set of lanes (crossfade, bass swap, cut on the 1, filter sweep, echo out). Picking one gives a good Transition with no lane editing.
+_Avoid_: Preset, template

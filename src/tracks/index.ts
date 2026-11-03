@@ -61,6 +61,7 @@ export {
   type AnalyseFile,
   type AnalyseFileResult,
   type FolderAccess,
+  type FolderFile,
   type FolderOutcome,
   type MusicFolder,
   type MusicFolderOptions,
