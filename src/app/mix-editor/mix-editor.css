@@ -1,0 +1,697 @@
+/* The Mix Editor: a laptop layout (set view left, the Transition editor right, the timeline as the
+   main surface), and a read-only set view below 900 px that never scrolls sideways at 360 px.
+   Colours are the theme's tokens: the outgoing track in the accent, the incoming one in the cue colour. */
+
+.me-page {
+  --me-outgoing: var(--accent);
+  --me-incoming: var(--cue);
+  --me-span: rgb(255 255 255 / 6%);
+
+  box-sizing: border-box;
+  max-width: var(--content-max);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  overflow-x: clip;
+}
+
+.me-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.me-name {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+input.me-name {
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+}
+
+input.me-name:hover,
+input.me-name:focus {
+  border-color: var(--panel-edge);
+  background: var(--panel-raised);
+}
+
+.me-hardest {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--ink-dim);
+}
+
+.me-caption {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.me-phone-note {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+/* The whole set as one strip. */
+.me-overview {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  height: 28px;
+}
+
+.me-overview-track {
+  flex-basis: 0;
+  min-width: 6px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--me-outgoing) 35%, var(--panel));
+  color: var(--ink);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.me-overview-track.me-deck-B {
+  background: color-mix(in srgb, var(--me-incoming) 35%, var(--panel));
+}
+
+.me-overview-track.me-overview-selected {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.me-body {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.me-phone .me-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.me-side {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+}
+
+.me-phone .me-side {
+  max-height: none;
+}
+
+.me-set {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.me-set-item {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.me-set-track {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.me-set-track[data-found="no"] {
+  opacity: 0.75;
+}
+
+.me-set-title {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.me-deck {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--me-outgoing);
+  color: var(--accent-ink);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.me-deck.me-deck-B {
+  background: var(--me-incoming);
+}
+
+.me-set-transition {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-5);
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid var(--panel-edge);
+  font-size: var(--text-sm);
+}
+
+.me-set-transition.me-set-selected {
+  border-left-color: var(--ink);
+  background: var(--panel-raised);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.me-set-summary {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.me-set-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.me-greyed {
+  opacity: 0.5;
+}
+
+.btn.me-small {
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.me-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.me-problems {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--warn);
+  font-size: var(--text-sm);
+}
+
+.me-empty {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+/* The rating chip: quiet, with dots. */
+.me-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  background: var(--panel-raised);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+button.me-chip {
+  cursor: pointer;
+}
+
+.me-chip-4,
+.me-chip-5 {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--panel-edge));
+}
+
+.me-dots {
+  letter-spacing: 1px;
+}
+
+/* The Transition editor. */
+.me-editor {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+.me-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.me-crumb-here {
+  font-weight: 700;
+}
+
+.me-crumb-moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.me-pair-names {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.me-out {
+  color: var(--me-outgoing);
+}
+
+.me-in {
+  color: var(--me-incoming);
+}
+
+.me-recipes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.me-recipe {
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.me-recipe[aria-pressed="true"],
+.me-recipe-custom {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel-raised));
+}
+
+.me-recipe:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.me-recipe-custom {
+  display: inline-flex;
+  align-items: center;
+}
+
+.me-controls,
+.me-toggles,
+.me-preview,
+.me-zoom,
+.me-inspector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.me-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+}
+
+.me-stepper-label {
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+}
+
+.me-stepper-value {
+  min-width: 5.5em;
+  text-align: center;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.me-stepper .btn {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0;
+}
+
+.btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.me-warning {
+  margin: 0;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.me-grid-note {
+  color: var(--warn);
+}
+
+/* The Execution strip. */
+.me-strip {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+}
+
+.me-strip h3 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.me-strip-rows {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.me-strip-row {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.me-strip-hand {
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+}
+
+.me-strip-track {
+  position: relative;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.me-strip-shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 4px;
+  background: color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.me-strip-step {
+  position: absolute;
+  top: 4px;
+  min-width: 4px;
+  height: 22px;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 40%, var(--panel-raised));
+  font-size: 11px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.me-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.btn.me-reason {
+  min-height: 32px;
+  font-size: var(--text-sm);
+}
+
+/* The timeline. */
+.me-timeline {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.me-zoom input[type="range"] {
+  width: 160px;
+}
+
+.me-frame {
+  position: relative;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  min-width: 0;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  background: var(--body);
+}
+
+.me-labels {
+  position: relative;
+  border-right: 1px solid var(--panel-edge);
+}
+
+.me-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.me-label-wave {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.me-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.me-content {
+  position: relative;
+}
+
+.me-canvas {
+  position: sticky;
+  left: 0;
+  display: block;
+}
+
+.me-phrase {
+  position: absolute;
+  top: 4px;
+  padding-left: 4px;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.me-span-edge {
+  position: absolute;
+  width: 2px;
+  background: var(--ink);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.me-lane {
+  position: absolute;
+  box-sizing: border-box;
+  border-top: 1px solid var(--panel-edge);
+  background: rgb(255 255 255 / 3%);
+}
+
+.me-lane-selected {
+  background: rgb(255 255 255 / 7%);
+}
+
+.me-lane-lit {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+}
+
+.me-lane-shape {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.me-lane-shape path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  opacity: 0.8;
+}
+
+.me-kf {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  padding: 0;
+  border: 2px solid var(--body);
+  border-radius: 50%;
+  background: var(--ink);
+  cursor: grab;
+  touch-action: none;
+}
+
+.me-lane-lit .me-kf {
+  background: var(--warn);
+}
+
+.me-kf-selected,
+.me-kf:focus-visible {
+  background: var(--accent);
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.me-ghost {
+  position: absolute;
+  right: 0;
+  border-top: 1px dashed var(--panel-edge);
+}
+
+.me-ghost-step {
+  position: absolute;
+  top: 4px;
+  height: 22px;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 10%);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 22px;
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+.me-ghost-right {
+  top: 4px;
+  background: color-mix(in srgb, var(--me-incoming) 25%, transparent);
+}
+
+.me-ghost-left {
+  background: color-mix(in srgb, var(--me-outgoing) 25%, transparent);
+}
+
+.me-playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  background: var(--play);
+  pointer-events: none;
+}
+
+.me-inspector {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+}
+
+.me-inspector-title {
+  font-weight: 700;
+}
+
+.me-field {
+  display: grid;
+  gap: 2px;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+}
+
+.me-field select {
+  min-height: 36px;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* "+ New pair": the library in a dialog. */
+.me-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 60%);
+}
+
+.me-picker-box {
+  display: grid;
+  gap: var(--space-3);
+  width: min(960px, 100%);
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-raised);
+}
+
+.me-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.me-picker-head h2 {
+  margin: 0;
+  font-size: var(--text-md);
+}

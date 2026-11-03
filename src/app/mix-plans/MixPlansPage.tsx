@@ -31,7 +31,7 @@ function download(plan: MixPlan) {
   URL.revokeObjectURL(url);
 }
 
-export function MixPlansPage({ onExit }: { readonly onExit: () => void }) {
+export function MixPlansPage({ onExit, onEdit }: { readonly onExit: () => void; /** Opens a plan in the Mix Editor. */ readonly onEdit?: (planId: string) => void }) {
   const library = useMemo(() => planLibrary(musicFolder()), []);
   const [view, setView] = useState<View>({ kind: "list" });
   const [plans, setPlans] = useState<readonly StoredPlan[] | null>(null);
@@ -80,7 +80,9 @@ export function MixPlansPage({ onExit }: { readonly onExit: () => void }) {
         <NewPlan
           library={library}
           onCreate={async (plan) => {
-            if (await save(plan)) setView({ kind: "open", plan });
+            if (!(await save(plan))) return;
+            if (onEdit === undefined) setView({ kind: "open", plan });
+            else onEdit(plan.id);
           }}
         />
       ) : view.kind === "open" ? (
@@ -94,6 +96,7 @@ export function MixPlansPage({ onExit }: { readonly onExit: () => void }) {
           onOpen={(plan) => {
             setView({ kind: "open", plan });
           }}
+          onEdit={onEdit}
           onSave={save}
           onDelete={async (id) => {
             await store.delete(id);
@@ -110,12 +113,13 @@ interface PlanListProps {
   readonly plans: readonly StoredPlan[] | null;
   readonly onNew: () => void;
   readonly onOpen: (plan: MixPlan) => void;
+  readonly onEdit: ((planId: string) => void) | undefined;
   readonly onSave: (plan: MixPlan) => Promise<boolean>;
   readonly onDelete: (id: string) => Promise<void>;
   readonly onProblem: (text: string | null) => void;
 }
 
-function PlanList({ plans, onNew, onOpen, onSave, onDelete, onProblem }: PlanListProps) {
+function PlanList({ plans, onNew, onOpen, onEdit, onSave, onDelete, onProblem }: PlanListProps) {
   const [renaming, setRenaming] = useState<{ readonly id: string; readonly name: string } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -191,6 +195,13 @@ function PlanList({ plans, onNew, onOpen, onSave, onDelete, onProblem }: PlanLis
               <span className="plans-row-actions">
                 {entry.ok ? (
                   <>
+                    {onEdit === undefined ? null : (
+                      <button type="button" className="btn btn-primary" onClick={() => {
+                          onEdit(entry.plan.id);
+                        }}>
+                        Edit
+                      </button>
+                    )}
                     <button type="button" className="btn btn-quiet" onClick={() => {
                         onOpen(entry.plan);
                       }}>

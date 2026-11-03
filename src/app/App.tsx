@@ -24,6 +24,8 @@ const MixGradePage = lazy(() => import("./mix-grade/MixGradePage.tsx").then((mod
 const Freestyle = lazy(() => import("./freestyle/Freestyle.tsx").then((module) => ({ default: module.Freestyle })));
 // Mix plans (the Mix Editor's saved sets), its own chunk.
 const MixPlansPage = lazy(() => import("./mix-plans/MixPlansPage.tsx").then((module) => ({ default: module.MixPlansPage })));
+// The Mix Editor: one plan's Transitions, planned. Its own chunk.
+const MixEditorPage = lazy(() => import("./mix-editor/MixEditorPage.tsx").then((module) => ({ default: module.MixEditorPage })));
 const OriginalsPlayer = lazy(() => import("./originals/OriginalsPlayer.tsx").then((module) => ({ default: module.OriginalsPlayer })));
 
 export const PLAYGROUND_PATH = "/playground";
@@ -53,6 +55,13 @@ export const MIX_GRADE_PATH = "/mix";
 export const FREESTYLE_PATH = "/freestyle";
 /** Mix plans (ISS-186), from the Lesson list: sets planned from the music folder, kept on this device. */
 export const MIX_PLANS_PATH = "/plans";
+/** The Mix Editor (ISS-187) on one plan: /plans/<plan id>. */
+const MIX_EDITOR_PATH = /^\/plans\/([\w-]{1,64})$/;
+
+export function mixEditorPath(planId: string): string {
+  return `${MIX_PLANS_PATH}/${planId}`;
+}
+
 /** Re-taking Placement, from the Lesson list. A first run (no profile yet) shows it at "/". */
 export const PLACEMENT_PATH = "/placement";
 
@@ -199,6 +208,12 @@ export function App() {
   const mixPlans = useCallback(() => {
     navigate(MIX_PLANS_PATH);
   }, [navigate]);
+  const editPlan = useCallback(
+    (planId: string) => {
+      navigate(mixEditorPath(planId));
+    },
+    [navigate],
+  );
 
   if (playgroundEnabled({ pathname: path, search: window.location.search }, import.meta.env.DEV)) {
     return (
@@ -260,7 +275,16 @@ export function App() {
   if (path.replace(/\/$/, "") === MIX_PLANS_PATH) {
     return (
       <Suspense fallback={<p className="lesson-loading">Opening your mix plans…</p>}>
-        <MixPlansPage onExit={exit} />
+        <MixPlansPage onExit={exit} onEdit={editPlan} />
+      </Suspense>
+    );
+  }
+
+  const editedPlan = MIX_EDITOR_PATH.exec(path.replace(/\/$/, ""))?.[1];
+  if (editedPlan !== undefined && learner.kind === "ready") {
+    return (
+      <Suspense fallback={<p className="lesson-loading">Opening the Mix Editor…</p>}>
+        <MixEditorPage key={editedPlan} planId={editedPlan} learner={learner.record} onExit={mixPlans} />
       </Suspense>
     );
   }

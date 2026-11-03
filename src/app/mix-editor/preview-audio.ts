@@ -25,8 +25,8 @@ export interface ScheduledPreview {
   readonly startCtx: number;
   readonly endCtx: number;
   /** The Transition beat heard at a context time. */
-  beatAt(ctxTime: number): number;
-  stop(): void;
+  readonly beatAt: (ctxTime: number) => number;
+  readonly stop: () => void;
 }
 
 function automate(param: AudioParam, points: readonly ParamPoint[], timeOf: (beat: number) => number): void {

@@ -37,8 +37,8 @@ export const SPEC_RULES: readonly SpecRule[] = [
   // Docs, prototypes and the composer are outside the build.
   { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
   // Mix plans (ISS-186): its store, resolution and model are unit and browser tested; its track picker
-  // is the library browser, played end to end in library-browser.spec.ts.
-  { paths: ["src/app/mix-plans/**"], specs: ["e2e/library-browser.spec.ts"] },
+  // is the library browser, played end to end in library-browser.spec.ts; a new plan opens in the Mix Editor.
+  { paths: ["src/app/mix-plans/**"], specs: ["e2e/library-browser.spec.ts", "e2e/mix-editor.spec.ts"] },
   // The library browser (ISS-194): its own spec (the Mix plans picker), the other pickers that use it
   // (Freestyle by screen, folder and FLX4; the final-mix set builder), and its phone-width layout.
   {
@@ -50,10 +50,13 @@ export const SPEC_RULES: readonly SpecRule[] = [
       "e2e/hardware.spec.ts",
       "e2e/final-mix.spec.ts",
       "e2e/mobile.spec.ts",
+      "e2e/mix-editor.spec.ts",
     ],
   },
-  // The Mix Editor (ISS-189): so far only pure derivations (Execution plan, Complexity rating), with no screen; unit tested.
-  { paths: ["src/app/mix-editor/**"], specs: [] },
+  // The Mix Editor (ISS-187, ISS-189): the screen, its preview and its derivations (Execution plan, Complexity rating).
+  { paths: ["src/app/mix-editor/**"], specs: ["e2e/mix-editor.spec.ts"] },
+  // Its in-memory folder of synthetic grooves, used by that spec alone.
+  { paths: ["e2e/mix-editor-support.ts"], specs: ["e2e/mix-editor.spec.ts"] },
   // The spec itself, when only it changed.
   { paths: ["e2e/*.spec.ts"], specs: "self" },
   // Shared by everything: any change here runs the whole suite.
