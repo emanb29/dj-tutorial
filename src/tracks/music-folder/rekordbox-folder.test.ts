@@ -14,7 +14,7 @@ const COLLECTION = `<?xml version="1.0" encoding="UTF-8"?>
 <DJ_PLAYLISTS Version="1.0.0">
   <PRODUCT Name="rekordbox" Version="7.0.0" Company="AlphaTheta"/>
   <COLLECTION Entries="3">
-    <TRACK Name="Brothers (Club Mix)" Artist="Kay Grove" Genre="Deep House" AverageBpm="123.50" Tonality="Am" Rating="204" PlayCount="9"
+    <TRACK Name="Brothers (Club Mix)" Artist="Kay Grove" Album="Night Shifts" Genre="Deep House" AverageBpm="123.50" Tonality="Am" Rating="204" PlayCount="9"
       TotalTime="300" Location="file://localhost/Users/dj/Music/House/Kay%20Grove%20-%20Brothers.mp3">
       <TEMPO Inizio="1.100" Bpm="123.50" Metro="4/4" Battito="3"/>
       <POSITION_MARK Name="Drop" Type="0" Start="62.0" Num="1" Red="255" Green="0" Blue="0"/>
@@ -66,6 +66,9 @@ describe("music folder with rekordbox", () => {
     expect(byFile(music, "Live Take")).toMatchObject({ bpmHint: 118, genre: "Disco" });
     // A file rekordbox does not know keeps the app's own BPM.
     expect(byFile(music, "new")).toMatchObject({ bpmHint: 120 });
+    // The album is the file's, known without reading it; a file rekordbox does not know has none.
+    const albums = Object.fromEntries(music.files().map((file) => [file.name, file.album]));
+    expect(albums).toEqual({ "Kay Grove - Brothers.mp3": "Night Shifts", "live.mp3": null, "new.mp3": null });
   });
 
   it("loads a matched track with rekordbox's grid and hot cues, in place of the app's guess", async () => {

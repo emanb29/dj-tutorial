@@ -3,7 +3,7 @@
  *
  * The format, from AlphaTheta's own list (the primary source) and pyrekordbox's notes on it:
  * - https://cdn.rekordbox.com/files/20200410160904/xml_format_list.pdf
- *   (DJ_PLAYLISTS > COLLECTION > TRACK; TRACK's Name, Artist, Genre, Size, TotalTime, AverageBpm,
+ *   (DJ_PLAYLISTS > COLLECTION > TRACK; TRACK's Name, Artist, Album, Genre, Size, TotalTime, AverageBpm,
  *   PlayCount, Rating, Location "URI formatted", Tonality; TEMPO's Inizio, Bpm, Metro, Battito;
  *   POSITION_MARK's Name, Type, Start, End, Num. Strings are UTF-8 with XML entities; numbers use
  *   a dot; Location is expected under "file://localhost/".)
@@ -48,6 +48,8 @@ export interface RekordboxCue {
 export interface RekordboxTrack {
   readonly name: string;
   readonly artist: string;
+  /** "" when rekordbox has none. */
+  readonly album: string;
   readonly genre: string;
   /** The key as rekordbox shows it ("Am", "8A", "F#m"…); "" when not analysed. */
   readonly tonality: string;
@@ -126,6 +128,7 @@ const text = z.string().optional().transform((value) => value ?? "");
 const TrackSchema = z.object({
   Name: text,
   Artist: text,
+  Album: text,
   Genre: text,
   Tonality: text,
   Rating: optionalNumber,
@@ -333,6 +336,7 @@ export async function parseRekordboxXml(chunks: AsyncIterable<string> | Iterable
     tracks.push({
       name: data.Name,
       artist: data.Artist,
+      album: data.Album,
       genre: data.Genre,
       tonality: data.Tonality,
       rating: data.Rating === null ? 0 : Math.max(0, Math.min(5, Math.round(data.Rating / 51))),

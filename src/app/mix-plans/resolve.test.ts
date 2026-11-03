@@ -8,7 +8,7 @@ import { gridForFile, hashAsTrack, resolvePlanTracks } from "./resolve.ts";
 /** A library file whose bytes are `text`; counts how often it is opened. */
 function libraryFile(name: string, text: string, known: Partial<Pick<FolderFile, "durationSec" | "contentHash" | "rekordboxGrid">> = {}) {
   const read = vi.fn(() => Promise.resolve(new File([text], name)));
-  const file: FolderFile = { trackId: `Music/${name}|1|1`, name, durationSec: null, contentHash: null, rekordboxGrid: null, read, ...known };
+  const file: FolderFile = { trackId: `Music/${name}|1|1`, name, album: null, durationSec: null, contentHash: null, rekordboxGrid: null, read, ...known };
   return { file, read };
 }
 

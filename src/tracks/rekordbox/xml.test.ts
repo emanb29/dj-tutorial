@@ -15,7 +15,7 @@ ${tracks}
   </PLAYLISTS>
 </DJ_PLAYLISTS>`;
 
-const TRACK_ONE = `    <TRACK TrackID="1" Name="Brothers" Artist="Kay Grove" Genre="Deep House" Kind="MP3 File" Size="8123456"
+const TRACK_ONE = `    <TRACK TrackID="1" Name="Brothers" Artist="Kay Grove" Album="Night Shifts" Genre="Deep House" Kind="MP3 File" Size="8123456"
       TotalTime="301" AverageBpm="124.00" Rating="204" PlayCount="7" Tonality="Am"
       Location="file://localhost/Users/dj/Music/House/Kay%20Grove%20-%20Brothers.mp3">
       <TEMPO Inizio="0.120" Bpm="124.00" Metro="4/4" Battito="1"/>
@@ -37,6 +37,7 @@ describe("parseRekordboxXml", () => {
     expect(parsed.library.tracks[0]).toEqual({
       name: "Brothers",
       artist: "Kay Grove",
+      album: "Night Shifts",
       genre: "Deep House",
       tonality: "Am",
       rating: 4,

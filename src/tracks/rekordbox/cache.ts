@@ -4,7 +4,8 @@
 // path, size and date. Personal library data: it stays in IndexedDB here, never goes to the server.
 import type { RekordboxLibrary } from "./xml.ts";
 
-export const REKORDBOX_CACHE_VERSION = 1;
+// 2: tracks carry their Album.
+export const REKORDBOX_CACHE_VERSION = 2;
 
 export type RekordboxSlot = "file" | "folder";
 
