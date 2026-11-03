@@ -68,10 +68,11 @@ _Avoid_: Cheat sheet, handout
 The runtime language model that reads Skill profiles and Check measurements to build the Curriculum and give personalised feedback. It never grades and never hears audio.
 _Avoid_: AI, tutor, assistant
 
-## Mix Editor
+## Sets
 
 **Mix Editor**:
-The screen where a Learner plans a set's Transitions in advance. A tool, not a Lesson: it never gates progress.
+The screen where a Learner plans a set ahead of time: the tracks in order and each transition between them, written in musical terms (beats, phrases, fader and EQ moves) rather than controller terms. A plan can be rendered to one audio file, or practised live with grading. The controller moves each transition needs are derived from the plan, and the Mix Editor warns, without blocking, when a transition is hard to perform live.
+_Avoid_: Mix planner, playlist editor, sequencer
 
 **Mix Plan**:
 An ordered list of tracks from the Learner's own music folder, plus one Transition between each neighbouring pair, saved on the device. It stores musical intent (lanes of keyframes in beats), never controller moves, audio or paths.
