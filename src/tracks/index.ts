@@ -47,6 +47,7 @@ export { AUDIUS_API_TERMS_URL, AUDIUS_PRIVACY_POLICY_URL, createAudiusSource, ty
 export { describeLicence, type LicenceInfo } from "./licence.ts";
 export { decodeOffline, decoderAt, type AudioDecoder } from "./load-audio.ts";
 export {
+  blobPrefix,
   createLocalFileSource,
   indexedDbHandleStore,
   LOCAL_FILE_INPUT,
@@ -55,6 +56,7 @@ export {
   type HandleStore,
   type LocalFileOptions,
   type LocalFileSource,
+  type ReadPrefix,
 } from "./local-files.ts";
 export {
   createMusicFolder,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MusicFolderSnapshot } from "@tracks";
-import { SERVER_LINE, folderCaption, folderCounts, refreshLine, rekordboxLine } from "./MusicFolderPanel.tsx";
+import { REKORDBOX_HOW, SERVER_LINE, SERVER_REKORDBOX_LINE, folderCaption, folderCounts, refreshLine, rekordboxHint, rekordboxLine } from "./MusicFolderPanel.tsx";
 
 const snapshot = (overrides: Partial<MusicFolderSnapshot> = {}): MusicFolderSnapshot => ({
   version: 1,
@@ -29,6 +29,7 @@ const rekordbox = (overrides: Partial<NonNullable<MusicFolderSnapshot["rekordbox
   skipped: 0,
   needsPermission: false,
   canPickFile: true,
+  serverExport: false,
   problem: null,
   matched: 0,
   ...overrides,
@@ -83,5 +84,20 @@ describe("the server's library", () => {
   it("says the server sets it, and how often it is checked", () => {
     expect(refreshLine(server())).toBe(SERVER_LINE);
     expect(refreshLine(server({ access: "none", folder: null }))).toBeNull();
+  });
+});
+
+describe("where rekordbox.xml comes from", () => {
+  it("says how to make one when this device has none", () => {
+    expect(rekordboxHint(snapshot({ rekordbox: rekordbox({ from: null, name: null }) }))).toBe(REKORDBOX_HOW);
+    expect(rekordboxHint(snapshot({ rekordbox: rekordbox() }))).toBeNull();
+  });
+
+  it("names the server as its source on the server's library, with or without one", () => {
+    const server = (overrides: Partial<NonNullable<MusicFolderSnapshot["rekordbox"]>>) =>
+      snapshot({ source: "server", canPick: false, rekordbox: rekordbox({ serverExport: true, canPickFile: false, ...overrides }) });
+    expect(rekordboxHint(server({}))).toBe(SERVER_REKORDBOX_LINE);
+    expect(rekordboxHint(server({ from: null, name: null }))).toBe(SERVER_REKORDBOX_LINE);
+    expect(SERVER_REKORDBOX_LINE).toContain("REKORDBOX_XML");
   });
 });

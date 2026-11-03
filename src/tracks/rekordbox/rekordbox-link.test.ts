@@ -158,6 +158,40 @@ describe("rekordbox link", () => {
     expect(link.status().canPickFile).toBe(false);
   });
 
+  describe("on the server's library", () => {
+    it("uses the server's rekordbox.xml over a file this device picked, and refuses picking one", async () => {
+      const handle = fileHandle("mine.xml", xml("a"));
+      const { link, handleStore } = setUp({ showOpenFilePicker: () => Promise.resolve(handle) });
+      await link.pickFile();
+
+      link.useServerExport();
+      await link.offerFolderFiles([candidate("rekordbox.xml", xml("s1", "s2"))]);
+
+      expect(link.status()).toMatchObject({ from: "folder", name: "rekordbox.xml", tracks: 2, serverExport: true, canPickFile: false });
+      expect(link.library()?.from).toBe("folder");
+      for (const outcome of [await link.pickFile(), await link.useFile(new File([xml("b")], "other.xml"))]) {
+        expect(outcome).toMatchObject({ ok: false, error: { kind: "unsupported" } });
+        if (!outcome.ok) expect(outcome.error.fix).toContain("REKORDBOX_XML");
+      }
+      // This device's own choice is kept for a server without a library.
+      expect(await handleStore.get()).toBe(handle);
+    });
+
+    it("does not ask to read this device's picked file again", async () => {
+      const handle = fileHandle("mine.xml", xml("a"));
+      const first = setUp({ showOpenFilePicker: () => Promise.resolve(handle) });
+      await first.link.pickFile();
+      handle.permission = "prompt";
+
+      const again = setUp({ cache: first.cache, handleStore: first.handleStore });
+      again.link.useServerExport();
+      await again.link.start();
+
+      expect(again.link.status()).toMatchObject({ from: null, tracks: 0, needsPermission: false, serverExport: true });
+      expect(again.link.library()).toBeNull();
+    });
+  });
+
   it("forgets the picked file", async () => {
     const handle = fileHandle("rekordbox.xml", xml("a"));
     const { link, handleStore, cache } = setUp({ showOpenFilePicker: () => Promise.resolve(handle) });

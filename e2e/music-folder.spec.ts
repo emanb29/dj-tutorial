@@ -188,6 +188,10 @@ test("without a folder picker (Android Chrome), a folder is imported once and th
 // requests to /api/music-library are answered here as the server would, in shared/music-library.ts's
 // shape (server/music-library.test.ts tests the real route). A real MP3 so its BPM can be found.
 const MP3 = readFileSync(join(import.meta.dirname, "fixtures", "original.mp3"));
+// The server's REKORDBOX_XML, knowing one of the two files.
+const SERVER_REKORDBOX = `<?xml version="1.0" encoding="UTF-8"?><DJ_PLAYLISTS Version="1.0.0"><PRODUCT Name="rekordbox"/><COLLECTION Entries="1">
+<TRACK TrackID="1" Name="Brothers" Artist="Kay Grove" AverageBpm="123.00" Size="${String(MP3.length)}" Location="file://localhost/D:/Server%20Music/House/Kay%20Grove%20-%20Brothers.mp3"/>
+</COLLECTION></DJ_PLAYLISTS>`;
 
 async function serveLibrary(page: Page): Promise<string[]> {
   const asked: string[] = [];
@@ -206,12 +210,16 @@ async function serveLibrary(page: Page): Promise<string[]> {
               { path: "Broken - Not Music.mp3", size: 9, lastModified: 1_700_000_000_000 },
             ],
             xml: [],
-            rekordboxXml: null,
+            rekordboxXml: { size: SERVER_REKORDBOX.length, lastModified: 1_700_000_000_000 },
             skipped: 0,
             truncated: false,
           },
         },
       });
+      return;
+    }
+    if (url.pathname === "/api/music-library/rekordbox.xml") {
+      await route.fulfill({ body: SERVER_REKORDBOX, contentType: "application/xml" });
       return;
     }
     const path = url.searchParams.get("path");
@@ -239,6 +247,10 @@ test("the server's music library: every device gets it with nothing to pick, and
   await expect(setting.getByRole("button", { name: /Pick a folder|Forget folder/ })).toHaveCount(0);
   await expect(setting.getByText("Import a folder")).toHaveCount(0);
   await expect(setting.getByRole("button", { name: "Rescan now" })).toBeVisible();
+  // rekordbox.xml is the server's too: nothing to pick on this device, and the page says where it comes from.
+  await expect(setting.getByTestId("rekordbox-status")).toHaveText("rekordbox: matched 1 of 2");
+  await expect(setting.getByTestId("rekordbox-hint")).toContainText("rekordbox.xml comes from the server");
+  await expect(setting.getByText("Use rekordbox.xml")).toHaveCount(0);
 
   await page.goto(`/?learner=${id}&track=synthetic`);
   await page.getByRole("button", { name: "Freestyle" }).click();

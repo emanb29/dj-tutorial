@@ -2,7 +2,7 @@
 // grid each file plays on. Only the plan's own tracks are ever analysed (the large-library rule).
 import { IndexedDbAnalysisCache } from "@analysis";
 import type { PlanGrid, PlanTrack } from "@shared/mix-plan.ts";
-import type { FolderFile, MusicFolder } from "@tracks";
+import { blobPrefix, type FolderFile, type MusicFolder } from "@tracks";
 import { analyseFile } from "../music-folder/shared-folder.ts";
 import { gridForFile, hashAsTrack, type GridSources } from "./resolve.ts";
 
@@ -23,7 +23,7 @@ export function planLibrary(folder: MusicFolder): PlanLibrary {
       return folder.files().find((file) => file.trackId === trackId) ?? null;
     },
     async checkPicked(file, track) {
-      const sameFile = (await hashAsTrack(file, track)) === track.contentHash;
+      const sameFile = (await hashAsTrack(blobPrefix(file), track)) === track.contentHash;
       // Decodes and analyses this one file, caching its grid under its own hash.
       const analysed = await analyseFile(file, new AbortController().signal);
       return { sameFile, grid: analysed.ok ? await cachedGrid(analysed.contentHash) : null };

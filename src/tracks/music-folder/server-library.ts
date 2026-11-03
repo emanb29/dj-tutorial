@@ -80,15 +80,32 @@ export async function probeServerLibrary(options: ServerLibraryOptions = {}): Pr
   return parsed.data.configured ? { kind: "library", root: serverRoot(parsed.data.name) } : { kind: "none" };
 }
 
-/** Fetches one file of the library as a File, with the date the index gave it. */
+const notSent = (name: string, response: Response) => new DOMException(`The server could not send "${name}" (${String(response.status)}).`, "NotFoundError");
+
+/**
+ * Fetches one file of the library as a File, with the date the index gave it; or only its start,
+ * with a Range request (server/byte-range.ts), so hashing a candidate (src/app/mix-plans/resolve.ts)
+ * sends 4 MB over the tunnel, not the whole file.
+ */
 function fileHandle(url: string, name: string, lastModified: number, options: ServerLibraryOptions): FileHandleLike {
   return {
     kind: "file",
     name,
     getFile: async () => {
       const response = await (options.fetch ?? fetch)(url);
-      if (!response.ok) throw new DOMException(`The server could not send "${name}" (${String(response.status)}).`, "NotFoundError");
+      if (!response.ok) throw notSent(name, response);
       return new File([await response.blob()], name, { lastModified, type: response.headers.get("content-type") ?? "" });
+    },
+    readPrefix: async (length) => {
+      if (length <= 0) return new ArrayBuffer(0);
+      const response = await (options.fetch ?? fetch)(url, { headers: { range: `bytes=0-${String(length - 1)}` } });
+      if (!response.ok) throw notSent(name, response);
+      // A 206 must be the start; a 200 (a proxy that dropped the Range header) is the whole file, cut here.
+      if (response.status === 206 && !(response.headers.get("content-range") ?? "").startsWith("bytes 0-")) {
+        throw new Error(`The server sent a part of "${name}" that is not its start (${response.headers.get("content-range") ?? "no Content-Range"}).`);
+      }
+      const bytes = await response.arrayBuffer();
+      return bytes.byteLength > length ? bytes.slice(0, length) : bytes;
     },
   };
 }

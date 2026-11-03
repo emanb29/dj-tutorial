@@ -6,6 +6,9 @@
  *   without the picker, a file input gives the file once and what was read from it is kept;
  * - found in the music folder: any .xml there whose root is DJ_PLAYLISTS (rekordbox.xml first), read
  *   again when a rescan sees it change. A picked file wins over one in the folder.
+ * On the server's library (`useServerExport`), the folder's file is the only one: the server's
+ * REKORDBOX_XML, or a rekordbox.xml in MUSIC_DIR, the same on every device. This device's picked
+ * file is neither read nor used there, but kept for a server without a library.
  * What was read is kept in IndexedDB (cache.ts), so the next visit does not parse it again. Reading
  * is in a worker (parser.ts). Personal library data: it never leaves the browser.
  */
@@ -51,6 +54,8 @@ export interface RekordboxStatus {
   /** The picked file is remembered, but the browser wants a click to read it again. */
   readonly needsPermission: boolean;
   readonly canPickFile: boolean;
+  /** The collection is the server library's own (useServerExport): nothing is picked on this device. */
+  readonly serverExport: boolean;
   readonly problem: { readonly message: string; readonly fix: string } | null;
 }
 
@@ -78,6 +83,8 @@ export interface RekordboxLink {
   forgetFile(): Promise<void>;
   /** The music folder was forgotten: its collection goes too. */
   forgetFolder(): Promise<void>;
+  /** The music folder is the server's library: from now on only its .xml files count. Call before start(). */
+  useServerExport(): void;
 }
 
 function defaultFilePicker(): (() => Promise<RekordboxFileHandle>) | null {
@@ -104,6 +111,12 @@ const UNSUPPORTED: TrackError = {
   fix: "Choose rekordbox.xml with the file button, or put it in your music folder.",
 };
 
+const ON_SERVER: TrackError = {
+  kind: "unsupported",
+  message: "This library's rekordbox.xml comes from the server, the same on every device.",
+  fix: "To change it, set REKORDBOX_XML in the server's .env, or save rekordbox.xml in MUSIC_DIR, then Rescan now.",
+};
+
 const stampOf = (name: string, stamp: FileStamp) => `${name}|${String(stamp.size)}|${String(stamp.lastModified)}`;
 
 /** rekordbox.xml first, then the other .xml files by path. */
@@ -124,6 +137,7 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
   const notRekordbox = new Set<string>();
   const listeners = new Set<() => void>();
   let fileHandle: RekordboxFileHandle | null = null;
+  let serverExport = false;
   let needsPermission = false;
   let problem: RekordboxStatus["problem"] = null;
   let reading = 0;
@@ -144,7 +158,7 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
   };
 
   const active = (): { slot: RekordboxSlot; value: CachedRekordbox } | null => {
-    if (kept.file !== null) return { slot: "file", value: kept.file };
+    if (kept.file !== null && !serverExport) return { slot: "file", value: kept.file };
     if (kept.folder !== null) return { slot: "folder", value: kept.folder };
     return null;
   };
@@ -225,8 +239,9 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
         reading: reading > 0,
         tracks: now?.value.library.tracks.length ?? 0,
         skipped: now?.value.library.skippedTracks ?? 0,
-        needsPermission,
-        canPickFile: picker !== null,
+        needsPermission: needsPermission && !serverExport,
+        canPickFile: picker !== null && !serverExport,
+        serverExport,
         problem,
       };
       return cached;
@@ -250,6 +265,7 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
         kept.file ??= file;
         kept.folder ??= folder;
         changed();
+        if (serverExport) return;
         let handle: RekordboxFileHandle | null;
         try {
           handle = await handleStore.get();
@@ -270,6 +286,7 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
 
     pickFile: () =>
       serial(async (): Promise<RekordboxOutcome> => {
+        if (serverExport) return { ok: false, error: ON_SERVER };
         if (fileHandle !== null && needsPermission) {
           const handle = fileHandle;
           const permission = (await handle.requestPermission?.({ mode: "read" })) ?? "granted";
@@ -298,6 +315,7 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
 
     useFile: (file) =>
       serial(async (): Promise<RekordboxOutcome> => {
+        if (serverExport) return { ok: false, error: ON_SERVER };
         const error = await read("file", file.name, stampOf(file.name, file), () => Promise.resolve(file));
         problem = error === null ? null : { message: error.message, fix: error.fix };
         if (error === null) {
@@ -310,7 +328,7 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
 
     offerFolderFiles: (files) =>
       serial(async () => {
-        if (kept.file !== null) return;
+        if (kept.file !== null && !serverExport) return;
         for (const candidate of preferred(files)) {
           const stamp = stampOf(candidate.path, candidate.stamp);
           if (notRekordbox.has(stamp)) continue;
@@ -350,5 +368,10 @@ export function createRekordboxLink(options: RekordboxLinkOptions): RekordboxLin
         changed();
         await cache.clear("folder");
       }),
+
+    useServerExport: () => {
+      serverExport = true;
+      changed();
+    },
   };
 }

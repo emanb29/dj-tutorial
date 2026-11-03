@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MusicLibraryIndex } from "@shared/music-library.ts";
 import { memoryHandleStore, type DirectoryHandleLike } from "../local-files.ts";
+import { memoryRekordboxCache } from "../rekordbox/cache.ts";
 import { createRekordboxLink } from "../rekordbox/rekordbox-link.ts";
 import { parseRekordboxXml } from "../rekordbox/xml.ts";
 import { memoryEntryCache } from "./entry-cache.ts";
@@ -119,11 +120,39 @@ describe("scanServerLibrary", () => {
     expect(summary.truncated).toBe(true);
   });
 
+  it("reads a file's start with a Range request, cutting a whole file a server sent instead", async () => {
+    const server = fakeServer(LIBRARY, { "House/Kay Grove - Brothers.mp3": "abc", "Other - Track.mp3": "other" });
+    const fetch = vi.fn((input: string, init?: RequestInit) => server.fetch(input, init));
+    const { found } = await scanAll(await serverRoot(server), scanServerLibrary({ fetch: fetch as unknown as typeof globalThis.fetch }));
+    const [first, second] = found;
+    if (first?.handle.readPrefix === undefined || second?.handle.readPrefix === undefined) throw new Error("expected server handles to read a prefix");
+
+    // The fake ignores Range and answers 200 with the whole file, as a proxy that drops the header would.
+    expect(new TextDecoder().decode(await second.handle.readPrefix(2))).toBe("ot");
+    expect(new TextDecoder().decode(await first.handle.readPrefix(4 * 1024 * 1024))).toBe("abc");
+    expect(fetch.mock.calls.filter(([url]) => url.includes("/file")).map(([url, init]) => [url, new Headers(init?.headers).get("range")])).toEqual([
+      ["/api/music-library/file?path=Other%20-%20Track.mp3", "bytes=0-1"],
+      ["/api/music-library/file?path=House%2FKay%20Grove%20-%20Brothers.mp3", `bytes=0-${String(4 * 1024 * 1024 - 1)}`],
+    ]);
+  });
+
+  it("refuses a range that does not start at the file's start", async () => {
+    const server = fakeServer(LIBRARY);
+    const fetch = ((input: string) =>
+      input.includes("/file")
+        ? Promise.resolve(new Response("xyz", { status: 206, headers: { "content-range": "bytes 7-9/10" } }))
+        : server.fetch(input)) as typeof globalThis.fetch;
+    const { found } = await scanAll(await serverRoot(server), scanServerLibrary({ fetch }));
+
+    await expect(found[0]?.handle.readPrefix?.(3)).rejects.toThrow("not its start");
+  });
+
   it("fails reading a file the server no longer has as a missing file does", async () => {
     const server = fakeServer(LIBRARY);
     const { found } = await scanAll(await serverRoot(server), scanServerLibrary({ fetch: server.fetch }));
 
     await expect(found[1]?.handle.getFile()).rejects.toMatchObject({ name: "NotFoundError" });
+    await expect(found[1]?.handle.readPrefix?.(10)).rejects.toMatchObject({ name: "NotFoundError" });
   });
 });
 
@@ -211,6 +240,31 @@ describe("music folder on the server's library", () => {
 
     expect(music.snapshot().rekordbox).toMatchObject({ from: "folder", matched: 1 });
     expect(music.tracks().find((track) => track.title === "Brothers (Club Mix)")).toMatchObject({ bpmHint: 123.5 });
+  });
+
+  it("uses the server's rekordbox.xml even where this device picked its own", async () => {
+    const serverXml = `<?xml version="1.0"?><DJ_PLAYLISTS Version="1.0.0"><PRODUCT Name="rekordbox"/><COLLECTION Entries="1">
+      <TRACK TrackID="1" Name="Brothers" Artist="Kay Grove" AverageBpm="123.50" Size="3" Location="file://localhost/D:/Music/House/Kay%20Grove%20-%20Brothers.mp3"/>
+      </COLLECTION></DJ_PLAYLISTS>`;
+    const deviceXml = serverXml.replace("123.50", "99.00");
+    const parsed = await parseRekordboxXml([deviceXml]);
+    if (!parsed.ok) throw new Error("the device's xml should parse");
+    const cache = memoryRekordboxCache();
+    await cache.put("file", { stamp: "mine.xml|1|1", name: "mine.xml", library: parsed.library });
+    const server = fakeServer({ ...LIBRARY, rekordboxXml: { size: serverXml.length, lastModified: 9 } }, { "rekordbox.xml": serverXml });
+    const music = createMusicFolder({
+      analyse,
+      scan: (root, options) => scanServerLibrary({ fetch: server.fetch })(root, options),
+      watch: () => Promise.resolve({ how: "polling", stop: () => undefined }),
+      server: () => probeServerLibrary({ fetch: server.fetch }),
+      rekordbox: createRekordboxLink({ parse: async (file) => parseRekordboxXml([await file.text()]), cache, showOpenFilePicker: null }),
+      notifyEveryMs: 0,
+    });
+    await music.start();
+    await music.settled();
+
+    expect(music.snapshot().rekordbox).toMatchObject({ from: "folder", name: "rekordbox.xml", serverExport: true, matched: 1 });
+    expect(music.tracks().find((track) => track.title === "Brothers")).toMatchObject({ bpmHint: 123.5 });
   });
 
   it("says what is wrong, and does not fall back to this browser's folder, when the server's library cannot be read", async () => {

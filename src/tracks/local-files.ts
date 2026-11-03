@@ -26,7 +26,24 @@ export interface FileHandleLike {
   readonly kind: "file";
   readonly name: string;
   getFile(): Promise<File>;
+  /** Reads only the first `length` bytes, where that costs less than getting the File (the server's library: one Range request). */
+  readPrefix?: ReadPrefix;
 }
+
+/** Reads a file's first `length` bytes (all of a shorter file). */
+export type ReadPrefix = (length: number) => Promise<ArrayBuffer>;
+
+/** ReadPrefix for a File or Blob already in hand: its slice. */
+export const blobPrefix =
+  (blob: Blob): ReadPrefix =>
+  (length) =>
+    blob.slice(0, length).arrayBuffer();
+
+/** ReadPrefix for a handle: its own where it has one, else the File's slice. */
+export const handlePrefix =
+  (handle: FileHandleLike): ReadPrefix =>
+  async (length) =>
+    handle.readPrefix === undefined ? blobPrefix(await handle.getFile())(length) : handle.readPrefix(length);
 
 export interface DirectoryHandleLike {
   readonly kind: "directory";

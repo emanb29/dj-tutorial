@@ -159,6 +159,14 @@ describe("GET /api/music-library/file", () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(MP3_BYTES.slice(10, 20));
   });
 
+  it("answers the hash's 4 MB prefix request on a shorter file with all of it, as a 206", async () => {
+    const response = await appRequest(app(), libraryFileUrl("Kay Grove - Brothers.mp3"), { headers: { range: `bytes=0-${String(4 * 1024 * 1024 - 1)}` } });
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe("bytes 0-999/1000");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(MP3_BYTES);
+  });
+
   it("sends files in subfolders and the folder's .xml", async () => {
     const wav = await appRequest(app(), libraryFileUrl("House/Deep/Loop.wav"));
     const xml = await appRequest(app(), libraryFileUrl("House/rekordbox.xml"));
