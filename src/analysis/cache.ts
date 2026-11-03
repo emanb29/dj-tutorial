@@ -2,7 +2,7 @@
 // never audio (Audius audio must not be persisted; ADR 0001).
 
 import { hashPrefixWith } from "@shared/track-hash.ts";
-import { ANALYSIS_VERSION, type DecodedAudio, type TrackAnalysis } from "./types.ts";
+import { ANALYSIS_VERSION, type DecodedAudio, type MethodPreference, type TrackAnalysis } from "./types.ts";
 
 // The file-bytes key lives in shared/ so the track sources compute exactly the same one.
 export { CONTENT_HASH_PREFIX_BYTES, hashTrackBytes } from "@shared/track-hash.ts";
@@ -20,6 +20,14 @@ export function hashDecodedAudio(audio: DecodedAudio): Promise<string> {
   const first = audio.channels[0] ?? new Float32Array(0);
   const view = new Uint8Array(first.buffer, first.byteOffset, first.byteLength);
   return hashPrefixWith(view, `pcm|rate=${String(audio.sampleRate)}|samples=${String(first.length)}`);
+}
+
+/**
+ * Where analyseTrack keeps a track's analysis: its content hash and the method asked for, so a dj-core
+ * result never answers a request for Beat This!. Read the cache with this key, never the bare hash.
+ */
+export function analysisCacheKey(contentHash: string, method: MethodPreference = "auto"): string {
+  return `${contentHash}|${method}`;
 }
 
 export const isCurrentVersion = (analysis: TrackAnalysis) => analysis.analysisVersion === ANALYSIS_VERSION;

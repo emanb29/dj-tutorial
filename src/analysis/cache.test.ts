@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { CONTENT_HASH_PREFIX_BYTES, hashDecodedAudio, hashTrackBytes, MemoryAnalysisCache } from "./cache.ts";
+import { analysisCacheKey, CONTENT_HASH_PREFIX_BYTES, hashDecodedAudio, hashTrackBytes, MemoryAnalysisCache } from "./cache.ts";
 import { hashTrackBytes as sharedHashTrackBytes } from "@shared/track-hash.ts";
 import { sampleAnalysis } from "./sample-analysis.ts";
+
+describe("analysisCacheKey", () => {
+  it("is the content hash with the method asked for, auto by default", () => {
+    expect(analysisCacheKey("ab12")).toBe("ab12|auto");
+    expect(analysisCacheKey("ab12", "dj-core")).toBe("ab12|dj-core");
+  });
+});
 
 describe("content hash", () => {
   const bytes = Uint8Array.from({ length: CONTENT_HASH_PREFIX_BYTES + 1000 }, (_, i) => (i * 31) % 256);

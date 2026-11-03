@@ -81,7 +81,7 @@
  * @module
  */
 export { analyseTrack, type AnalyseOptions } from "./client.ts";
-export { hashDecodedAudio, hashTrackBytes, MemoryAnalysisCache, type AnalysisCache } from "./cache.ts";
+export { analysisCacheKey, hashDecodedAudio, hashTrackBytes, MemoryAnalysisCache, type AnalysisCache } from "./cache.ts";
 export { IndexedDbAnalysisCache } from "./indexeddb-cache.ts";
 export { BEAT_THIS_SMALL0, DEFAULT_MODEL_URL, MODEL_MISSING_FIX } from "./model.ts";
 export type * from "./types.ts";

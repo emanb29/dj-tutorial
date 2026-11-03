@@ -1,6 +1,6 @@
 // The music folder as the Mix Plans page needs it: the files, one file analysed on demand, and the
 // grid each file plays on. Only the plan's own tracks are ever analysed (the large-library rule).
-import { IndexedDbAnalysisCache } from "@analysis";
+import { analysisCacheKey, IndexedDbAnalysisCache } from "@analysis";
 import type { PlanGrid, PlanTrack } from "@shared/mix-plan.ts";
 import type { FolderFile, MusicFolder } from "@tracks";
 import { analyseFile } from "../music-folder/shared-folder.ts";
@@ -14,7 +14,8 @@ export interface PlanLibrary extends GridSources {
 
 export function planLibrary(folder: MusicFolder): PlanLibrary {
   const cache = new IndexedDbAnalysisCache();
-  const cachedGrid = async (contentHash: string): Promise<PlanGrid | null> => (await cache.get(contentHash)) ?? null;
+  // analyseTrack keeps each analysis under the hash and the method (analysisCacheKey), not the bare hash.
+  const cachedGrid = async (contentHash: string): Promise<PlanGrid | null> => (await cache.get(analysisCacheKey(contentHash))) ?? null;
   return {
     files: () => folder.files(),
     cachedGrid,

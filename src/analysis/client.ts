@@ -1,7 +1,7 @@
 // analyseTrack: the main-thread entry point. Checks the cache, runs one worker per analysis, relays
 // progress, stores the result, and always terminates the worker.
 
-import { hashDecodedAudio, type AnalysisCache } from "./cache.ts";
+import { analysisCacheKey, hashDecodedAudio, type AnalysisCache } from "./cache.ts";
 import { DEFAULT_MODEL_URL } from "./model.ts";
 import type { AnalyseRequest, WorkerMessage } from "./protocol.ts";
 import type { AnalysisOutcome, AnalysisProgress, DecodedAudio, MethodPreference, TrackAnalysis } from "./types.ts";
@@ -47,7 +47,7 @@ export async function analyseTrack(audio: DecodedAudio, options: AnalyseOptions 
   const method = options.method ?? "auto";
   if (signal?.aborted) return ABORTED;
   // The method is part of the key: a dj-core result must not answer a request for Beat This!.
-  const key = cache ? `${options.contentHash ?? (await hashDecodedAudio(audio))}|${method}` : null;
+  const key = cache ? analysisCacheKey(options.contentHash ?? (await hashDecodedAudio(audio)), method) : null;
   if (cache && key !== null) {
     const hit = await cached(cache, key);
     if (signal?.aborted) return ABORTED;
