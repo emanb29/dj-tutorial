@@ -6,6 +6,8 @@ import { testGrid, testPlan } from "@shared/mix-plan-test-support.ts";
 import type { MixPlan, PlanGrid } from "@shared/mix-plan.ts";
 import { renderMixPlan, type RenderOutcome, type RenderProgress } from "./render.ts";
 import { setTimeline } from "./timeline.ts";
+import { decoderAt } from "@tracks/load-audio.ts";
+import { planTrackGainDbOf } from "@app/mix-plans/level.ts";
 import { MemorySink, partialsTrack, rms, source, TEST_RATE, wavFile, zeroCrossingHz } from "./test-support.ts";
 
 const SECONDS = 60;
@@ -32,7 +34,7 @@ function startOf(plan: MixPlan, grids: readonly PlanGrid[]): number {
 
 describe("renderMixPlan", () => {
   it("lands a two-track plan's moves on the planned samples: the cut on the 1, and the incoming track's first beat", async () => {
-    // Track 1 is a steady level, so the crossfader's cut shows sample by sample; track 2 is silent but
+    // Track 1 is a steady level, so the cut (fader A snapping down) shows sample by sample; track 2 is silent but
     // for a click on bar 1, beat 2 (0.6 s into it), a beat after the cut at 120 BPM.
     const { plan } = testPlan(2, { recipe: "cut-on-the-1", grid: () => grid() });
     const grids = [grid(), grid()];
@@ -44,7 +46,7 @@ describe("renderMixPlan", () => {
     const out = sink.channel(0);
     const cut = Math.round(startOf(plan, grids) * TEST_RATE);
     const level = 0.5 * crossfaderGain("A", 0.5);
-    // Untouched up to the sample before the cut (16-bit precision), then the crossfader's 3 ms glide down from it.
+    // Untouched up to the sample before the cut (16-bit precision), then the fader's 3 ms glide down from it.
     expect(out[cut - 1000]).toBeCloseTo(level, 3);
     expect(out[cut - 1]).toBeCloseTo(level, 3);
     expect(out[cut + 1]).toBeLessThan(level - 0.001);
@@ -95,6 +97,41 @@ describe("renderMixPlan", () => {
     expect(off.outcome.result.masterTempo).toEqual({ kind: "off", tracks: [2] });
     expect(zeroCrossingHz(kept.sink.channel(0), afterBlend, afterBlend + 10) / 660).toBeCloseTo(1, 2);
     expect(zeroCrossingHz(off.sink.channel(0), afterBlend, afterBlend + 10) / (660 * (120 / 126))).toBeCloseTo(1, 2);
+  }, 120_000);
+
+  it("leaves the incoming track at the same level after a cut on the 1 as after a fader blend (within 0.5 dB)", async () => {
+    const tone = wavFile(partialsTrack(SECONDS, [[440, 0.3]]));
+    const levelAfter = async (recipe: "cut-on-the-1" | "crossfade-8") => {
+      const { plan } = testPlan(2, { recipe, grid: () => grid() });
+      const { outcome, sink } = await render(plan, [grid(), grid()], [tone, tone]);
+      if (!outcome.ok) throw new Error("the render should succeed");
+      const timed = setTimeline(plan, [grid(), grid()]);
+      if (!timed.ok) throw new Error(timed.problems[0]?.message);
+      const end = timed.timeline.transitions[0]?.endSec ?? Number.NaN;
+      return { after: 20 * Math.log10(rms(sink.channel(0), end + 1, end + 6)), before: 20 * Math.log10(rms(sink.channel(0), 2, 7)) };
+    };
+    const cut = await levelAfter("cut-on-the-1");
+    const blend = await levelAfter("crossfade-8");
+    expect(Math.abs(cut.after - blend.after)).toBeLessThan(0.5);
+    // And both at the level track 1 played at before its Transition.
+    expect(Math.abs(cut.after - cut.before)).toBeLessThan(0.5);
+  }, 120_000);
+
+  it("keeps a set of loud masters out of the red with new plans' level match (the Lessons' set-up trim)", async () => {
+    // A dense, limited-sounding signal peaking at −0.2 dBFS, in phase on both tracks so a blend sums them.
+    const loud = partialsTrack(SECONDS, [[55, 0.5], [110, 0.3], [220, 0.17]]);
+    const peak = loud.reduce((most, sample) => Math.max(most, Math.abs(sample)), 0);
+    const master = wavFile(loud.map((sample) => (sample / peak) * 0.977));
+    const gainDb = planTrackGainDbOf(await decoderAt(TEST_RATE)(await master.arrayBuffer()));
+    expect(gainDb).toBeCloseTo(-8.8, 0);
+    const { plan } = testPlan(2, { recipe: "crossfade-8", grid: () => grid() });
+    const at = (level: number): MixPlan => ({ ...plan, tracks: plan.tracks.map((track) => ({ ...track, gainDb: level })) });
+    const unity = await render(at(0), [grid(), grid()], [master, master]);
+    const trimmed = await render(at(gainDb), [grid(), grid()], [master, master]);
+    if (!unity.outcome.ok || !trimmed.outcome.ok) throw new Error("both renders should succeed");
+    expect(unity.outcome.result.levels.clippedSamples).toBeGreaterThan(0);
+    expect(trimmed.outcome.result.levels.clippedSamples).toBe(0);
+    expect(trimmed.outcome.result.levels.peakDbfs).toBeLessThan(-1);
   }, 120_000);
 
   it("reports the peak and integrated loudness, and never normalises", async () => {

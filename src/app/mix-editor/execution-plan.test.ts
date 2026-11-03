@@ -83,29 +83,29 @@ describe("golden Execution plans and ratings, one per recipe", () => {
     });
   });
 
-  it("a cut on the 1: PLAY B and a crossfader snap on the phrase's 1, fader B already up; rated 2", () => {
+  it("a cut on the 1: PLAY B and fader A snapping down on the phrase's 1, fader B already up; rated 2", () => {
     const plan = deriveExecution(recipe("cut-on-the-1"), DECKS, EVERYTHING);
     expect(plan.setUp).toEqual([CUED, CENTRED, setUp("A.channel-fader", 1, null), setUp("B.channel-fader", 1, ref(1, 0))]);
     expect(plan.steps).toEqual([
       step("B.play", "right", [0, 0], [false, true], FINE, "incoming-start"),
-      step("crossfader", "left", [0, 0], [0.5, 1], FINE, ref(0, 0)),
+      step("A.channel-fader", "left", [0, 0], [1, 0], FINE, ref(0, 0)),
     ]);
     expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("fine-timing", 0, [], 1), reason("fine-timing", 0, [0], 1)] });
   });
 
-  it("a cut on the 1 after a phrase with B unheard: one crossfader snap realises both volume jumps", () => {
+  it("a cut on the 1 after a phrase with B unheard: both faders snap on the 1, the crossfader centred", () => {
     const plan = deriveExecution(
       custom(32, [lane("outgoing", "volume", [kf(32, 0, "jump")]), lane("incoming", "volume", [kf(0, 0, "jump"), kf(32, 1, "jump")])]),
       DECKS,
       EVERYTHING,
     );
-    // The crossfader starts on A's side with fader B already up, so B is unheard until the snap.
-    expect(plan.setUp).toEqual([CUED, setUp("crossfader", 0, ref(1, 0)), setUp("A.channel-fader", 1, null), setUp("B.channel-fader", 1, null)]);
-    expect(plan.steps).toEqual([PLAY_B_UNHEARD, step("crossfader", "left", [32, 32], [0, 1], FINE, ref(0, 0), [ref(1, 1)])]);
-    expect(plan.complexity).toEqual({ rating: 2, score: 1, weightsVersion: 1, reasons: [reason("fine-timing", 32, [0, 1], 1)] });
+    // Not a crossfader cut: at its side the crossfader leaves a deck 3 dB above a centred blend.
+    expect(plan.setUp).toEqual([CUED, CENTRED, setUp("A.channel-fader", 1, null), setUp("B.channel-fader", 0, ref(1, 0))]);
+    expect(plan.steps).toEqual([PLAY_B_UNHEARD, step("A.channel-fader", "left", [32, 32], [1, 0], FINE, ref(0, 0)), step("B.channel-fader", "right", [32, 32], [0, 1], FINE, ref(1, 1))]);
+    expect(plan.complexity).toEqual({ rating: 2, score: 2, weightsVersion: 1, reasons: [reason("fine-timing", 32, [0], 1), reason("fine-timing", 32, [1], 1)] });
   });
 
-  it("a filter sweep: CFX A and fader B together over a phrase, then the crossfader and LOW B on the next 1; rated 2", () => {
+  it("a filter sweep: CFX A and fader B together over a phrase, then fader A and LOW B on the next 1; rated 2", () => {
     const plan = deriveExecution(recipe("filter-sweep"), DECKS, EVERYTHING);
     expect(plan.setUp).toEqual([
       CUED,
@@ -119,8 +119,7 @@ describe("golden Execution plans and ratings, one per recipe", () => {
       PLAY_B_UNHEARD,
       step("A.filter", "left", [0, 32], [0, 1], LOOSE, ref(0, 1)),
       step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(2, 1)),
-      // LOW B has the right hand on the 1, so the crossfader goes to the left.
-      step("crossfader", "left", [32, 32], [0.5, 1], FINE, ref(1, 0)),
+      step("A.channel-fader", "left", [32, 32], [1, 0], FINE, ref(1, 0)),
       step("B.eq-low", "right", [32, 32], [-1, 0], FINE, ref(3, 1)),
     ]);
     expect(plan.complexity).toEqual({
@@ -207,7 +206,7 @@ describe("golden Execution plans and ratings, one per recipe", () => {
       step("B.channel-fader", "right", [0, 32], [0, 1], LOOSE, ref(1, 1)),
       // Both hands are on a ramp, so BEAT FX ON stays with the right one: two moves on one hand.
       step("beat-fx-on", "right", [28, 28], [false, true], FINE, ref(2, 1)),
-      step("crossfader", "left", [32, 32], [0.5, 1], FINE, ref(3, 1)),
+      step("A.channel-fader", "left", [32, 32], [1, 0], FINE, ref(3, 1)),
     ]);
     expect(plan.complexity).toEqual({
       rating: 4,
@@ -290,27 +289,12 @@ describe("hands", () => {
     expect(plan.complexity.reasons).toContainEqual(reason("hand-jump", 8, [1, 2], 1));
   });
 
-  it("the crossfader goes to the free hand", () => {
-    const busyRight = deriveExecution(
-      custom(48, [
-        lane("outgoing", "volume", [kf(16, 1), kf(32, 0, "jump")]),
-        lane("incoming", "filter", [kf(0, -1), kf(24, -1), kf(40, 0)]),
-        lane("incoming", "volume", [kf(0, 1)]),
-      ]),
-      DECKS,
-      EVERYTHING,
-    );
-    expect(busyRight.steps.find(({ control }) => control === "crossfader")?.hand).toBe("left");
-    const busyLeft = deriveExecution(
-      custom(48, [
-        lane("outgoing", "volume", [kf(32, 0, "jump")]),
-        lane("outgoing", "filter", [kf(24, 0), kf(40, 1)]),
-        lane("incoming", "volume", [kf(0, 1)]),
-      ]),
-      DECKS,
-      EVERYTHING,
-    );
-    expect(busyLeft.steps.find(({ control }) => control === "crossfader")?.hand).toBe("right");
+  it("keeps the crossfader centred in every recipe, so every track plays at the level a fader blend gives it", () => {
+    for (const id of RECIPE_IDS) {
+      const plan = deriveExecution(recipe(id), DECKS, EVERYTHING);
+      expect(plan.setUp.filter(({ control }) => control === "crossfader")).toEqual([CENTRED]);
+      expect(plan.steps.filter(({ control }) => control === "crossfader")).toEqual([]);
+    }
   });
 
   it("more than two moves at once are all still emitted, and only rated", () => {

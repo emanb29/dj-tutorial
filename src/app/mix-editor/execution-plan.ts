@@ -6,10 +6,11 @@
 // Rules (v1, the design doc's "Derived: Execution plan"):
 // - Each control starts where its lane starts (lanes.ts `laneTimeline`), in the set-up ("Match your
 //   controller").
-// - Volume is the channel fader, with the crossfader centred. A volume jump to 0 on a phrase start,
-//   while the other track is (or jumps to) full and stays there, is a crossfader cut instead; when the
-//   other track jumps in on the same beat, the one snap realises both keyframes, and the crossfader
-//   starts on the outgoing side with the other fader already up.
+// - Volume is the channel fader, with the crossfader centred throughout, jumps included: a cut on the
+//   1 is the faders snapping. The crossfader's constant-power curve puts a deck at its side 3 dB above
+//   the centre, so a crossfader cut would leave the incoming track louder than a fader blend does, and
+//   the next Transition (centred again) would drop it. Faders keep every track at one level, the same
+//   one the Mix Editor's preview and the Render play.
 // - EQ, filter and tempo are their knob or fader on the track's deck, one to one.
 // - Echo send is Beat FX ECHO on the deck's channel: BEAT FX ON when the wet leaves or returns to 0,
 //   LEVEL/DEPTH while it moves; CH SELECT, BEAT ◀/▶ (`echoBeats`) and the first LEVEL/DEPTH are set up.
@@ -28,10 +29,10 @@
 import type { DeckId } from "@audio";
 import type { ControllerUnlocks } from "@app/controller/control-ids.ts";
 import { deckLayoutId, type Flx4Control, flx4LayoutControl } from "@app/controller/flx4-keys.ts";
-import { BEATS_PER_BAR, type Keyframe, type Lane, type LaneParam, type Transition } from "@shared/mix-plan.ts";
+import { BEATS_PER_BAR, type Lane, type LaneParam, type Transition } from "@shared/mix-plan.ts";
 import { type Complexity, rateComplexity } from "./complexity.ts";
 import { assignHands, type UnassignedStep } from "./hands.ts";
-import { heard, isJump, isPhraseStart, type LaneEntry, laneTimeline, type LaneTimeline, type LaneTrack, valueAt, valueBefore, volumeLaneIndex } from "./lanes.ts";
+import { heard, isJump, type LaneEntry, laneTimeline, type LaneTimeline, type LaneTrack } from "./lanes.ts";
 
 export type Hand = "left" | "right";
 
@@ -88,7 +89,6 @@ export const FINE_WINDOW_BEATS = 1 / 8;
 export const LOOSE_WINDOW_BEATS = 1 / 2;
 
 const CROSSFADER_CENTRE = 0.5;
-const CROSSFADER_SIDE: Readonly<Record<DeckId, number>> = { A: 0, B: 1 };
 const FX_CHANNEL: Readonly<Record<DeckId, number>> = { A: 1, B: 2 };
 /** 4 BEAT/EXIT's loop. A lane without `loopBeats` (validation flags it) loops a bar. */
 const FOUR_BEAT_LOOP = BEATS_PER_BAR;
@@ -108,18 +108,6 @@ interface Draft {
 }
 type StepDraft = Omit<UnassignedStep, "alsoRealises"> & Draft;
 type SetUpDraft = Omit<SetUpItem, "alsoRealises"> & Draft;
-
-/** A crossfader cut found in the lanes, and the keyframes it claims. */
-interface CrossfaderCut {
-  readonly setUp: SetUpDraft;
-  readonly step: StepDraft;
-  /** When the cut brings the other track in: its volume lane, and its fader, up behind the crossfader. */
-  readonly bringsIn: { readonly lane: number; readonly fader: SetUpDraft } | null;
-  /** "lane:keyframe" → the draft that realises it. */
-  readonly claims: ReadonlyMap<string, Draft>;
-}
-
-const key = ({ lane, keyframe }: KeyframeRef) => `${String(lane)}:${String(keyframe)}`;
 
 class PlanBuilder {
   readonly setUp: SetUpDraft[] = [];
@@ -151,9 +139,6 @@ class PlanBuilder {
 /** A lane's start as an entry (index -1: no keyframe of its own), then its moves. */
 const sequenceOf = (timeline: LaneTimeline): LaneEntry[] => [{ index: -1, keyframe: timeline.keyframes[0] ?? { beat: 0, value: timeline.startValue, curve: "jump" } }, ...timeline.moves];
 
-/** Whether every entry from `from` on has `value`. */
-const staysAt = (entries: readonly LaneEntry[], from: number, value: number) => entries.slice(from).every(({ keyframe }) => keyframe.value === value);
-
 /** Each item with the one before it (none for the first) and its position. */
 const withPrevious = <Item>(items: readonly Item[]) => items.map((current, position) => ({ current, previous: items[position - 1], position }));
 
@@ -161,71 +146,6 @@ const withPrevious = <Item>(items: readonly Item[]) => items.map((current, posit
 function absorbedRefs(laneIndex: number, timeline: LaneTimeline): { source: KeyframeRef | null; alsoRealises: KeyframeRef[] } {
   const [first, ...rest] = timeline.absorbed.map((keyframe) => ({ lane: laneIndex, keyframe }));
   return { source: first ?? null, alsoRealises: rest };
-}
-
-function findCrossfaderCut(builder: PlanBuilder): CrossfaderCut | null {
-  const { transition, deckOf } = builder;
-  const timelineOf = (index: number) => {
-    const lane = transition.lanes[index];
-    return lane === undefined ? null : laneTimeline(lane);
-  };
-  for (const track of ["outgoing", "incoming"] as const) {
-    const other: LaneTrack = track === "outgoing" ? "incoming" : "outgoing";
-    const laneIndex = volumeLaneIndex(transition, track);
-    const timeline = timelineOf(laneIndex);
-    if (timeline === null) continue;
-    const entries = sequenceOf(timeline);
-    const otherIndex = volumeLaneIndex(transition, other);
-    const otherTimeline = timelineOf(otherIndex);
-    // A track without a volume lane stays at rest: the outgoing one full, the incoming one silent.
-    const otherEntries: LaneEntry[] =
-      otherTimeline === null ? [{ index: -1, keyframe: { beat: 0, value: other === "outgoing" ? 1 : 0, curve: "jump" } }] : sequenceOf(otherTimeline);
-    const otherKeyframes: Keyframe[] = otherEntries.map(({ keyframe }) => keyframe);
-    for (const { current, previous, position } of withPrevious(entries)) {
-      if (previous === undefined) continue;
-      const { keyframe, index } = current;
-      const beat = keyframe.beat;
-      const cuts = keyframe.value === 0 && previous.keyframe.value > 0 && isJump(previous.keyframe, keyframe) && isPhraseStart(transition, beat) && staysAt(entries, position, 0);
-      if (!cuts) continue;
-      const otherFrom = otherEntries.findIndex(({ keyframe: candidate }) => candidate.beat >= beat);
-      const otherStaysFull = otherFrom === -1 ? otherKeyframes.at(-1)?.value === 1 : staysAt(otherEntries, otherFrom, 1);
-      if (!otherStaysFull || valueAt(otherKeyframes, beat) !== 1) continue;
-      const otherJump = otherEntries[otherFrom];
-      const beforeOtherJump = otherEntries[otherFrom - 1];
-      const bringsIn =
-        otherTimeline !== null &&
-        otherJump !== undefined &&
-        otherJump.index >= 0 &&
-        beforeOtherJump !== undefined &&
-        otherJump.keyframe.beat === beat &&
-        isJump(beforeOtherJump.keyframe, otherJump.keyframe) &&
-        otherEntries.slice(0, otherFrom).every(({ keyframe: before }) => before.value === 0);
-      if (!bringsIn && valueBefore(otherKeyframes, beat) !== 1) continue;
-
-      const start = bringsIn ? CROSSFADER_SIDE[deckOf[track]] : CROSSFADER_CENTRE;
-      // When the cut brings the other track in, the crossfader is what keeps it silent until then.
-      const silentUntilCut = bringsIn ? absorbedRefs(otherIndex, otherTimeline) : { source: null, alsoRealises: [] };
-      const setUp: SetUpDraft = { control: "crossfader", deck: null, value: start, ...silentUntilCut };
-      const cutRef = { lane: laneIndex, keyframe: index };
-      const otherJumpRef = bringsIn ? { lane: otherIndex, keyframe: otherJump.index } : null;
-      const step: StepDraft = {
-        control: "crossfader",
-        deck: null,
-        startBeat: beat,
-        endBeat: beat,
-        from: start,
-        to: CROSSFADER_SIDE[deckOf[other]],
-        windowBeats: FINE_WINDOW_BEATS,
-        source: cutRef,
-        alsoRealises: otherJumpRef === null ? [] : [otherJumpRef],
-      };
-      const claims = new Map<string, Draft>([[key(cutRef), step]]);
-      if (otherJumpRef !== null) claims.set(key(otherJumpRef), step);
-      const fader: SetUpDraft = { control: deckLayoutId(deckOf[other], "channel-fader"), deck: deckOf[other], value: 1, source: null, alsoRealises: [] };
-      return { setUp, step, bringsIn: bringsIn ? { lane: otherIndex, fader } : null, claims };
-    }
-  }
-  return null;
 }
 
 interface LaneContext {
@@ -237,24 +157,16 @@ interface LaneContext {
 }
 
 /** Volume, EQ, filter and tempo: one knob or fader, set up where the lane starts, then moved to each keyframe. */
-function continuousLane(context: LaneContext, part: (typeof CONTINUOUS_PARTS)[keyof typeof CONTINUOUS_PARTS], cut: CrossfaderCut | null): void {
+function continuousLane(context: LaneContext, part: (typeof CONTINUOUS_PARTS)[keyof typeof CONTINUOUS_PARTS]): void {
   const { builder, laneIndex, lane, deck, timeline } = context;
   const control = deckLayoutId(deck, part);
-  let realiser: Draft;
-  if (cut?.bringsIn?.lane === laneIndex) {
-    builder.setUp.push(cut.bringsIn.fader);
-    realiser = cut.setUp;
-  } else {
-    const { source, alsoRealises } = absorbedRefs(laneIndex, timeline);
-    realiser = builder.addSetUp(control, timeline.startValue, source, alsoRealises);
-  }
+  const { source, alsoRealises } = absorbedRefs(laneIndex, timeline);
+  let realiser: Draft = builder.addSetUp(control, timeline.startValue, source, alsoRealises);
   for (const { current, previous } of withPrevious(sequenceOf(timeline))) {
     if (previous === undefined) continue;
     const { index, keyframe } = current;
     const ref = { lane: laneIndex, keyframe: index };
-    const claim = cut?.claims.get(key(ref));
-    if (claim !== undefined) realiser = claim;
-    else if (keyframe.value === previous.keyframe.value) realiser.alsoRealises.push(ref);
+    if (keyframe.value === previous.keyframe.value) realiser.alsoRealises.push(ref);
     else if (isJump(previous.keyframe, keyframe)) {
       const window = lane.param === "volume" ? FINE_WINDOW_BEATS : builder.instantWindow(lane.track, keyframe.beat);
       realiser = builder.addStep(control, [keyframe.beat, keyframe.beat], [previous.keyframe.value, keyframe.value], window, ref);
@@ -361,12 +273,7 @@ export function deriveExecution(transition: Transition, deckOf: DeckOf, unlocked
   builder.addSetUp(deckLayoutId(deckOf.incoming, "cue"), true, "incoming-start");
   builder.addStep(deckLayoutId(deckOf.incoming, "play"), [0, 0], [false, true], builder.instantWindow("incoming", 0), "incoming-start");
 
-  const cut = findCrossfaderCut(builder);
-  if (cut === null) builder.addSetUp("crossfader", CROSSFADER_CENTRE, null);
-  else {
-    builder.setUp.push(cut.setUp);
-    builder.steps.push(cut.step);
-  }
+  builder.addSetUp("crossfader", CROSSFADER_CENTRE, null);
 
   transition.lanes.forEach((lane, laneIndex) => {
     const timeline = laneTimeline(lane);
@@ -374,7 +281,7 @@ export function deriveExecution(transition: Transition, deckOf: DeckOf, unlocked
     const context: LaneContext = { builder, laneIndex, lane, deck: deckOf[lane.track], timeline };
     if (lane.param === "echo-send") echoLane(context);
     else if (lane.param === "loop") loopLane(context);
-    else continuousLane(context, CONTINUOUS_PARTS[lane.param], cut);
+    else continuousLane(context, CONTINUOUS_PARTS[lane.param]);
   });
 
   const steps = assignHands(inTimeOrder(builder.steps));

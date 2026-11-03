@@ -132,12 +132,14 @@ export function transitionFromRecipe(
 export interface PickedTrack {
   readonly track: Omit<PlanTrack, "gridHash" | "startAt" | "gainDb" | "source">;
   readonly grid: PlanGrid;
+  /** The level match, dB; the app measures it (the Lessons' set-up trim). Default 0. */
+  readonly gainDb?: number;
 }
 
 /**
  * A new plan over `picked`, in that order: each track from bar 1, and one `recipe` Transition per pair,
  * on the last phrase of the outgoing track it fits in, bringing the incoming track in from bar 1.
- * Levels are left matched at 0 dB. The result may still have problems (a track too short for the
+ * Each level match is the picked track's `gainDb` (0 dB when not given). The result may still have problems (a track too short for the
  * recipe): validate it.
  */
 export function newMixPlan(input: {
@@ -151,7 +153,7 @@ export function newMixPlan(input: {
   const recipe = input.recipe ?? "crossfade-16";
   const { lengthBeats } = RECIPES[recipe];
   const bar1: GridPos = { bar: 1, beat: 1 };
-  const tracks: PlanTrack[] = input.picked.map(({ track, grid }) => ({ ...track, source: "local", gridHash: gridHashOf(grid), startAt: bar1, gainDb: 0 }));
+  const tracks: PlanTrack[] = input.picked.map(({ track, grid, gainDb }) => ({ ...track, source: "local", gridHash: gridHashOf(grid), startAt: bar1, gainDb: gainDb ?? 0 }));
   const transitions = input.picked.slice(0, -1).map(({ grid }, index) =>
     transitionFromRecipe(recipe, {
       outgoingAt: lastPhraseStartFitting(grid, lengthBeats) ?? bar1,

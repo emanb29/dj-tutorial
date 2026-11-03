@@ -155,8 +155,16 @@ export const UNMEASURED_PEAK_DB = -6;
  * both decks keeps the tracks' own loudness difference, which level-match grades.
  */
 export function setUpTrimDb(track: LessonTrack): number {
-  const peaks = [track.peakDbfs ?? UNMEASURED_PEAK_DB, ...(track.partner === undefined ? [] : [track.partner.peakDbfs ?? UNMEASURED_PEAK_DB])];
-  return Math.min(0, SET_UP_PEAK_DB - Math.max(...peaks));
+  return setUpTrimDbForPeaks([track.peakDbfs, ...(track.partner === undefined ? [] : [track.partner.peakDbfs])]);
+}
+
+/**
+ * The set-up trim, dB, for tracks with these sample peaks (dBFS; unmeasured ones count as
+ * UNMEASURED_PEAK_DB): the loudest comes down to SET_UP_PEAK_DB, never a boost. A Mix Plan's tracks
+ * each get their own (`gainDb`), as Freestyle and the set builder trim each deck.
+ */
+export function setUpTrimDbForPeaks(peaksDbfs: readonly (number | null | undefined)[]): number {
+  return Math.min(0, SET_UP_PEAK_DB - Math.max(...peaksDbfs.map((peak) => peak ?? UNMEASURED_PEAK_DB)));
 }
 
 /** `setUpTrimDb` as the trim knob: what every Lesson set-up turns TRIM to, except where trimming is the point (gain-staging). */

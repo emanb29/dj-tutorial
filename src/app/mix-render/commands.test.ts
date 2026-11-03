@@ -61,24 +61,15 @@ describe("mixCommands", () => {
     expect(outgoingFader.filter(([sec]) => sec > 0 && sec < 272)).toEqual([]);
   });
 
-  it("plays a cut on the 1 with the crossfader, and brings it back to the centre over the bar before the next Transition", () => {
+  it("plays a cut on the 1 with the channel faders, the crossfader centred all set long", () => {
     const { commands, timeline } = render("cut-on-the-1", 3);
     const [first, second] = timeline.transitions;
     if (first === undefined || second === undefined) throw new Error("expected two Transitions");
-    // The incoming track starts at full behind the centred crossfader, which snaps to its side on the 1.
+    // The incoming track starts with its fader up as it starts on the 1, and the outgoing fader snaps down there.
     expect(moves(commands, { control: "channel-fader", deck: "B" }).filter(([sec]) => sec === first.startSec).at(-1)).toEqual([first.startSec, 1]);
-    const crossfader = moves(commands, { control: "crossfader" });
-    expect(crossfader.filter(([sec]) => sec <= first.startSec)).toEqual([
-      [0, 0.5],
-      [first.startSec, 1],
-    ]);
-    // The next Transition starts centred: track 2 eases down 3 dB over the 4 beats (2 s) before it, then cuts to deck A.
-    const back = crossfader.filter(([sec]) => sec > first.startSec && sec < second.startSec);
-    expect(back[0]?.[0]).toBeGreaterThan(second.startSec - 2);
-    expect(crossfader.slice(-2)).toEqual([
-      [near(second.startSec), 0.5],
-      [second.startSec, 0],
-    ]);
+    expect(moves(commands, { control: "channel-fader", deck: "A" }).filter(([sec]) => sec > 0 && sec <= first.startSec)).toEqual([[first.startSec, 0]]);
+    expect(moves(commands, { control: "crossfader" })).toEqual([[0, 0.5]]);
+    expect(moves(commands, { control: "channel-fader", deck: "B" }).filter(([sec]) => sec > 0 && sec <= second.startSec).at(-1)).toEqual([second.startSec, 0]);
   });
 
   it("plays an echo out with Beat FX on the outgoing deck, at that deck's BPM", () => {

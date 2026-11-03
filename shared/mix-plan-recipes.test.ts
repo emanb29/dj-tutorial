@@ -138,6 +138,13 @@ describe("Transition recipes", () => {
 });
 
 describe("newMixPlan", () => {
+  it("keeps each picked track's measured level match, and 0 dB where none is given", () => {
+    const [first, second] = testPicked(2);
+    if (first === undefined || second === undefined) throw new Error("expected two picked tracks");
+    const plan = newMixPlan({ id: "p", name: "Levels", now: "2026-11-03T12:00:00.000Z", picked: [{ ...first, gainDb: -8.7 }, second] });
+    expect(plan.tracks.map((track) => track.gainDb)).toEqual([-8.7, 0]);
+  });
+
   it("lays each Transition on the outgoing track's last phrase that fits, the incoming track from bar 1", () => {
     const { plan } = testPlan(3);
     expect(plan.version).toBe(1);
