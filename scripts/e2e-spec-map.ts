@@ -90,4 +90,6 @@ export const SPEC_RULES: readonly SpecRule[] = [
   { paths: ["src/app/playground/**"], specs: ["e2e/controller.spec.ts", "e2e/mobile.spec.ts"] },
   // The DDJ-FLX4: the MIDI module and the Controller page (src/app/controller/hardware.ts stays under the shared controller rule).
   { paths: ["src/midi/**", "src/app/controller-page/**"], specs: ["e2e/hardware.spec.ts", "e2e/music-folder.spec.ts"] },
+  // The Mix Editor: so far only pure derivations (Execution plan, Complexity rating), with no screen; its unit tests cover it.
+  { paths: ["src/app/mix-editor/**"], specs: [] },
 ];

@@ -1,0 +1,400 @@
+// The Execution plan: the FLX4 moves a Transition needs, derived from its lanes. Pure and
+// deterministic, never stored, so changing these rules never needs a migration. Design in the Mix
+// Editor is never limited by the controller: anything drawn derives, however hard, and the Complexity
+// rating says how hard.
+//
+// Rules (v1, the design doc's "Derived: Execution plan"):
+// - A lane's first keyframe is where its control starts, in the set-up ("Match your controller").
+// - Volume is the channel fader, with the crossfader centred. A volume jump to 0 on a phrase start,
+//   while the other track is (or jumps to) full and stays there, is a crossfader cut instead; when the
+//   other track jumps in on the same beat, the one snap realises both keyframes, and the crossfader
+//   starts on the outgoing side with the other fader already up.
+// - EQ, filter and tempo are their knob or fader on the track's deck, one to one.
+// - Echo send is Beat FX ECHO on the deck's channel: BEAT FX ON when the wet leaves or returns to 0,
+//   LEVEL/DEPTH while it moves; CH SELECT, BEAT ◀/▶ (echoBeats) and the first LEVEL/DEPTH are set up.
+// - Loop is 4 BEAT/EXIT for a 4-beat loop, LOOP IN then LOOP OUT for any other length, and EXIT to end.
+// - The incoming track starts with PLAY on its deck at beat 0 (it is heard from `incomingAt` there),
+//   cued in the set-up.
+// - A ramp (linear or ease) is one continuous move over its span; a jump is an instant move.
+// - A keyframe that only holds the lane's value is realised by whatever brought the lane there.
+//
+// Values (`from`, `to`, set-up `value`) are the control's position: faders and LEVEL/DEPTH 0…1, the
+// crossfader 0 (deck A's side) to 1 (deck B's), EQ and CFX −1…1, TEMPO in BPM (its fader's position
+// depends on the track's own BPM and range), CH SELECT 1 or 2, BEAT ◀/▶ in beats, and buttons the
+// on/off state they set.
+
+import type { DeckId } from "@audio";
+import type { ControllerUnlocks } from "@app/controller/control-ids.ts";
+import { deckLayoutId, type Flx4Control, flx4LayoutControl } from "@app/controller/flx4-keys.ts";
+import { type Complexity, rateComplexity } from "./complexity.ts";
+import { assignHands, type UnassignedStep } from "./hands.ts";
+import {
+  heard,
+  isJump,
+  isPhraseStart,
+  type Keyframe,
+  type Lane,
+  type LaneParam,
+  type LaneTrack,
+  orderedKeyframes,
+  type Transition,
+  valueAt,
+  valueBefore,
+  volumeLaneIndex,
+} from "./lanes.ts";
+
+export type Hand = "left" | "right";
+
+/** A keyframe, by its lane's index in the Transition and its own in the lane. */
+export interface KeyframeRef {
+  readonly lane: number;
+  readonly keyframe: number;
+}
+
+/** What a step realises: a keyframe, or the incoming track's start. */
+export type StepSource = KeyframeRef | "incoming-start";
+
+export interface ExecutionStep {
+  readonly control: Flx4Control;
+  readonly deck: DeckId | null;
+  /** By the layout: deck A's side left, deck B's right, the crossfader to the free hand. */
+  readonly hand: Hand;
+  /** Beats from the Transition's start; equal for a button or a jump. */
+  readonly startBeat: number;
+  readonly endBeat: number;
+  readonly from: number | boolean;
+  readonly to: number | boolean;
+  /** How precisely it must land, ± beats (the grading tolerance). */
+  readonly windowBeats: number;
+  /** The keyframe it realises, for captions and the editor's highlight. */
+  readonly source: StepSource;
+  /** Other keyframes the same gesture realises: the other track's jump in a crossfader cut, or keyframes that hold the value it reached. */
+  readonly alsoRealises: readonly KeyframeRef[];
+}
+
+/** Where a control must be before the Transition starts. */
+export interface SetUpItem {
+  readonly control: Flx4Control;
+  readonly deck: DeckId | null;
+  readonly value: number | boolean;
+  /** The keyframe this position realises; null for one the moves need but no keyframe names. */
+  readonly source: StepSource | null;
+  readonly alsoRealises: readonly KeyframeRef[];
+}
+
+export interface ExecutionPlan {
+  readonly setUp: readonly SetUpItem[];
+  /** In time order. */
+  readonly steps: readonly ExecutionStep[];
+  readonly complexity: Complexity;
+}
+
+/** Which deck each track of the Transition is on. */
+export type DeckOf = Readonly<Record<LaneTrack, DeckId>>;
+
+/** A move that lands on the beat it is heard: a cut on the 1, an echo throw. */
+export const FINE_WINDOW_BEATS = 1 / 8;
+/** A move nobody hears land (the track is silent then), and the start of a ramp. */
+export const LOOSE_WINDOW_BEATS = 1 / 2;
+
+const CROSSFADER_CENTRE = 0.5;
+const CROSSFADER_SIDE: Readonly<Record<DeckId, number>> = { A: 0, B: 1 };
+const FX_CHANNEL: Readonly<Record<DeckId, number>> = { A: 1, B: 2 };
+const FOUR_BEAT_LOOP = 4;
+
+const CONTINUOUS_PARTS = {
+  volume: "channel-fader",
+  "eq-low": "eq-low",
+  "eq-mid": "eq-mid",
+  "eq-high": "eq-high",
+  filter: "filter",
+  tempo: "tempo",
+} as const satisfies Partial<Record<LaneParam, string>>;
+
+/** A step or set-up item while the plan is built: holds are added to the one that brought their lane there. */
+interface Draft {
+  readonly alsoRealises: KeyframeRef[];
+}
+type StepDraft = Omit<UnassignedStep, "alsoRealises"> & Draft;
+type SetUpDraft = Omit<SetUpItem, "alsoRealises"> & Draft;
+
+/** A crossfader cut found in the lanes, and the keyframes it claims. */
+interface CrossfaderCut {
+  readonly setUp: SetUpDraft;
+  readonly step: StepDraft;
+  /** The other track's fader, up behind the crossfader, when the cut brings it in. */
+  readonly otherFader: SetUpDraft | null;
+  /** "lane:keyframe" → the draft that realises it. */
+  readonly claims: ReadonlyMap<string, Draft>;
+}
+
+const key = ({ lane, keyframe }: KeyframeRef) => `${String(lane)}:${String(keyframe)}`;
+
+class PlanBuilder {
+  readonly setUp: SetUpDraft[] = [];
+  readonly steps: StepDraft[] = [];
+
+  constructor(
+    readonly transition: Transition,
+    readonly deckOf: DeckOf,
+  ) {}
+
+  addSetUp(control: Flx4Control, value: number | boolean, source: StepSource | null): SetUpDraft {
+    const draft: SetUpDraft = { control, deck: this.deckFor(control), value, source, alsoRealises: [] };
+    this.setUp.push(draft);
+    return draft;
+  }
+
+  addStep(control: Flx4Control, [startBeat, endBeat]: readonly [number, number], [from, to]: readonly [number | boolean, number | boolean], windowBeats: number, source: StepSource): StepDraft {
+    const draft: StepDraft = { control, deck: this.deckFor(control), startBeat, endBeat, from, to, windowBeats, source, alsoRealises: [] };
+    this.steps.push(draft);
+    return draft;
+  }
+
+  /** A button or jump on a track: fine-timed when the track is heard then, loose when it is silent. */
+  instantWindow(track: LaneTrack, beat: number): number {
+    return heard(this.transition, track, beat) ? FINE_WINDOW_BEATS : LOOSE_WINDOW_BEATS;
+  }
+
+  private deckFor(control: Flx4Control): DeckId | null {
+    return flx4LayoutControl(control).deck;
+  }
+}
+
+/** Whether every keyframe from `from` on (in beat order) has `value`. */
+const staysAt = (ordered: readonly { keyframe: Keyframe }[], from: number, value: number) => ordered.slice(from).every(({ keyframe }) => keyframe.value === value);
+
+/** Each item with the one before it (none for the first) and its position. */
+const withPrevious = <Item>(items: readonly Item[]) => items.map((current, position) => ({ current, previous: items[position - 1], position }));
+
+function findCrossfaderCut(builder: PlanBuilder): CrossfaderCut | null {
+  const { transition, deckOf } = builder;
+  for (const track of ["outgoing", "incoming"] as const) {
+    const other: LaneTrack = track === "outgoing" ? "incoming" : "outgoing";
+    const laneIndex = volumeLaneIndex(transition, track);
+    const lane = transition.lanes[laneIndex];
+    if (lane === undefined) continue;
+    const ordered = orderedKeyframes(lane);
+    const otherIndex = volumeLaneIndex(transition, other);
+    const otherLane = transition.lanes[otherIndex];
+    const otherOrdered = otherLane === undefined ? [] : orderedKeyframes(otherLane);
+    const otherKeyframes = otherOrdered.map(({ keyframe }) => keyframe);
+    for (const { current, previous, position } of withPrevious(ordered)) {
+      if (previous === undefined) continue;
+      const { keyframe, index } = current;
+      const beat = keyframe.beat;
+      const cuts = keyframe.value === 0 && previous.keyframe.value > 0 && isJump(previous.keyframe, keyframe) && isPhraseStart(transition, beat) && staysAt(ordered, position, 0);
+      if (!cuts) continue;
+      const otherFrom = otherOrdered.findIndex(({ keyframe: candidate }) => candidate.beat >= beat);
+      const otherStaysFull = otherFrom === -1 ? (otherKeyframes.at(-1)?.value ?? 1) === 1 : staysAt(otherOrdered, otherFrom, 1);
+      if (!otherStaysFull || (valueAt(otherKeyframes, beat) ?? 1) !== 1) continue;
+      const cutRef = { lane: laneIndex, keyframe: index };
+      const otherJump = otherOrdered[otherFrom];
+      const beforeOtherJump = otherOrdered[otherFrom - 1];
+      const bringsIn =
+        otherJump !== undefined &&
+        beforeOtherJump !== undefined &&
+        otherJump.keyframe.beat === beat &&
+        isJump(beforeOtherJump.keyframe, otherJump.keyframe) &&
+        otherOrdered.slice(0, otherFrom).every(({ keyframe: before }) => before.value === 0);
+      if (!bringsIn && (valueBefore(otherKeyframes, beat) ?? 1) !== 1) continue;
+      const start = bringsIn ? CROSSFADER_SIDE[deckOf[track]] : CROSSFADER_CENTRE;
+      const otherOpening = otherOrdered[0];
+      const setUp: SetUpDraft = {
+        control: "crossfader",
+        deck: null,
+        value: start,
+        source: bringsIn && otherOpening !== undefined ? { lane: otherIndex, keyframe: otherOpening.index } : null,
+        alsoRealises: [],
+      };
+      const step: StepDraft = {
+        control: "crossfader",
+        deck: null,
+        startBeat: beat,
+        endBeat: beat,
+        from: start,
+        to: CROSSFADER_SIDE[deckOf[other]],
+        windowBeats: FINE_WINDOW_BEATS,
+        source: cutRef,
+        alsoRealises: bringsIn ? [{ lane: otherIndex, keyframe: otherJump.index }] : [],
+      };
+      const claims = new Map<string, Draft>([[key(cutRef), step]]);
+      if (bringsIn && otherOpening !== undefined) {
+        claims.set(key({ lane: otherIndex, keyframe: otherOpening.index }), setUp);
+        claims.set(key({ lane: otherIndex, keyframe: otherJump.index }), step);
+      }
+      const otherFader: SetUpDraft | null = bringsIn ? { control: deckLayoutId(deckOf[other], "channel-fader"), deck: deckOf[other], value: 1, source: null, alsoRealises: [] } : null;
+      return { setUp, step, otherFader, claims };
+    }
+  }
+  return null;
+}
+
+interface LaneContext {
+  readonly builder: PlanBuilder;
+  readonly laneIndex: number;
+  readonly lane: Lane;
+  readonly deck: DeckId;
+  /** In beat order, with each keyframe's index in the lane. */
+  readonly ordered: readonly { readonly index: number; readonly keyframe: Keyframe }[];
+}
+
+/** Volume, EQ, filter and tempo: one knob or fader, set up at the first keyframe, then moved to each. */
+function continuousLane(context: LaneContext, part: (typeof CONTINUOUS_PARTS)[keyof typeof CONTINUOUS_PARTS], claimed: (ref: KeyframeRef) => Draft | undefined, cut: CrossfaderCut | null): void {
+  const { builder, laneIndex, lane, deck, ordered } = context;
+  const control = deckLayoutId(deck, part);
+  let realiser: Draft | undefined;
+  ordered.forEach(({ index, keyframe }, position) => {
+    const ref = { lane: laneIndex, keyframe: index };
+    const claim = claimed(ref);
+    if (claim !== undefined) {
+      // The other track's fader goes up behind the crossfader, in its own lane's place in the set-up.
+      const otherFader = cut?.otherFader ?? null;
+      if (position === 0 && otherFader !== null) builder.setUp.push(otherFader);
+      realiser = claim;
+      return;
+    }
+    const previous = ordered[position - 1]?.keyframe;
+    if (previous === undefined) {
+      realiser = builder.addSetUp(control, keyframe.value, ref);
+      return;
+    }
+    if (keyframe.value === previous.value) {
+      realiser?.alsoRealises.push(ref);
+      return;
+    }
+    if (isJump(previous, keyframe)) {
+      const window = lane.param === "volume" ? FINE_WINDOW_BEATS : builder.instantWindow(lane.track, keyframe.beat);
+      realiser = builder.addStep(control, [keyframe.beat, keyframe.beat], [previous.value, keyframe.value], window, ref);
+    } else {
+      realiser = builder.addStep(control, [previous.beat, keyframe.beat], [previous.value, keyframe.value], LOOSE_WINDOW_BEATS, ref);
+    }
+  });
+}
+
+/** Echo send: Beat FX ECHO, its state tracked so the lane's wet is always ON × LEVEL/DEPTH. */
+function echoLane(context: LaneContext): void {
+  const { builder, laneIndex, lane, deck, ordered } = context;
+  const opening = ordered[0];
+  if (opening === undefined) return;
+  const ref = (index: number) => ({ lane: laneIndex, keyframe: index });
+  // LEVEL/DEPTH is set up where the first engagement needs it: at its value for a jump, at 0 for a fade in.
+  const engagement = withPrevious(ordered).find(({ current, previous }) => previous !== undefined && current.keyframe.value > 0 && previous.keyframe.value === 0);
+  const engagementDepth = engagement?.previous === undefined ? null : isJump(engagement.previous.keyframe, engagement.current.keyframe) ? engagement.current.keyframe.value : 0;
+  const neverWet = opening.keyframe.value === 0 && engagement === undefined;
+
+  let realiser: Draft = builder.addSetUp("beat-fx-on", false, opening.keyframe.value === 0 ? ref(opening.index) : null);
+  if (neverWet) {
+    for (const { index } of ordered.slice(1)) realiser.alsoRealises.push(ref(index));
+    return;
+  }
+  builder.addSetUp("beat-fx-channel", FX_CHANNEL[deck], null);
+  builder.addSetUp("beat-fx-beat", lane.echoBeats ?? 1, null);
+  let on = false;
+  let depth = opening.keyframe.value > 0 ? opening.keyframe.value : (engagementDepth ?? 0);
+  builder.addSetUp("beat-fx-depth", depth, opening.keyframe.value > 0 ? ref(opening.index) : null);
+  if (opening.keyframe.value > 0) {
+    realiser = builder.addStep("beat-fx-on", [opening.keyframe.beat, opening.keyframe.beat], [false, true], builder.instantWindow(lane.track, opening.keyframe.beat), ref(opening.index));
+    on = true;
+  }
+
+  for (const { current, previous: before } of withPrevious(ordered).slice(1)) {
+    if (before === undefined) continue;
+    const { index, keyframe } = current;
+    const previous = before.keyframe;
+    const source = ref(index);
+    if (keyframe.value === previous.value) {
+      realiser.alsoRealises.push(source);
+      continue;
+    }
+    const press = (beat: number, to: boolean) => builder.addStep("beat-fx-on", [beat, beat], [!to, to], builder.instantWindow(lane.track, beat), source);
+    const turn = (span: readonly [number, number], from: number, to: number, window: number) => builder.addStep("beat-fx-depth", span, [from, to], window, source);
+    if (isJump(previous, keyframe)) {
+      const beat = keyframe.beat;
+      if (keyframe.value === 0) {
+        realiser = press(beat, false);
+        on = false;
+        continue;
+      }
+      if (depth !== keyframe.value) realiser = turn([beat, beat], depth, keyframe.value, builder.instantWindow(lane.track, beat));
+      depth = keyframe.value;
+      if (!on) {
+        realiser = press(beat, true);
+        on = true;
+      }
+      continue;
+    }
+    if (!on) {
+      if (depth !== 0) turn([previous.beat, previous.beat], depth, 0, LOOSE_WINDOW_BEATS);
+      press(previous.beat, true);
+      on = true;
+      depth = 0;
+    }
+    realiser = turn([previous.beat, keyframe.beat], depth, keyframe.value, LOOSE_WINDOW_BEATS);
+    depth = keyframe.value;
+  }
+}
+
+/** Loop: no set-up can hold a loop (it starts where it is pressed), so a loop at the first keyframe is a press there. */
+function loopLane(context: LaneContext): void {
+  const { builder, laneIndex, lane, deck, ordered } = context;
+  const ref = (index: number) => ({ lane: laneIndex, keyframe: index });
+  const startLoop = (beat: number, length: number, source: KeyframeRef): StepDraft => {
+    if (length === FOUR_BEAT_LOOP) return builder.addStep(deckLayoutId(deck, "loop-exit"), [beat, beat], [false, true], builder.instantWindow(lane.track, beat), source);
+    builder.addStep(deckLayoutId(deck, "loop-in"), [beat, beat], [false, true], builder.instantWindow(lane.track, beat), source);
+    return builder.addStep(deckLayoutId(deck, "loop-out"), [beat + length, beat + length], [false, true], builder.instantWindow(lane.track, beat + length), source);
+  };
+  let realiser: Draft | undefined;
+  ordered.forEach(({ index, keyframe }, position) => {
+    const previous = ordered[position - 1]?.keyframe;
+    if (previous === undefined) {
+      realiser = keyframe.value > 0 ? startLoop(keyframe.beat, keyframe.value, ref(index)) : builder.addSetUp(deckLayoutId(deck, "loop-exit"), false, ref(index));
+      return;
+    }
+    if (keyframe.value === previous.value) {
+      realiser?.alsoRealises.push(ref(index));
+      return;
+    }
+    // Loops do not ramp: every change lands on its keyframe's beat.
+    if (previous.value > 0) realiser = builder.addStep(deckLayoutId(deck, "loop-exit"), [keyframe.beat, keyframe.beat], [true, false], builder.instantWindow(lane.track, keyframe.beat), ref(index));
+    if (keyframe.value > 0) realiser = startLoop(keyframe.beat, keyframe.value, ref(index));
+  });
+}
+
+/** Steps in time order: at one beat, PLAY first, then by lane and keyframe, as the strip lists them. */
+function inTimeOrder(steps: readonly StepDraft[]): StepDraft[] {
+  const rank = ({ source }: StepDraft): KeyframeRef => (source === "incoming-start" ? { lane: -1, keyframe: -1 } : source);
+  return steps
+    .map((step, order) => ({ step, order, rank: rank(step) }))
+    .sort((a, b) => a.step.startBeat - b.step.startBeat || a.rank.lane - b.rank.lane || a.rank.keyframe - b.rank.keyframe || a.order - b.order)
+    .map(({ step }) => step);
+}
+
+/**
+ * The FLX4 moves that perform `transition`, with the tracks on `deckOf`'s decks, rated for a Learner
+ * who has `unlocked` these controls.
+ */
+export function deriveExecution(transition: Transition, deckOf: DeckOf, unlocked: ControllerUnlocks): ExecutionPlan {
+  if (deckOf.outgoing === deckOf.incoming) throw new Error(`Both tracks are on deck ${deckOf.outgoing}: a Transition needs the outgoing and incoming tracks on different decks.`);
+  const builder = new PlanBuilder(transition, deckOf);
+  builder.addSetUp(deckLayoutId(deckOf.incoming, "cue"), true, "incoming-start");
+  builder.addStep(deckLayoutId(deckOf.incoming, "play"), [0, 0], [false, true], builder.instantWindow("incoming", 0), "incoming-start");
+
+  const cut = findCrossfaderCut(builder);
+  if (cut === null) builder.addSetUp("crossfader", CROSSFADER_CENTRE, null);
+  else {
+    builder.setUp.push(cut.setUp);
+    builder.steps.push(cut.step);
+  }
+  const claimed = (ref: KeyframeRef) => cut?.claims.get(key(ref));
+
+  transition.lanes.forEach((lane, laneIndex) => {
+    const context: LaneContext = { builder, laneIndex, lane, deck: deckOf[lane.track], ordered: orderedKeyframes(lane) };
+    if (lane.param === "echo-send") echoLane(context);
+    else if (lane.param === "loop") loopLane(context);
+    else continuousLane(context, CONTINUOUS_PARTS[lane.param], claimed, cut);
+  });
+
+  const steps = assignHands(inTimeOrder(builder.steps));
+  return { setUp: builder.setUp, steps, complexity: rateComplexity(steps, transition, unlocked) };
+}

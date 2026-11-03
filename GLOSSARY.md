@@ -73,3 +73,15 @@ _Avoid_: AI, tutor, assistant
 **Mix Editor**:
 The screen where a Learner plans a set ahead of time: the tracks in order and each transition between them, written in musical terms (beats, phrases, fader and EQ moves) rather than controller terms. A plan can be rendered to one audio file, or practised live with grading. The controller moves each transition needs are derived from the plan, and the Mix Editor warns, without blocking, when a transition is hard to perform live.
 _Avoid_: Mix planner, playlist editor, sequencer
+
+**Transition recipe**:
+A named, ready-made set of lanes for a transition: long blend, bass swap, filter sweep, echo out, cut on the 1, loop to extend, tempo ride. The same idea as the Reference card's transition recipe, but editable.
+_Avoid_: Preset, template
+
+**Execution plan**:
+The controller moves a planned transition needs, derived from its lanes: which DDJ-FLX4 control, which hand, when, and how precisely, plus where each control starts. Derived every time, never stored.
+_Avoid_: Script, macro
+
+**Complexity rating**:
+How hard a planned transition is to perform live, 1 to 5, computed from its Execution plan, with a reason for each thing that makes it hard. It is per Learner (a control whose Lesson isn't Passed counts), and it warns but never blocks.
+_Avoid_: Difficulty level, score
