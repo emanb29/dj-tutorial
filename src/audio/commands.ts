@@ -3,7 +3,7 @@
 
 import type { TempoRangePercent } from "./tempo.ts";
 import type { BeatFxChannel } from "@shared/attempt.ts";
-import type { DeckId, InputDevice } from "./types.ts";
+import type { CtxTime, DeckId, InputDevice } from "./types.ts";
 
 export type EqControl = "eq-low" | "eq-mid" | "eq-high";
 
@@ -74,6 +74,12 @@ export interface CommandInput {
   readonly eventTimeMs?: number;
   /** The last event of a drag or turn; the recorder always keeps it, however fast the gesture was. */
   readonly gestureEnd?: boolean;
+  /**
+   * Context time the change takes effect, for a move planned ahead (the Mix Editor's offline Render
+   * places each one on its sample). Never earlier than the engine would apply it anyway: now plus the
+   * lookahead, and after the deck's last change.
+   */
+  readonly atCtx?: CtxTime;
 }
 
 export const JOG_BEND_LIMIT = 0.5;

@@ -127,3 +127,21 @@ describe("command validation", () => {
     });
   });
 });
+
+describe("a change scheduled ahead (CommandInput.atCtx, the Mix Editor's Render)", () => {
+  it("lands at the planned time, not when it is sent", async () => {
+    const { context, engine } = await engineWithTone(1, { frequency: 1000, peak: PEAK });
+    expectOk(engine.command({ control: "channel-fader", deck: "A", value: 0 }, { ...KEYBOARD, atCtx: 0.5 }));
+    const rendered = await context.startRendering();
+    // Untouched up to the planned time, then silent once the 3 ms glide and its snap to zero are done.
+    expect(channelRmsDb(rendered, 0, 0.3, 0.499) - sineRmsDb(PEAK)).toBeCloseTo(0, 1);
+    expect(channelRmsDb(rendered, 0, 0.54, 1)).toBeLessThan(-100);
+  });
+
+  it("is never earlier than the engine would apply it", async () => {
+    const { context, engine } = await engineWithTone(0.6, { frequency: 1000, peak: PEAK });
+    expectOk(engine.command({ control: "channel-fader", deck: "A", value: 0 }, { ...KEYBOARD, atCtx: -5 }));
+    const rendered = await context.startRendering();
+    expect(channelRmsDb(rendered, 0, 0.1, 0.6)).toBeLessThan(-100);
+  });
+});

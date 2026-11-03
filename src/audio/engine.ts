@@ -312,7 +312,7 @@ export class AudioEngine {
     // An input's own time, less the Learner's measured latency; the engine's own changes have no event time.
     const heard = this.clock.heardTime(input.eventTimeMs === undefined ? undefined : correctedInputTime(input.eventTimeMs, this.inputCorrectionMs));
     const heardCtx = heard.ok ? heard.ctx : null;
-    const appliedCtx = this.appliedTimeFor(command);
+    const appliedCtx = Math.max(this.appliedTimeFor(command), input.atCtx ?? Number.NEGATIVE_INFINITY);
     const loopedBefore = "deck" in command ? this.decks[command.deck].loop() !== null : false;
     const result = this.closed ? fail({ kind: "engine-closed" }) : this.apply(command, heardCtx, appliedCtx);
     this.emitter.emit("command", {
