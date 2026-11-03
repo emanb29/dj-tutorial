@@ -38,6 +38,8 @@ export const SPEC_RULES: readonly SpecRule[] = [
   { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
   // Mix plans (ISS-186): no spec yet; its store, resolution and model are unit and browser tested.
   { paths: ["src/app/mix-plans/**"], specs: [] },
+  // The Mix Editor (ISS-189): so far only pure derivations (Execution plan, Complexity rating), with no screen; unit tested.
+  { paths: ["src/app/mix-editor/**"], specs: [] },
   // The spec itself, when only it changed.
   { paths: ["e2e/*.spec.ts"], specs: "self" },
   // Shared by everything: any change here runs the whole suite.
