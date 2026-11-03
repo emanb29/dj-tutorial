@@ -6,11 +6,12 @@ import { createAudioEngine, outputLine, type AudioEngine } from "@audio";
 import { midiConnection } from "@midi";
 import type { DeckId } from "@shared/attempt.ts";
 import { ALL_CONTROL_IDS, Controller, type ControlId } from "../controller/index.ts";
-import { FLX4_LOAD_EVENT, type Flx4LoadDetail } from "../controller/focus-navigation.ts";
-import { KeyHint, useControllerConnected } from "../controller/KeyHint.tsx";
+import { KeyHint } from "../controller/KeyHint.tsx";
 import { currentOutputPlan } from "../audio-output.ts";
-import { listLibrary, type Library, type LibraryItem, type PreparedTrack } from "../final-mix/library.ts";
+import { libraryRow, listLibrary, type Library, type LibraryItem, type PreparedTrack } from "../final-mix/library.ts";
 import type { TrackPreference } from "../lesson/track-loader.ts";
+import type { LibraryRow } from "../library-browser/browse.ts";
+import { LibraryBrowser } from "../library-browser/LibraryBrowser.tsx";
 import { MusicFolderPanel, useMusicFolder } from "../music-folder/MusicFolderPanel.tsx";
 import { musicFolder } from "../music-folder/shared-folder.ts";
 import { FreestyleSession } from "./freestyle-session.ts";
@@ -26,8 +27,6 @@ export interface FreestyleProps {
 /** Everything on the controller, except TAP: a Lesson's ear-training input, which has nothing to time here. */
 const FREESTYLE_UNLOCKS: ReadonlySet<ControlId> = new Set(ALL_CONTROL_IDS.filter((id) => id !== "tap"));
 const DECKS: readonly DeckId[] = ["A", "B"];
-/** Rows drawn at once: a big music folder stays quick to scroll. Search finds the rest. */
-const SHOWN_LIMIT = 200;
 
 type Status = { readonly kind: "starting"; readonly line: string } | { readonly kind: "ready" } | { readonly kind: "failed"; readonly message: string };
 
@@ -49,13 +48,11 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
   const [session, setSession] = useState<FreestyleSession | null>(null);
   const [library, setLibrary] = useState<Library | null>(null);
   const [items, setItems] = useState<readonly LibraryItem[]>([]);
-  const [filter, setFilter] = useState("");
   const [preparing, setPreparing] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   /** Tracks already prepared (grid found), so loading one again skips the analysis. */
   const prepared = useRef(new Map<string, PreparedTrack>());
   const abort = useRef(new AbortController());
-  const controllerConnected = useControllerConnected();
   const [folder] = useState(musicFolder);
   const folderSnapshot = useMusicFolder(folder);
 
@@ -191,36 +188,18 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
     const keys = new Set(items.map((item) => item.key));
     return [...items, ...folderItems.filter((item) => !keys.has(item.key))];
   }, [items, folderItems]);
-  const matching = allItems.filter((item) => `${item.title} ${item.artist} ${item.genre ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase()));
-  const shown = matching.slice(0, SHOWN_LIMIT);
+  const rows = useMemo(() => allItems.map(libraryRow), [allItems]);
+  const itemsByKey = useMemo(() => new Map(allItems.map((item) => [item.key, item])), [allItems]);
 
-  // The FLX4, the rekordbox way: BROWSE turns the ring through the tracks, LOAD A / LOAD B load the one
-  // with the ring. Here LOAD always loads (never Enter or R); a playing deck refuses, as on screen.
-  const loadWith = useRef({ shown, loadOnto, session, preparing });
-  useEffect(() => {
-    loadWith.current = { shown, loadOnto, session, preparing };
-  });
-  useEffect(() => {
-    const onLoad = (event: Event) => {
-      event.preventDefault();
-      const { deck } = (event as CustomEvent<Flx4LoadDetail>).detail;
-      const current = loadWith.current;
-      if (current.session === null || current.preparing !== null) return;
-      const row = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>("[data-library]") : null;
-      const item = current.shown.find((candidate) => candidate.key === row?.dataset["library"]);
-      if (item === undefined) {
-        setProblem(`Turn BROWSE to a track first, then LOAD ${deck}.`);
-        return;
-      }
-      const blocker = current.session.loadBlocker(deck);
-      if (blocker !== null) setProblem(blocker);
-      else current.loadOnto(item, deck);
-    };
-    window.addEventListener(FLX4_LOAD_EVENT, onLoad);
-    return () => {
-      window.removeEventListener(FLX4_LOAD_EVENT, onLoad);
-    };
-  }, []);
+  // LOAD A / LOAD B (the FLX4, the rekordbox way), Enter and Shift + Enter: the track with the ring
+  // onto that deck. Here LOAD always loads (never Enter or R); a playing deck refuses, as on screen.
+  const loadRow = (row: LibraryRow, deck: DeckId) => {
+    const item = itemsByKey.get(row.key);
+    if (item === undefined || session === null || preparing !== null) return;
+    const blocker = session.loadBlocker(deck);
+    if (blocker !== null) setProblem(blocker);
+    else loadOnto(item, deck);
+  };
   const caption = status.kind === "starting" ? status.line : status.kind === "failed" ? status.message : "Freestyle: load any track, mix as you like. Nothing is graded.";
 
   return (
@@ -261,9 +240,8 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
         {library === null || session === null ? null : (
           <section className="set-library freestyle-library" aria-label="Library">
             <h2>Library</h2>
-            <div className="set-library-tools">
-              <input type="search" placeholder="Search" aria-label="Search the library" value={filter} onChange={(event) => { setFilter(event.target.value); }} />
-              {library.files === null ? null : (
+            {library.files === null ? null : (
+              <div className="set-library-tools">
                 <label className="btn set-files">
                   Add your files
                   <input
@@ -279,58 +257,54 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
                     }}
                   />
                 </label>
-              )}
-            </div>
+              </div>
+            )}
             <MusicFolderPanel folder={folder} compact />
             {preparing === null ? null : (
               <p className="set-preparing" role="status">
                 {preparing}
               </p>
             )}
-            {shown.length === 0 ? <p className="set-empty">No tracks here yet. Add your own files.</p> : null}
-            {matching.length > shown.length ? (
-              <p className="set-preparing" data-testid="library-more">
-                Showing {shown.length} of {matching.length.toLocaleString()}. Search to find the rest.
-              </p>
-            ) : null}
-            {controllerConnected ? (
-              <p className="set-preparing" data-testid="flx4-library-hint">
-                FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd>
-              </p>
-            ) : null}
-            {/* Each track is one stop for BROWSE (its → A / → B are for the screen; LOAD is the FLX4's). */}
-            <ul data-nav-start>
-              {shown.map((item) => (
-                <li key={item.key} data-library={item.key} tabIndex={0} aria-label={item.title} onFocus={item.want}>
-                  <span className="set-title">
-                    {item.title}
-                    <small>
-                      {item.artist} · {bpmText(item.bpm)} · {item.camelot ?? "key ?"}
-                      {item.rating === undefined ? null : <span aria-label={`${String(item.rating)} stars`}> · {"★".repeat(item.rating)}</span>}
-                    </small>
-                  </span>
-                  {DECKS.map((deck) => {
-                    const blocker = session.loadBlocker(deck);
-                    return (
-                      <button
-                        key={deck}
-                        type="button"
-                        className="btn"
-                        aria-label={`Load ${item.title} onto deck ${deck}`}
-                        data-nav-skip
-                        title={blocker ?? `Load onto deck ${deck}`}
-                        disabled={blocker !== null || preparing !== null}
-                        onClick={() => {
-                          loadOnto(item, deck);
-                        }}
-                      >
-                        → {deck}
-                      </button>
-                    );
-                  })}
-                </li>
-              ))}
-            </ul>
+            <LibraryBrowser
+              picker="freestyle"
+              rows={rows}
+              navStart
+              emptyText="No tracks here yet. Add your own files."
+              controllerHint={
+                <>
+                  FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd>
+                </>
+              }
+              onLoad={loadRow}
+              onLoadOffList={(deck) => {
+                if (preparing === null) setProblem(`Turn BROWSE to a track first, then LOAD ${deck}.`);
+              }}
+              onRowFocus={(row) => {
+                itemsByKey.get(row.key)?.want?.();
+              }}
+              actions={(row) =>
+                DECKS.map((deck) => {
+                  const blocker = session.loadBlocker(deck);
+                  return (
+                    <button
+                      key={deck}
+                      type="button"
+                      className="btn"
+                      tabIndex={-1}
+                      aria-label={`Load ${row.title} onto deck ${deck}`}
+                      data-nav-skip
+                      title={blocker ?? `Load onto deck ${deck}`}
+                      disabled={blocker !== null || preparing !== null}
+                      onClick={() => {
+                        loadRow(row, deck);
+                      }}
+                    >
+                      → {deck}
+                    </button>
+                  );
+                })
+              }
+            />
           </section>
         )}
       </div>

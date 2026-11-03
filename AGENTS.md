@@ -38,13 +38,15 @@ The API reads `API_HOST` and `API_PORT` (defaults `127.0.0.1`, `5180`). It also 
 
   | FLX4 | Does | Key |
   | --- | --- | --- |
-  | BROWSE turn | moves the ring between buttons (Freestyle: between tracks); on a list or slider being changed, its value | Tab |
+  | BROWSE turn | moves the ring between buttons (a library: between tracks); on a list or slider being changed, its value | Tab |
   | BROWSE press | presses the button with the ring; on a list or slider, starts or ends changing it | Space |
   | SHIFT + BROWSE press | back: leaves, closes, skips | Esc |
-  | LOAD A | go: into the Check, again, next, start; Freestyle: loads the track with the ring onto A | Enter |
-  | LOAD B | Ready; Freestyle: loads it onto B (a playing deck refuses) | R |
+  | LOAD A | go: into the Check, again, next, start; Freestyle: loads the track with the ring onto A; Mix plans, the set builder: adds it | Enter |
+  | LOAD B | Ready; Freestyle: loads it onto B (a playing deck refuses); Mix plans, the set builder: adds it | R |
   | SHIFT + LOAD A | practice | P |
   | SHIFT + LOAD B | Not yet (Placement) | N |
+
+  The "your music" pickers (Freestyle, Mix plans, the set builder) are one library browser, `src/app/library-browser/`: search, sort, filters and browse by artist, genre or key, from metadata only (it never opens a file; `large-library.test.ts` proves it on 10,000 tracks). It draws only the rows in view; ringing a row scrolls it into view, which draws the next ones, so BROWSE turns through all of them. It takes LOAD itself (`FLX4_LOAD_EVENT`) while the ring is on a row; the keyboard has ↑ / ↓, Enter (A) and Shift + Enter (B).
 
   TAP is SHIFT + BEAT ▶, plus the borrowed pads and BEAT ◀ / ▶; the BROWSE press is no longer TAP (one meaning per control). Typing and picking a file need the keyboard, mouse or screen, and the page says so when the ring is on one. Starting the sound needs one click, tap or key per page load: browsers do not count MIDI as a gesture.
 - The FLX4 cannot report its fader and knob positions (no such message in AlphaTheta's list). `src/midi/positions.ts` remembers each control once it has moved, so a controller on screen shows pickup marks at once. The unofficial Mixxx SysEx position request got no answer from a DDJ-FLX4-N, so the app does not send it.

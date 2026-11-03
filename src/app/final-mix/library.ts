@@ -25,6 +25,8 @@ import {
   type Track,
   type TrackSource,
 } from "@tracks";
+import type { LibraryRow } from "../library-browser/browse.ts";
+import { trackRow } from "../library-browser/folder-rows.ts";
 
 export interface LibraryItem {
   readonly key: string;
@@ -36,10 +38,34 @@ export interface LibraryItem {
   readonly genre: string | null;
   /** Stars, 1-5, where the Learner rated it in rekordbox. */
   readonly rating?: number;
+  /** What else the library browser lists (src/app/library-browser), where the source knows it. */
+  readonly album?: string;
+  readonly durationSec?: number;
+  readonly playCount?: number;
+  /** Loading it gives a beat grid at once: an Original's own, rekordbox's, or the folder's analysis. */
+  readonly gridReady?: boolean;
   /** Prepares the track for the set: its grid, then a way to get its audio again. */
   readonly prepare: (options: PrepareOptions) => Promise<PrepareResult>;
   /** The Learner is about to use it (the ring is on it): find its grid first. Music-folder tracks only. */
   readonly want?: () => void;
+}
+
+/** An item as the library browser lists it: what its source knows, nothing read from the file. */
+export function libraryRow(item: LibraryItem): LibraryRow {
+  return trackRow(
+    {
+      id: item.key,
+      title: item.title,
+      artist: item.artist,
+      ...(item.genre === null ? {} : { genre: item.genre }),
+      ...(item.bpm === null ? {} : { bpmHint: item.bpm }),
+      ...(item.camelot === null ? {} : { keyHint: item.camelot }),
+      ...(item.durationSec === undefined ? {} : { durationSec: item.durationSec }),
+      ...(item.rating === undefined ? {} : { rating: item.rating }),
+      ...(item.playCount === undefined ? {} : { playCount: item.playCount }),
+    },
+    { album: item.album ?? null, gridReady: item.gridReady ?? false },
+  );
 }
 
 export interface PrepareOptions {
@@ -78,6 +104,7 @@ function syntheticItems(): LibraryItem[] {
       bpm: layout.bpm,
       camelot,
       genre: "house",
+      gridReady: true,
       prepare: ({ sampleRate }) =>
         Promise.resolve({
           ok: true,
@@ -100,6 +127,9 @@ function sourceItem(source: TrackSource, track: Track): LibraryItem {
     camelot,
     genre,
     ...(track.rating === undefined ? {} : { rating: track.rating }),
+    ...(track.durationSec === undefined ? {} : { durationSec: track.durationSec }),
+    ...(track.playCount === undefined ? {} : { playCount: track.playCount }),
+    gridReady: track.source === "original",
     // The sources decode at the engine's sample rate already (listLibrary).
     async prepare({ signal, onStatus }) {
       onStatus(`Fetching "${track.title}"…`);
@@ -132,10 +162,12 @@ function sourceItem(source: TrackSource, track: Track): LibraryItem {
  * A music-folder track as a library item. Its grid comes from the folder's background analysis
  * (asked for first, and waited for), so preparing it then finds the grid in the analysis cache.
  */
-function folderItem(folder: MusicFolder, source: TrackSource, track: Track): LibraryItem {
+function folderItem(folder: MusicFolder, source: TrackSource, track: Track, album: string | null): LibraryItem {
   const item = sourceItem(source, track);
   return {
     ...item,
+    ...(album === null ? {} : { album }),
+    gridReady: folder.gridReady(track.id),
     want: () => {
       folder.want(track.id);
     },
@@ -159,7 +191,8 @@ export function folderLibrary(music: MusicFolder, decode: AudioDecoder): FolderL
   return {
     music,
     items: () => {
-      made = new Map(music.tracks().map((track) => [track, made.get(track) ?? folderItem(music, source, track)] as const));
+      const albums = new Map(music.files().map((file) => [file.trackId, file.album]));
+      made = new Map(music.tracks().map((track) => [track, made.get(track) ?? folderItem(music, source, track, albums.get(track.id) ?? null)] as const));
       return [...made.values()];
     },
   };

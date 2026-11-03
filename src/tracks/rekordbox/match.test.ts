@@ -5,6 +5,7 @@ import { locationSegments, type RekordboxTrack } from "./xml.ts";
 const track = (location: string, extra: Partial<RekordboxTrack> = {}): RekordboxTrack => ({
   name: location,
   artist: "",
+  album: "",
   genre: "",
   tonality: "",
   rating: 0,

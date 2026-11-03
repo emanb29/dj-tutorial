@@ -153,6 +153,8 @@ export interface FolderFile {
   readonly trackId: string;
   /** The file's own name (no folder). */
   readonly name: string;
+  /** rekordbox's Album for the file; null when it has none. */
+  readonly album: string | null;
   /** Known once analysed, or from rekordbox. */
   readonly durationSec: number | null;
   /** The analysis cache's key (shared/track-hash.ts), once analysed; null before. */
@@ -537,6 +539,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
       return {
         trackId: entry.key,
         name: entry.path.split("/").pop() ?? entry.path,
+        album: entry.linked !== null && filled(entry.linked.album) ? entry.linked.album.trim() : null,
         durationSec: entry.track.durationSec ?? null,
         contentHash: entry.contentHash,
         rekordboxGrid: grid?.kind === "constant" ? { bpm: grid.bpm, firstBeatSec: grid.firstBeatSec, downbeatPhase: grid.downbeatPhase } : null,

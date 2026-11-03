@@ -28,6 +28,34 @@ describe("selectSpecs", () => {
     expect(selectSpecs(["src/app/originals/OriginalsPlayer.tsx"])).toEqual({ all: false, specs: ["e2e/originals.spec.ts"] });
   });
 
+  it("runs the library browser's spec, and its pickers', for the browser", () => {
+    expect(selectSpecs(["src/app/library-browser/LibraryBrowser.tsx"])).toEqual({
+      all: false,
+      specs: [
+        "e2e/final-mix.spec.ts",
+        "e2e/freestyle.spec.ts",
+        "e2e/hardware.spec.ts",
+        "e2e/library-browser.spec.ts",
+        "e2e/mobile.spec.ts",
+        "e2e/music-folder.spec.ts",
+      ],
+    });
+  });
+
+  it("runs the library browser's spec for the Mix plans picker and for the folder and rekordbox metadata it lists", () => {
+    expect(selectSpecs(["src/app/mix-plans/MixPlansPage.tsx"])).toEqual({ all: false, specs: ["e2e/library-browser.spec.ts"] });
+    for (const path of ["src/tracks/music-folder/music-folder.ts", "src/tracks/rekordbox/xml.ts"]) {
+      expect(selectSpecs([path])).toMatchObject({ all: false, specs: expect.arrayContaining(["e2e/library-browser.spec.ts"]) as unknown });
+    }
+  });
+
+  it("runs no end-to-end spec for the library browser's own tests and test support", () => {
+    expect(selectSpecs(["src/app/library-browser/browse.test.ts", "src/app/library-browser/library-browser.browser.test.tsx", "src/app/library-browser/test-support.ts"])).toEqual({
+      all: false,
+      specs: [],
+    });
+  });
+
   it("runs a changed spec by itself", () => {
     expect(selectSpecs(["e2e/lessons-by-ear.spec.ts"])).toEqual({ all: false, specs: ["e2e/lessons-by-ear.spec.ts"] });
   });

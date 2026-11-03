@@ -8,6 +8,9 @@ import { pickedTrack, planLibrary, type PlanLibrary } from "./library.ts";
 import { gridForFile, resolvePlanTracks, type TrackResolution } from "./resolve.ts";
 import { createMixPlanStore, type StoredPlan } from "./store.ts";
 import { ButtonHint } from "../controller/KeyHint.tsx";
+import { LibraryBrowser } from "../library-browser/LibraryBrowser.tsx";
+import { folderRows } from "../library-browser/folder-rows.ts";
+import { useMusicFolder } from "../music-folder/MusicFolderPanel.tsx";
 import { musicFolder } from "../music-folder/shared-folder.ts";
 import { mixPlanFileName, mixPlanFileText, parseMixPlanFile } from "@shared/mix-plan-file.ts";
 import { RECIPES, newMixPlan, type PickedTrack } from "@shared/mix-plan-recipes.ts";
@@ -225,15 +228,20 @@ function PlanList({ plans, onNew, onOpen, onSave, onDelete, onProblem }: PlanLis
 }
 
 function NewPlan({ library, onCreate }: { readonly library: PlanLibrary; readonly onCreate: (plan: MixPlan) => Promise<void> }) {
-  const folder = musicFolder();
+  const [folder] = useState(musicFolder);
+  const snapshot = useMusicFolder(folder);
+  // Metadata only (folder-rows.ts): a new snapshot (a scan batch, a BPM found) lists the rows again.
+  const rows = useMemo(() => (snapshot.found === 0 ? [] : folderRows(folder)), [folder, snapshot]);
   const [name, setName] = useState("New set");
-  const [query, setQuery] = useState("");
   const [order, setOrder] = useState<readonly string[]>([]);
   const [working, setWorking] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const tracks = folder.tracks();
-  const byId = new Map(tracks.map((track) => [track.id, track]));
-  const shown = tracks.filter((track) => `${track.artist} ${track.title}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 50);
+  const tracks = useMemo(() => (snapshot.found === 0 ? [] : folder.tracks()), [folder, snapshot]);
+  const byId = useMemo(() => new Map(tracks.map((track) => [track.id, track])), [tracks]);
+  const add = (trackId: string) => {
+    setProblem(null);
+    setOrder((now) => [...now, trackId]);
+  };
 
   const create = async () => {
     const picked: PickedTrack[] = [];
@@ -295,22 +303,26 @@ function NewPlan({ library, onCreate }: { readonly library: PlanLibrary; readonl
         </p>
       )}
       <h2>Your library</h2>
-      <input aria-label="Search the library" placeholder="Search" value={query} onChange={(event) => {
-          setQuery(event.currentTarget.value);
-        }} />
-      <ul className="plans-library">
-        {shown.map((track) => (
-          <li key={track.id}>
-            <button type="button" className="btn btn-quiet" onClick={() => {
-                setProblem(null);
-                setOrder([...order, track.id]);
-              }}>
-              + {track.artist} – {track.title}
-              {track.bpmHint === undefined ? "" : ` · ${String(Math.round(track.bpmHint))} BPM`}
-            </button>
-          </li>
-        ))}
-      </ul>
+      <LibraryBrowser
+        picker="mix-plans"
+        rows={rows}
+        emptyText="Your music folder has no tracks yet."
+        controllerHint={
+          <>
+            FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd> adds it to the play order
+          </>
+        }
+        onLoad={(row) => {
+          add(row.key);
+        }}
+        actions={(row) => (
+          <button type="button" className="btn btn-quiet" tabIndex={-1} data-nav-skip aria-label={`Add ${row.title}`} onClick={() => {
+              add(row.key);
+            }}>
+            + Add
+          </button>
+        )}
+      />
     </section>
   );
 }

@@ -1,0 +1,262 @@
+/* The library browser: two lines per track at phone width (title, then artist · BPM · key · length),
+   one row of columns from 760 px. Rows are ROW_HEIGHT (56 px, LibraryBrowser.tsx) tall: the list draws
+   only those in view, so the height must not change with the content. */
+
+.library-browser {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.lb-tools {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.lb-search {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  color: var(--ink);
+  font: inherit;
+}
+
+.lb-field {
+  display: grid;
+  gap: 2px;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+}
+
+.lb-field select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.lb-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  font-size: var(--text-sm);
+}
+
+.lb-check input {
+  width: 22px;
+  height: 22px;
+}
+
+.lb-note {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.lb-typing {
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  left: 0;
+  right: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  color: var(--ink);
+}
+
+.lb-clear {
+  min-height: 32px;
+  padding: 0 var(--space-2);
+}
+
+.lb-filters summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.lb-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.lb-scroll {
+  position: relative;
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+}
+
+.library-browser .lb-rows {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two lines: the title across the top, the rest below it, the row's buttons (finger-sized) at the end. */
+.library-browser .lb-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--panel-edge);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  cursor: default;
+}
+
+.library-browser .lb-row:focus,
+.library-browser .lb-row:hover {
+  background: var(--panel-raised);
+}
+
+.lb-row > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ink-dim);
+}
+
+.lb-row .lb-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.lb-row .lb-col-title {
+  grid-column: 1 / 5;
+  grid-row: 1;
+}
+
+.lb-row .lb-col-artist {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.lb-row .lb-col-bpm {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.lb-row .lb-col-key {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.lb-row .lb-col-length {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+.lb-row .lb-col-album,
+.lb-row .lb-col-genre,
+.lb-row .lb-col-rating,
+.lb-row .lb-col-playCount,
+.lb-row .lb-col-gridReady {
+  display: none;
+}
+
+.lb-row .lb-actions {
+  grid-column: 5;
+  grid-row: 1 / span 2;
+  display: flex;
+  gap: var(--space-1);
+  overflow: visible;
+}
+
+.lb-actions .btn {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  padding: 0 var(--space-2);
+}
+
+.library-browser .lb-facet {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto;
+  cursor: pointer;
+}
+
+.lb-facet .lb-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-head {
+  display: none;
+}
+
+@media (min-width: 760px) {
+  .library-browser .lb-row,
+  .lb-head {
+    grid-template-columns: minmax(8rem, 2fr) minmax(6rem, 1.4fr) minmax(5rem, 1fr) minmax(5rem, 1fr) 6.5em 6.5em 3.5em 5em 5em 4em auto;
+    grid-template-rows: auto;
+  }
+
+  .lb-head {
+    display: grid;
+    column-gap: var(--space-2);
+    padding: 0 var(--space-3);
+  }
+
+  .lb-row > span,
+  .lb-row .lb-col-album,
+  .lb-row .lb-col-genre,
+  .lb-row .lb-col-rating,
+  .lb-row .lb-col-playCount,
+  .lb-row .lb-col-gridReady {
+    display: block;
+    grid-row: 1;
+    grid-column: auto;
+  }
+
+  .lb-row .lb-actions {
+    display: flex;
+    grid-column: auto;
+    grid-row: 1;
+  }
+
+  .lb-col {
+    min-height: 32px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink-dim);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .lb-col[aria-sort="ascending"],
+  .lb-col[aria-sort="descending"] {
+    color: var(--ink);
+  }
+}

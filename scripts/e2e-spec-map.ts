@@ -36,8 +36,22 @@ export const SPEC_RULES: readonly SpecRule[] = [
   { paths: ["**/*.test.ts", "**/*.test.tsx", "src/**/test-support.ts", "src/checks/testing/**", "src/tracks/fixtures/**"], specs: [] },
   // Docs, prototypes and the composer are outside the build.
   { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
-  // Mix plans (ISS-186): no spec yet; its store, resolution and model are unit and browser tested.
-  { paths: ["src/app/mix-plans/**"], specs: [] },
+  // Mix plans (ISS-186): its store, resolution and model are unit and browser tested; its track picker
+  // is the library browser, played end to end in library-browser.spec.ts.
+  { paths: ["src/app/mix-plans/**"], specs: ["e2e/library-browser.spec.ts"] },
+  // The library browser (ISS-194): its own spec (the Mix plans picker), the other pickers that use it
+  // (Freestyle by screen, folder and FLX4; the final-mix set builder), and its phone-width layout.
+  {
+    paths: ["src/app/library-browser/**"],
+    specs: [
+      "e2e/library-browser.spec.ts",
+      "e2e/freestyle.spec.ts",
+      "e2e/music-folder.spec.ts",
+      "e2e/hardware.spec.ts",
+      "e2e/final-mix.spec.ts",
+      "e2e/mobile.spec.ts",
+    ],
+  },
   // The Mix Editor (ISS-189): so far only pure derivations (Execution plan, Complexity rating), with no screen; unit tested.
   { paths: ["src/app/mix-editor/**"], specs: [] },
   // The spec itself, when only it changed.
@@ -88,7 +102,11 @@ export const SPEC_RULES: readonly SpecRule[] = [
   // Freestyle: both decks and the library, no grading; it shares the set's library (final-mix/library.ts).
   { paths: ["src/app/freestyle/**", "src/app/final-mix/library.ts"], specs: ["e2e/freestyle.spec.ts", "e2e/music-folder.spec.ts"] },
   // The music folder setting (on /controller, and in Freestyle's library), its scanner, and the rekordbox collection linked to it.
-  { paths: ["src/app/music-folder/**", "src/tracks/music-folder/**", "src/tracks/rekordbox/**"], specs: ["e2e/music-folder.spec.ts", "e2e/freestyle.spec.ts", "e2e/hardware.spec.ts"] },
+  // The library browser lists what they know of each track, so its spec runs with them.
+  {
+    paths: ["src/app/music-folder/**", "src/tracks/music-folder/**", "src/tracks/rekordbox/**"],
+    specs: ["e2e/music-folder.spec.ts", "e2e/freestyle.spec.ts", "e2e/hardware.spec.ts", "e2e/library-browser.spec.ts"],
+  },
   // Your own files: the set's and Freestyle's "Add your files", and the music folder's tracks.
   { paths: ["src/tracks/local-files.ts"], specs: ["e2e/music-folder.spec.ts", "e2e/freestyle.spec.ts", "e2e/final-mix.spec.ts"] },
   { paths: ["src/app/playground/**"], specs: ["e2e/controller.spec.ts", "e2e/mobile.spec.ts"] },
