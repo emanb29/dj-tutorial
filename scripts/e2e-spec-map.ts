@@ -36,6 +36,8 @@ export const SPEC_RULES: readonly SpecRule[] = [
   { paths: ["**/*.test.ts", "**/*.test.tsx", "src/**/test-support.ts", "src/checks/testing/**", "src/tracks/fixtures/**"], specs: [] },
   // Docs, prototypes and the composer are outside the build.
   { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
+  // Mix plans (ISS-186): no spec yet; its store, resolution and model are unit and browser tested.
+  { paths: ["src/app/mix-plans/**"], specs: [] },
   // The spec itself, when only it changed.
   { paths: ["e2e/*.spec.ts"], specs: "self" },
   // Shared by everything: any change here runs the whole suite.

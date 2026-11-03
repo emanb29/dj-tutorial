@@ -37,9 +37,11 @@ interface LessonListProps {
   readonly onGradeMix: () => void;
   /** Freestyle: both decks and the library, no grading; open from the start. */
   readonly onFreestyle: () => void;
+  /** Mix plans: sets planned from the music folder; open from the start. */
+  readonly onMixPlans: () => void;
 }
 
-export function LessonList({ learner, offline, onStart, onRetakePlacement, onGradeMix, onFreestyle }: LessonListProps) {
+export function LessonList({ learner, offline, onStart, onRetakePlacement, onGradeMix, onFreestyle, onMixPlans }: LessonListProps) {
   const startHere = startLesson(learner.skillProfile);
   const controllerConnected = useControllerConnected();
   return (
@@ -58,6 +60,9 @@ export function LessonList({ learner, offline, onStart, onRetakePlacement, onGra
         </button>
         <button type="button" className="btn btn-quiet" onClick={onFreestyle}>
           Freestyle
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={onMixPlans}>
+          Mix plans
         </button>
       </p>
       {controllerConnected ? (

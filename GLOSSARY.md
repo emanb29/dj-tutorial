@@ -67,3 +67,20 @@ _Avoid_: Cheat sheet, handout
 **Coach**:
 The runtime language model that reads Skill profiles and Check measurements to build the Curriculum and give personalised feedback. It never grades and never hears audio.
 _Avoid_: AI, tutor, assistant
+
+## Mix Editor
+
+**Mix Editor**:
+The screen where a Learner plans a set's Transitions in advance. A tool, not a Lesson: it never gates progress.
+
+**Mix Plan**:
+An ordered list of tracks from the Learner's own music folder, plus one Transition between each neighbouring pair, saved on the device. It stores musical intent (lanes of keyframes in beats), never controller moves, audio or paths.
+_Avoid_: Playlist, mixtape, project
+
+**Transition**:
+The designed handover from one track to the next, anchored to beat-grid positions in both tracks and described as lanes (volume, EQ, filter, tempo, echo, loop) of keyframes.
+_Avoid_: Blend (a blend is one kind of Transition), segue
+
+**Transition recipe**:
+A named, ready-made set of lanes (crossfade, bass swap, cut on the 1, filter sweep, echo out). Picking one gives a good Transition with no lane editing.
+_Avoid_: Preset, template

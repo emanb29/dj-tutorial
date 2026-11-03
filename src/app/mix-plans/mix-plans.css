@@ -1,0 +1,118 @@
+/* Mix plans: one column, big targets, works from 360 px up (planning itself is for laptops, later). */
+
+.plans-page {
+  box-sizing: border-box;
+  max-width: 780px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+
+.plans-head {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.plans-head h1 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 750;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.plans-panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+.plans-panel h2 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.plans-caption {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+.plans-actions,
+.plans-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.plans-list,
+.plans-order,
+.plans-library,
+.plans-set {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plans-list > li,
+.plans-order > li,
+.plans-set > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.plans-name {
+  overflow-wrap: anywhere;
+}
+
+.plans-transition {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ink-dim);
+}
+
+.plans-greyed {
+  opacity: 0.5;
+}
+
+.plans-field,
+.plans-rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plans-file {
+  position: relative;
+  cursor: pointer;
+}
+
+/* The input stays in the label (reachable by tests and assistive tech), visually hidden. */
+.plans-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.plans-file:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.plans-problems {
+  margin: 0;
+  padding-left: var(--space-4);
+}
