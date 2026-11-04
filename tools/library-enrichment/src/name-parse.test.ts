@@ -126,7 +126,7 @@ const SHAPES: readonly [string, Expected][] = [
   // "VIP" before "Remix" is a version word, not part of the remixer's name.
   ["Moss Harbor - Glass Rivers (TINWHISTLE TECHNO VIP REMIX)", { artist: "TINWHISTLE", remixer: "TINWHISTLE", originalArtist: "Moss Harbor" }],
   // A version word after the remix ("(Extended Mix)") does not hide who remixed it.
-  ["Aria Vale - Sweet Notion (Haze Remix) (Extended Mix) FREE DOWNLOAD [1734800001]", { artist: "Haze", originalArtist: "Aria Vale", remixer: "Haze", mixKind: "extended" }],
+  ["Aria Vale - Quiet Engine (Haze Remix) (Extended Mix) FREE DOWNLOAD [1734800001]", { artist: "Haze", originalArtist: "Aria Vale", remixer: "Haze", mixKind: "extended" }],
   // A style word or a year inside the remixer's group.
   ["Bee Line (ElvisK - Speed House Remix 2018)", { remixer: "ElvisK" }],
   // A leading Camelot key or a zero-padded track number is not the artist.
