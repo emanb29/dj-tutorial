@@ -367,6 +367,12 @@ function describeEqFilter(criterion: CriterionResult): string | null {
 const beatsOff = (label: string, measured: number | null, never: string) =>
   measured === null ? `${label}: ${never}` : `${label}: ${measured.toFixed(2)} beats off the 1 (need 1 or less)`;
 
+/**
+ * A loop's length in bars. One that passed is a 4 or 8 bar loop, shown as such ("4 bars"): the ms after it
+ * says how far off it was, so "4.01 bars" would only add noise. One that failed keeps two decimals.
+ */
+const loopBarsText = (bars: number, met: boolean) => (met ? String(Math.round(bars)) : bars.toFixed(2));
+
 /** Lessons 17–19; null for criteria of other Lessons. */
 function describePerformance(criterion: CriterionResult): string | null {
   const measured = criterion.measured;
@@ -385,7 +391,7 @@ function describePerformance(criterion: CriterionResult): string | null {
       const loopBeats = criterion.detail?.["loopBeats"];
       return measured === null || loopBeats === undefined
         ? "Loop: A never looped"
-        : `Loop: ${(loopBeats / 4).toFixed(2)} bars, ${round(measured)} ms off 4 or 8 bars (need ${String(need)} or less)`;
+        : `Loop: ${loopBarsText(loopBeats / 4, criterion.status === "met")} bars, ${round(measured)} ms off 4 or 8 bars (need ${String(need)} or less)`;
     }
     case "loop-transition.loop-in":
       return beatsOff("Loop start", measured, "no loop");
