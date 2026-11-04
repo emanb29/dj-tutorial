@@ -92,11 +92,21 @@ describe("standing.controls-reset", () => {
     extraEvents: [event(50, "eqLow", -120, "A"), ...(backAt === null ? [] : [event(backAt, "eqLow", 0, "A")])],
   });
 
-  it("needs A's EQs back within ±1 dB within 1 bar of A going silent, once eq-basics is passed", () => {
-    expect(byId(cold("sync-blend", eqLeft(56 + BAR)), "standing.controls-reset")).toMatchObject({ severity: "warn", status: "met", measured: 1 });
-    expect(byId(cold("sync-blend", eqLeft(56 + BAR + 0.1)), "standing.controls-reset")?.status).toBe("notMet");
+  it("needs A's EQs back within ±1 dB before A can be heard again (here: by the window's end), once eq-basics is passed", () => {
+    // A goes silent at 56 s and stays out; the window ends at 96 s. Measured: bars past that deadline.
+    expect(byId(cold("sync-blend", eqLeft(56 + 3 * BAR)), "standing.controls-reset")).toMatchObject({ severity: "warn", status: "met", measured: -17 });
+    expect(byId(cold("sync-blend", eqLeft(95)), "standing.controls-reset")?.status).toBe("met");
     expect(byId(cold("sync-blend", eqLeft(null)), "standing.controls-reset")).toMatchObject({ status: "notMet", measured: null });
     expect(byId(cold("sync-blend", eqLeft(null), { passedUpTo: "eq-basics" }), "standing.controls-reset")).toBeUndefined();
+  });
+
+  it("fails A's EQ still cut when A's fader brings it back in", () => {
+    const reopened = (backAt: number): BlendScenario => ({
+      ...eqLeft(backAt),
+      faderEvents: [event(32, "channelFader", 1, "B"), event(56, "channelFader", 0, "A"), event(70, "channelFader", 1, "A")],
+    });
+    expect(byId(cold("sync-blend", reopened(69)), "standing.controls-reset")?.status).toBe("met");
+    expect(byId(cold("sync-blend", reopened(72)), "standing.controls-reset")).toMatchObject({ status: "notMet", measured: expect.closeTo(1, 1) as number });
   });
 
   it("adds the CFX part only once filter-transition is passed", () => {
@@ -113,7 +123,8 @@ describe("standing.controls-reset", () => {
       extraEvents: [event(46, "filter", 0.5, "A"), event(50, "filter", 0.85, "A"), event(57, "filter", 0, "A")],
       aLevels: (t: number) => (t >= 50 ? { peak: -30, momentary: -45 } : { peak: -3, momentary: -14 }),
     };
-    expect(byId(cold("sync-blend", filteredOut, { passedUpTo: "nudge-phase" }), "standing.controls-reset")).toMatchObject({ status: "met", measured: 0.5 });
+    // Silent from 56 s, not 50 s: had it counted from 50 s, A would read as reopened… it is the fader that counts.
+    expect(byId(cold("sync-blend", filteredOut, { passedUpTo: "nudge-phase" }), "standing.controls-reset")).toMatchObject({ status: "met", evidence: [{ from: 56, to: 57 }] });
   });
 });
 

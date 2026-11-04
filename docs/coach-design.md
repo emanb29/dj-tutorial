@@ -133,7 +133,10 @@ outcome, focus on one thing), plus a table of every criterion id with its plain-
 
 **Validation** (failure → deterministic line): one line, 1–110 characters after trimming; any
 number in the line also appears in the input; passed outcome → no "fail"/"missed it"; failed
-outcome → no "passed"/"nailed"; not identical to any of the last 5 lines.
+outcome → no "passed"/"nailed"; not identical to any of the last 5 lines; no criterion id
+(`cfx-back`, `filter-transition.cfx-back`): the Learner sees plain names only. Every gradable
+criterion has a plain name written for the `{criterion}` slot ("Start with putting CFX A back"), in
+`shared/coach-deterministic.ts`; `src/lessons/coach.test.ts` fails on one without.
 
 **Deterministic lines** (`deterministicLine(result, profile)`): templates keyed by outcome × focus
 criterion × situation, 2–3 variants each, rotated against the last 5 lines. Examples:

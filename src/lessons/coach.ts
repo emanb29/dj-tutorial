@@ -210,6 +210,9 @@ function describeStanding(criterion: CriterionResult): string | null {
   switch (criterion.id) {
     case "standing.level-match":
       return measured === null ? `${prefix}Levels: not measured` : `${prefix}Levels ${measured.toFixed(1)} dB apart at the handover (need ${String(need)} or less)`;
+    case "standing.controls-reset":
+      if (criterion.status !== "notMet") return "Knobs reset before each deck was heard again";
+      return measured === null ? "Knobs: a deck's EQ, CFX or FX was never reset" : "Knobs: a deck came back in before its EQ, CFX or FX was reset";
     case "standing.cued-first":
       return measured === null ? `${prefix}CUE 🎧: the next track never came in` : `${prefix}CUE 🎧 on ${measured.toFixed(1)} s before it came in (need ${String(need)})`;
     case "standing.trim-still": {
@@ -354,7 +357,8 @@ function describeEqFilter(criterion: CriterionResult): string | null {
       return measured === null ? "Filter: no sweep was still on as A went out" : `Filter on ${measured.toFixed(1)} bars before A went out${span}`;
     }
     case "filter-transition.cfx-back":
-      return measured === null ? "CFX A: not back to the middle after A went out" : `CFX A back ${measured.toFixed(2)} bars after A went out (need ${String(need)} or less)`;
+      if (criterion.status === "met") return "CFX A back in the middle before A was heard again";
+      return measured === null ? "CFX A: not back in the middle by the end" : "CFX A: still filtered when A came back in";
     default:
       return null;
   }

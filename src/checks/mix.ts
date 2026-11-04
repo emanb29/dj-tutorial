@@ -150,6 +150,30 @@ export function takenOutTime(attempt: Attempt, deck: DeckId, window: CtxSpan): C
   return last === undefined || last.to >= window.to - TIME_EPSILON ? null : last.to;
 }
 
+/**
+ * After the deck went out at `t`, when it could next be heard: the first of its next open span (its
+ * fader or the crossfader up while it plays), its next Play press, or its next track load. Null when
+ * none comes before the window ends: then the deck stays out to the end.
+ */
+export function nextHeardTime(attempt: Attempt, deck: DeckId, t: CtxTime, window: CtxSpan): CtxTime | null {
+  const reopened = openSpans(attempt, deck, window).find((span) => span.from > t + TIME_EPSILON)?.from;
+  const recording = attempt.decks[deck];
+  // A Play that starts it (one that pauses it is not a way back in).
+  const played = attempt.events.find(
+    (event) =>
+      event.control === "play" &&
+      event.deck === deck &&
+      event.ctx > t + TIME_EPSILON &&
+      event.ctx < window.to &&
+      !deckTracks(recording).some((track) => isPlaying(track.playhead, event.ctx)),
+  )?.ctx;
+  const loads = [...(recording?.earlier ?? []).map((track) => track.loadedCtx), recording?.loadedCtx].filter(
+    (loadedAt): loadedAt is CtxTime => loadedAt !== undefined && loadedAt > t + TIME_EPSILON && loadedAt < window.to,
+  );
+  const times = [reopened, played, ...loads].filter((time) => time !== undefined);
+  return times.length === 0 ? null : Math.min(...times);
+}
+
 /** Spans in which both decks are audible (`overlap`). */
 export function overlapSpans(attempt: Attempt, window: CtxSpan): CtxSpan[] {
   const bSpans = audibleSpans(attempt, "B", window);

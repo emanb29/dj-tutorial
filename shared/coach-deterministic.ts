@@ -165,11 +165,82 @@ const STANDING_PLAIN_NAMES: Readonly<Record<StandingId, string>> = {
   "technique-mix": "mixing up your transitions",
 };
 
-/** A plain-language name for a criterion. Lesson criteria use their kebab-case name as words. */
+/**
+ * Each Lesson criterion in the Learner's words, to fit the lines' "{criterion}" ("Start with putting
+ * CFX A back"). Every gradable criterion has one (coach-deterministic.test.ts): an id is never shown.
+ */
+const LESSON_PLAIN_NAMES: Readonly<Record<string, string>> = {
+  "deck-basics.fade-in": "fading A in",
+  "deck-basics.fade-out": "fading all the way out",
+  "deck-basics.no-clip-local": "staying out of the red",
+  "beats-and-bars.beat-taps": "tapping on the beat",
+  "beats-and-bars.downbeat-taps": "tapping only the 1",
+  "phrases.phrase-taps": "tapping each phrase start",
+  "phrases.name-sections": "naming the breakdown and the drop",
+  "gain-staging.trim-A": "setting TRIM A",
+  "gain-staging.trim-B": "setting TRIM B",
+  "gain-staging.loud-match": "making both decks as loud",
+  "headphone-cue.cued-taps": "tapping B's kick in your headphones",
+  "headphone-cue.b-off-master": "keeping B off the speakers",
+  "cue-point.cue-on-downbeat": "setting cue points on a 1",
+  "cut-on-phrase.cut-start": "cutting on the phrase",
+  "cut-on-phrase.cut-tight": "a quick cut",
+  "cut-on-phrase.cued-before": "cueing B first",
+  "cut-on-phrase.loud-jump": "an even level at the cut",
+  "tempo-fader.set-bpm": "setting B's BPM",
+  "tempo-fader.master-tempo-ear": "hearing Master Tempo",
+  "tempo-fader.tempo-matched": "matching the tempos",
+  "sync-blend.blend-start": "starting the blend on the phrase",
+  "sync-blend.blend-length": "an 8–16 bar blend",
+  "sync-blend.loud-steady": "a steady level through the blend",
+  "sync-blend.trim-untouched": "leaving TRIM alone mid-blend",
+  "crossfader.xf-blend": "the slow crossfader blend",
+  "crossfader.xf-cut": "the crossfader cut",
+  "crossfader.faders-up": "keeping both faders up",
+  "eq-basics.low-kill": "LOW down on the 1",
+  "eq-basics.low-return": "LOW back on the phrase",
+  "eq-basics.eq-centred": "centring the EQs",
+  "bass-swap.enter-low-cut": "B's LOW down as it comes in",
+  "bass-swap.swap-time": "swapping the bass on the 1",
+  "bass-swap.clash-short": "one bassline at a time",
+  "filter-transition.hpf-depth": "a deep filter",
+  "filter-transition.filter-length": "a long filter sweep",
+  "filter-transition.cfx-back": "putting CFX A back",
+  "nudge-phase.converge": "nudging the kicks together",
+  "nudge-phase.hold": "keeping the kicks together",
+  "nudge-phase.cue-presses": "nudging instead of re-cueing",
+  "tempo-by-ear.tempo-match": "matching the tempo by ear",
+  "blend-by-ear.blend-length": "a long blend",
+  "blend-by-ear.phase-hold": "keeping the kicks together",
+  "blend-by-ear.swap-time": "swapping the bass on the 1",
+  "blend-by-ear.clash-short": "one bassline at a time",
+  "blend-by-ear.loud-steady": "a steady level through the blend",
+  "hot-cues.hc-place": "pads on phrase starts",
+  "hot-cues.hc-trigger": "pressing pads on the 1",
+  "loop-transition.loop-length": "a 4 or 8 bar loop",
+  "loop-transition.loop-in": "looping from a 1",
+  "loop-transition.loop-exit": "EXIT on a 1",
+  "loop-transition.loop-entry": "bringing B in on the loop",
+  "loop-transition.no-double": "one press each",
+  "echo-out.echo-cut": "the echo cut on a 1",
+  "echo-out.echo-entry": "bringing B in on the phrase",
+  "echo-out.fx-off": "FX off after the echoes",
+  "final-mix.track-count": "3 tracks, 16 bars each",
+  "final-mix.one-genre": "one genre",
+  "final-mix.tempo-range": "tempos within 2%",
+  "final-mix.technique": "a blend and a cut",
+};
+
+/** A plain-language name for a criterion; never its id ("this one" for a criterion missing above). */
 export function criterionPlainName(id: CriterionId): string {
   const [scope, name = ""] = id.split(".", 2) as [string, string | undefined];
   if (scope === "standing") return STANDING_PLAIN_NAMES[name as StandingId];
-  return name.replaceAll("-", " ");
+  return LESSON_PLAIN_NAMES[id] ?? "this one";
+}
+
+/** Whether a criterion has a plain name of its own (every gradable one must). */
+export function hasPlainName(id: CriterionId): boolean {
+  return id.startsWith("standing.") || id in LESSON_PLAIN_NAMES;
 }
 
 const MARGIN_THIN = 0.15;
@@ -299,6 +370,9 @@ export function lineProblems(line: string, request: CheckLineRequest, modelInput
     problems.push("outcome: a failed result must not say it passed.");
   }
   if (/\b(score|grade)s?\b/i.test(text)) problems.push('voice: never say "score" or "grade".');
+  const ids = request.result.criteria.flatMap(({ id }) => [id, id.split(".", 2)[1] ?? id]).filter((name) => name.includes("-") || name.includes("."));
+  const leaked = ids.find((name) => text.toLowerCase().includes(name.toLowerCase()));
+  if (leaked !== undefined) problems.push(`names: "${leaked}" is an internal id; use the criterion's name from the input.`);
   if (request.context.recentLines.some((recent) => normaliseLine(recent) === normaliseLine(text))) {
     problems.push("repeat: identical to one of the last lines shown.");
   }

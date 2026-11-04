@@ -60,13 +60,16 @@ interface Handover {
   readonly outAt: number;
   /** The practice before the cue: A and B heard playing on, the master clipping, and these moves. */
   readonly practice?: readonly ControlEvent[];
+  /** The channel meters (A's reads after its CFX, as the engine's does); default MUSIC. */
+  readonly aLevels?: (t: number) => FrameLevels;
+  readonly bLevels?: (t: number) => FrameLevels;
 }
 
 /**
  * An attempt on `plan`: A plays from the plan's start at CUED; B, synced, waits on its cue point and
  * starts on A's phrase start with its fader up over a bar; A's fader closes at `outAt`.
  */
-function handoverAttempt(plan: CheckPlan, { moves, outAt, practice }: Handover): { graded: Attempt; end: number } {
+function handoverAttempt(plan: CheckPlan, { moves, outAt, practice, aLevels, bLevels }: Handover): { graded: Attempt; end: number } {
   const { blendPos } = blendPositions(track);
   const heardA = (pos: number) => CUED + (pos - plan.startPos);
   const playBAt = heardA(blendPos);
@@ -97,8 +100,8 @@ function handoverAttempt(plan: CheckPlan, { moves, outAt, practice }: Handover):
     events,
     meters: {
       master: frames(RECORDER_START, end, (t) => (t < CUED && before ? PRACTICE_CLIP : MUSIC)),
-      A: frames(RECORDER_START, end, () => MUSIC),
-      B: frames(RECORDER_START, end, (t) => (t >= playBAt || (before && t < CUED) ? MUSIC : SILENT)),
+      A: frames(RECORDER_START, end, (t) => aLevels?.(t) ?? MUSIC),
+      B: frames(RECORDER_START, end, (t) => (t >= playBAt || (before && t < CUED) ? (bLevels?.(t) ?? MUSIC) : SILENT)),
     },
     initialMixer: { A: channel({ channelFader: 1 }), B: channel(), crossfader: 0.5 },
     initialDecks: { A: deckState(), B: deckState({ sync: true }) },
@@ -239,12 +242,28 @@ describe("filter-transition", () => {
   const outAt = heardA(handoverPos);
 
   /** CFX A turned right from 2 bars before B's entry to `depth` over 8 bars; A out a phrase after B; CFX A back at `backAt`. */
-  function filterAttempt(options: { depth?: number; backAt?: number; practice?: readonly ControlEvent[] } = {}) {
-    const { depth = 0.85, backAt = outAt + 0.5 * BAR } = options;
-    const from = heardA(blendPos) - 2 * BAR + 0.25 * BEAT;
-    const moves = [...ramp("filter", "A", { from, to: from + 8 * BAR }, 0.06, depth), event(backAt, "filter", 0, "A")];
-    return handoverAttempt(plan, { moves, outAt, ...(options.practice === undefined ? {} : { practice: options.practice }) });
+  const sweepFrom = heardA(blendPos) - 2 * BAR + 0.25 * BEAT;
+
+  function filterAttempt(
+    options: { depth?: number; backAt?: number; practice?: readonly ControlEvent[]; aLevels?: (t: number) => FrameLevels; bLevels?: (t: number) => FrameLevels } = {},
+  ) {
+    const { depth = 0.85, backAt = outAt + 0.5 * BAR, ...levels } = options;
+    const moves = [...ramp("filter", "A", { from: sweepFrom, to: sweepFrom + 8 * BAR }, 0.06, depth), event(backAt, "filter", 0, "A")];
+    return handoverAttempt(plan, { moves, outAt, ...levels });
   }
+
+  it("matches the levels on A before its sweep, so the high-pass thinning A's meter is not a mismatch", () => {
+    // A's channel meter reads after its CFX: it sinks as the high-pass opens (to −34 by the sweep's end).
+    const filtered = (t: number): FrameLevels => {
+      const swept = Math.min(1, Math.max(0, (t - sweepFrom) / (8 * BAR)));
+      return { peak: -3, momentary: -14 - 20 * swept, shortTerm: -14 - 20 * swept };
+    };
+    const matched = grade(definition, plan, filterAttempt({ aLevels: filtered }).graded, filterAttempt().end);
+    expect(byId(matched, "standing.level-match")).toMatchObject({ status: "met", measured: expect.closeTo(0, 1) as number });
+    // B trimmed 4.4 dB hotter than A was: a real mismatch, which the filter does not hide.
+    const hot = filterAttempt({ aLevels: filtered, bLevels: () => ({ peak: -3, momentary: -9.6, shortTerm: -9.6 }) });
+    expect(byId(grade(definition, plan, hot.graded, hot.end), "standing.level-match")).toMatchObject({ status: "notMet", measured: expect.closeTo(4.4, 1) as number });
+  });
 
   it("passes a 10-bar high-pass sweep on A begun 2 bars before B, deep enough, A out on the next phrase, CFX A back at once", () => {
     const { graded, end } = filterAttempt();
@@ -266,8 +285,15 @@ describe("filter-transition", () => {
     expect(failed(grade(definition, plan, graded, end))).toEqual(["filter-transition.hpf-depth"]);
   });
 
-  it("fails CFX A left on for 1½ bars after A went out", () => {
-    const { graded, end } = filterAttempt({ backAt: outAt + 1.5 * BAR });
+  it("passes CFX A back 1.14 bars after A went out (a real attempt): A is silent then, so there is no hurry", () => {
+    const { graded, end } = filterAttempt({ backAt: outAt + 1.14 * BAR });
+    const result = grade(definition, plan, graded, end);
+    expect(result.outcome).toEqual({ kind: "passed" });
+    expect(byId(result, "filter-transition.cfx-back")).toMatchObject({ status: "met", detail: { barsAfterOut: expect.closeTo(1.14, 2) as number } });
+  });
+
+  it("fails CFX A still on when the Check ends", () => {
+    const { graded, end } = filterAttempt({ backAt: outAt + 16 * BAR });
     expect(failed(grade(definition, plan, graded, end))).toEqual(["filter-transition.cfx-back"]);
   });
 });

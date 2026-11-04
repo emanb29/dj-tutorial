@@ -63,7 +63,7 @@ the pass; **warn** is reported only; **report** is a metric for the Coach (catal
 | `cued-first` | 10 | `cut-on-phrase` | incoming CUE on for `≥ 2 s` before `t_in` | warn | warn |
 | `trim-still` | 3 | `sync-blend` | TRIM used to correct the level, not to fade: during any `overlap`, each deck's trim within `6 dB` of where it was before its first turn ∧ no turn that widens the channels' short-term gap by `> 1 dB` (a turn: trim messages `< 0.5 s` apart). See below | warn | warn |
 | `no-boost` | 5 | `eq-basics` | no EQ band `> +3 dB` for `> 1 bar` | warn | warn |
-| `controls-reset` | 12 | `eq-basics` (EQ), `filter-transition` (CFX), `echo-out` (FX) | within 1 bar of a deck going silent: its EQs within ±1 dB, CFX within ±5% of centre; within 1 bar of its echoes dying out (FX return `< −50 LUFS`): Beat FX off or on another channel | warn | warn |
+| `controls-reset` | 12 | `eq-basics` (EQ), `filter-transition` (CFX), `echo-out` (FX) | once a deck goes silent, before it can be heard again (its fader or the crossfader opening it, a Play, a load; else by the window's end): its EQs within ±1 dB, CFX within ±5% of centre, Beat FX off or on another channel. Housekeeping, not timing (maintainer, 2026-11-03; it was "within 1 bar") | warn | warn |
 | `sync-kept` | 11 | `sync-blend` | no jog bend on a synced deck | warn (sync Checks only) | n/a (sync off) |
 | `no-recue` | 7 | `nudge-phase` | ≤ 1 CUE press on the incoming deck during `overlap` or a phase task | warn | warn |
 | `one-bass` | 4 | `blend-by-ear` | `clash ≤ 1 beat` per blend | warn | warn (feeds Balance band) |
@@ -142,7 +142,7 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 | | `clash-short` | `clash` | `≤ 1 beat` | |
 | `filter-transition` | `hpf-depth` | max HPF amount on CFX A before `t_out(A)` | `≥ 0.70` | |
 | | `filter-length` | `t_out(A) −` first CFX A `> 0.05` | `∈ [8, 16] bars ± 1 beat` | `∈ [8, 9]` bars |
-| | `cfx-back` | time from `t_out(A)` to CFX A within ±5% of centre | `≤ 1 bar` | |
+| | `cfx-back` | CFX A within ±5% of centre, after `t_out(A)`, before A can be heard again (else by the window's end), as `controls-reset` | in time (bars late `≤ 0`; was `≤ 1 bar` after `t_out`) | |
 | `nudge-phase` | `converge` | first `t_c` with `|phaseErr| < 15 ms` whose `hold` is met, if one comes within 4 bars (an overshoot back through A is not the convergence), else the first under 15 ms; measured from task start | `≤ 4 bars` | same, hold 4 bars |
 | | `hold` | `holdFrac([t_c, t_c + 8 bars], 15 ms)`; `worstRun(…, 30 ms)` | `≥ 0.95` ∧ `≤ 1 beat` | |
 | | `cue-presses` | CUE presses on B | `≤ 1` | |
