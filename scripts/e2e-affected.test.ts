@@ -56,6 +56,10 @@ describe("selectSpecs", () => {
     });
   });
 
+  it("runs no end-to-end spec for the name parser and its dry run, which the app does not use yet", () => {
+    expect(selectSpecs(["shared/name-parse.ts", "scripts/enrich-names.ts", "scripts/enrich-names-report.ts"])).toEqual({ all: false, specs: [] });
+  });
+
   it("runs a changed spec by itself", () => {
     expect(selectSpecs(["e2e/lessons-by-ear.spec.ts"])).toEqual({ all: false, specs: ["e2e/lessons-by-ear.spec.ts"] });
   });

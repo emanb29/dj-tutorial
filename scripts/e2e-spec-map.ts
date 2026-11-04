@@ -54,6 +54,9 @@ export const SPEC_RULES: readonly SpecRule[] = [
   },
   // The Mix Editor (ISS-189): so far only pure derivations (Execution plan, Complexity rating), with no screen; unit tested.
   { paths: ["src/app/mix-editor/**"], specs: [] },
+  // Library metadata enrichment (ISS-198), step 1: the pure name parser and its dry-run script. Nothing
+  // in the app imports them yet; unit tested.
+  { paths: ["shared/name-parse.ts", "scripts/enrich-names.ts", "scripts/enrich-names-report.ts"], specs: [] },
   // The spec itself, when only it changed.
   { paths: ["e2e/*.spec.ts"], specs: "self" },
   // Shared by everything: any change here runs the whole suite.
