@@ -93,10 +93,10 @@ describe("crossfader", () => {
     expect(byId(check(crossfaderMoves(), { cueAAt: null }), "crossfader.xf-cut")?.status).toBe("notMet");
   });
 
-  it("fails a master loudness jump over 2 dB across the cut, as cut-on-phrase does", () => {
+  it("fails a master loudness jump over 3 dB across the cut, as cut-on-phrase does", () => {
     const after = (db: number) => (t: number) => (t >= 80 ? -14 + db : -14);
-    expect(byId(check(crossfaderMoves(), { masterLufs: after(2) }), "crossfader.xf-cut")?.status).toBe("met");
-    expect(byId(check(crossfaderMoves(), { masterLufs: after(2.5) }), "crossfader.xf-cut")?.status).toBe("notMet");
+    expect(byId(check(crossfaderMoves(), { masterLufs: after(3) }), "crossfader.xf-cut")?.status).toBe("met");
+    expect(byId(check(crossfaderMoves(), { masterLufs: after(3.5) }), "crossfader.xf-cut")?.status).toBe("notMet");
   });
 
   it("times the cut from the incoming deck's Play, not from when it becomes audible", () => {

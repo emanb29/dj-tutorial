@@ -82,7 +82,11 @@ export function setPlays(context: CheckContext): Play[] {
  */
 export function transitionAttempt(attempt: GradedAttempt, outgoing: Play, incoming: Play): GradedAttempt {
   const decks = withDecks(attempt, { [outgoing.deck]: outgoing, [incoming.deck]: incoming });
-  if (outgoing.deck === "A") return decks;
+  return outgoing.deck === "A" ? decks : mirroredAttempt(decks);
+}
+
+/** The attempt with decks A and B swapped (every per-deck field), and the crossfader mirrored. */
+export function mirroredAttempt(decks: GradedAttempt): GradedAttempt {
   const swap = (deck: DeckId | undefined) => (deck === undefined ? undefined : other(deck));
   const events = decks.events.map((event): ControlEvent => {
     if (event.control === "crossfader") return { ...event, value: 1 - event.value };

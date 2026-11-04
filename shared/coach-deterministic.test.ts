@@ -158,7 +158,7 @@ function lineRequest(overrides: {
       variant: "full",
       outcome: overrides.outcome ?? "passed",
       criteria: overrides.criteria ?? [
-        { id: "cut-on-phrase.play-on-phrase", severity: "fail", status: "met", measured: 32, unit: "ms", threshold: { op: "<=", value: 40, unit: "ms" }, margin: 0.2 },
+        { id: "cut-on-phrase.cut-start", severity: "fail", status: "met", measured: 32, unit: "ms", threshold: { op: "<=", value: 40, unit: "ms" }, margin: 0.2 },
         { id: "standing.no-clip", severity: "fail", status: "met", measured: -3, unit: "dBFS", threshold: { op: "<=", value: -0.1, unit: "dBFS" }, margin: 0.9 },
       ],
       metrics: {},
@@ -183,7 +183,7 @@ describe("deterministic post-Check line", () => {
         attemptToday: 3,
         criteria: [
           { id: "standing.no-clip", severity: "fail", status: "notMet", measured: 0.4, unit: "dBFS", threshold: { op: "<=", value: -0.1, unit: "dBFS" }, margin: -5 },
-          { id: "cut-on-phrase.play-on-phrase", severity: "fail", status: "met", measured: 10, unit: "ms", threshold: { op: "<=", value: 40, unit: "ms" }, margin: 0.75 },
+          { id: "cut-on-phrase.cut-start", severity: "fail", status: "met", measured: 10, unit: "ms", threshold: { op: "<=", value: 40, unit: "ms" }, margin: 0.75 },
         ],
       }),
     );
@@ -195,11 +195,11 @@ describe("deterministic post-Check line", () => {
       lineRequest({
         attemptToday: 3,
         criteria: [
-          { id: "cut-on-phrase.play-on-phrase", severity: "fail", status: "met", measured: 38, unit: "ms", threshold: { op: "<=", value: 40, unit: "ms" }, margin: 0.05 },
+          { id: "cut-on-phrase.cut-start", severity: "fail", status: "met", measured: 38, unit: "ms", threshold: { op: "<=", value: 40, unit: "ms" }, margin: 0.05 },
         ],
       }),
     );
-    expect(line).toBe("In. play on phrase was close: that's the one to tighten next time.");
+    expect(line).toBe("In. cutting on the phrase was close: that's the one to tighten next time.");
   });
 
   it("never repeats one of the last lines shown", () => {
@@ -208,9 +208,17 @@ describe("deterministic post-Check line", () => {
     expect(second).not.toBe(first);
   });
 
+  it("names the criterion to start with in the Learner's words, never its id (maintainer: \"Start with cfx back\")", () => {
+    const failed = (id: "filter-transition.cfx-back" | "standing.level-match", margin: number, severity: "fail" | "warn" = "fail") =>
+      ({ id, severity, status: "notMet", measured: 1.14, unit: "bars", threshold: { op: "<=", value: 1, unit: "bars" }, margin }) as const;
+    const line = deterministicLine(lineRequest({ outcome: "failed", attemptToday: 0, criteria: [failed("filter-transition.cfx-back", -0.14), failed("standing.level-match", -1, "warn")] }));
+    expect(line).toBe("Start with putting CFX A back; the rest gets easier once that holds.");
+  });
+
   it("uses plain names for standing criteria and words for Lesson criteria", () => {
     expect(criterionPlainName("standing.one-bass")).toBe("one bassline at a time");
-    expect(criterionPlainName("blend-by-ear.phase-hold")).toBe("phase hold");
+    expect(criterionPlainName("blend-by-ear.phase-hold")).toBe("keeping the kicks together");
+    expect(criterionPlainName("filter-transition.cfx-back")).toBe("putting CFX A back");
   });
 });
 
@@ -239,6 +247,12 @@ describe("model line validation", () => {
     expect(
       lineProblems("Nice one.", lineRequest({ recentLines: ["nice one."] }), modelInput),
     ).toEqual(["repeat: identical to one of the last lines shown."]);
+  });
+
+  it("rejects a line that shows a criterion's internal id", () => {
+    expect(lineProblems("Work on cut-start next time.", request, modelInput)).toEqual([
+      'names: "cut-start" is an internal id; use the criterion\'s name from the input.',
+    ]);
   });
 
   it("rejects praise for a pass on a failed result", () => {

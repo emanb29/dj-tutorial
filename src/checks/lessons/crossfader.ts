@@ -7,6 +7,7 @@ import { allOf, judge } from "../criterion.ts";
 import { channelFaderAt, cueOnSeconds, entryActionTime, exitActionTime } from "../mix.ts";
 import { loudJump, phraseOffsetSeconds } from "../phrasing.ts";
 import { beatSeconds, controlEvents } from "../timeline.ts";
+import { mirroredAttempt } from "../set.ts";
 import { pointActionToleranceMs } from "../tolerance.ts";
 import { CUED_BEFORE_S, LOUD_JUMP_DB } from "./cut-on-phrase.ts";
 import { SYNC_BLEND_BARS } from "./sync-blend.ts";
@@ -73,8 +74,25 @@ function lowestFader(context: CheckContext, spans: readonly CtxSpan[]): number {
   );
 }
 
+/**
+ * The Check's two transitions, each as a two-track view (outgoing A, incoming B, as a set's views,
+ * check-design §5.4): the blend, A to B, over its section; the cut back to A over its section, the
+ * decks swapped. The standing transition criteria (cued-first, level-match, on-phrase, trim-still)
+ * then read each transition's own incoming deck and entry: CUE A before the cut, not only CUE B
+ * before the blend.
+ */
+function transitionViews(context: CheckContext): readonly CheckContext[] {
+  const task = context.spec.task;
+  if (task.lessonId !== "crossfader") return [context];
+  const blend = { ...context, window: task.blendSection };
+  const cut = task.cutSection;
+  if (cut === null) return [blend];
+  const cutAttempt = cut.incoming === "A" ? mirroredAttempt(context.attempt) : context.attempt;
+  return [blend, { ...context, attempt: cutAttempt, window: cut.span }];
+}
+
 export const crossfader: LessonCheck<TaskOf<"crossfader">> = {
-  situations: { transition: true },
+  situations: { transition: true, transitionViews },
   criteria: ["crossfader.xf-blend", "crossfader.xf-cut", "crossfader.faders-up"],
   run(context, task) {
     const blend = handover(context, "A", "B", task.blendSection);

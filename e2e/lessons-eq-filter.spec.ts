@@ -113,5 +113,5 @@ test("filter-transition: PLAY B on Phrase 2, CFX A swept over 10 bars, fader B o
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
   await expect(card).toContainText("CFX A: up to 85% high-pass (need 70%)");
   await expect(card).toContainText(/Filter on (9|10)\.\d bars before A went out \(need 8–16\)/);
-  await expect(card).toContainText(/CFX A back 0\.\d\d bars after A went out/);
+  await expect(card).toContainText("CFX A back in the middle before A was heard again");
 });

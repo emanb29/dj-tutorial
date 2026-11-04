@@ -19,7 +19,7 @@ const LEAD_BARS = 2 * PHRASE_BARS;
 const BLEND_PHRASE = 3;
 /** The handover is a phrase after B comes in: the bass swap, or A out at the end of the filter sweep. */
 const HANDOVER_BARS = 8;
-/** The Check ends this long after A's fader closes: CFX and EQ are read back within 1 bar of A going silent. */
+/** The Check ends this long after A's fader closes: CFX and EQ must be back in the middle by then (A stays out). */
 const TAIL_BARS = 2;
 
 const tooShort = (track: LessonTrack) => (track.phraseStarts.length < 6 ? ["The track is too short for this Lesson's 40 bars."] : []);
@@ -141,7 +141,7 @@ const bassSwap: LessonDefinition = {
       { fromPos: blendPos, caption: "Fader B up now. LOW B stays down" },
       { fromPos: blendPos + barsSec(track, 1), caption: "Swap the bass at Phrase 4, bar 1" },
       { fromPos: handoverPos - barsSec(track, 1), caption: "At Phrase 4, bar 1: LOW A down, LOW B up" },
-      // One caption for both: the Check ends 2 bars after A's fader closes, and LOW A must be back within 1.
+      // One caption for both: the Check ends 2 bars after A's fader closes, and LOW A must be back by then.
       { fromPos: handoverPos + beat, caption: "Bass swapped. Fader A down, then LOW A to the middle" },
     ]);
   },
@@ -218,7 +218,7 @@ const filterTransition: LessonDefinition = {
   tips: {
     "filter-transition.hpf-depth": ["Turn CFX A most of the way right before A goes out.", "Past 70%: only the hats of A are left."],
     "filter-transition.filter-length": [`Start CFX A at Phrase 2, bar ${String(PHRASE_BARS + 1 - (SWEEP_ASKED_BARS - HANDOVER_BARS))}; A out at Phrase 4, bar 1 (S).`, `Turn it slowly: ${String(SWEEP_ASKED_BARS)} bars, not 1.`],
-    "filter-transition.cfx-back": ["A out, then CFX A straight back to the middle.", "CFX A in the middle within a bar of A going quiet."],
+    "filter-transition.cfx-back": ["A out, then CFX A back to the middle, before the Check ends.", "No rush once A is out: CFX A to the middle before A plays again."],
   },
 };
 

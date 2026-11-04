@@ -74,7 +74,7 @@ const STANDING_LABELS: Readonly<Record<StandingId, string>> = {
   "on-phrase": "on the phrase",
   "level-match": "levels matched",
   "cued-first": "cue it first",
-  "trim-still": "TRIM alone",
+  "trim-still": "TRIM for small fixes",
   "no-boost": "no EQ boosts",
   "controls-reset": "knobs centred",
   "sync-kept": "SYNC stays on",
@@ -97,7 +97,7 @@ export function criterionLabel(id: CriterionId): string {
 /** "Graded: taps on the beat · then only the 1 · master out of the red", for a Lesson's Check. */
 export function gradedLine(definition: { readonly id: BuiltLesson["id"] | "final-mix"; readonly aids?: BuiltLesson["aids"] }, passedLessons: readonly LessonId[]): string {
   const ids = gradedCriteria(definition.id, { passedLessons, aids: { ...LESSON_AIDS, ...definition.aids } });
-  // Two criteria can share a label (TRIM alone); say it once.
+  // Two criteria can share a label; say it once.
   const labels = [...new Set(ids.map(criterionLabel))];
   return `Graded: ${labels.join(" · ")}`;
 }

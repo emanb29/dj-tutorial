@@ -97,9 +97,9 @@ describe("echo-out", () => {
 describe("standing.controls-reset, the FX part (once echo-out is passed)", () => {
   const cold = (recorded: ReturnType<typeof scenario>) => byId(check(recorded, ["cut-on-phrase", "sync-blend", "echo-out"]), "standing.controls-reset");
 
-  it("counts from where the echoes die out, not from the cut: an echo out rings on by design", () => {
-    expect(cold(scenario({ fxOffAt: 50 + BAR }))).toMatchObject({ status: "met", measured: expect.closeTo(1, 6) as number });
-    expect(cold(scenario({ fxOffAt: 50 + BAR + 0.1 }))?.status).toBe("notMet");
+  it("needs Beat FX off before A can be heard again (here: by the end), at any time after the echoes", () => {
+    expect(cold(scenario({ fxOffAt: 50 + BAR }))?.status).toBe("met");
+    expect(cold(scenario({ fxOffAt: 50 + 3 * BAR }))?.status).toBe("met");
     expect(cold(scenario({ fxOffAt: null }))).toMatchObject({ status: "notMet", measured: null });
   });
 

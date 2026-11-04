@@ -3,7 +3,8 @@
 import type { ControlId, CtxSpan, CtxTime, DeckId, LessonId, MeterFrame } from "@shared/attempt.ts";
 import type { CriterionId, CriterionResult, Severity, StandingId } from "@shared/check-result.ts";
 import { barSeconds, framesWhere, loadedDeck, type CheckContext, type Situations } from "./context.ts";
-import { judge, notApplicable } from "./criterion.ts";
+import { allOf, judge, notApplicable } from "./criterion.ts";
+import { trimTurnsInOverlap } from "./blend.ts";
 import { TIME_EPSILON } from "./measures.ts";
 import { cueOnSeconds, entryActionTime, entryTime, exitTime, frameAt, framesIn, isAudible, MAX_FRAME_AGE_S, overlapSpans } from "./mix.ts";
 import { phraseOffsetBeats, phraseOffsetBeatsOf } from "./phrasing.ts";
@@ -288,17 +289,59 @@ function eventsInOverlap(context: CheckContext, control: ControlId, decks: reado
   );
 }
 
+/**
+ * TRIM may swing this far, dB, from where it was before the transition's first turn. Further, it is
+ * doing a fader's job: the incoming deck's whole fade, not a correction of its level.
+ */
+const TRIM_SWING_DB = 6;
+/** A turn that leaves the two channels this much further apart, dB, made the level worse. */
+const TRIM_WRONG_WAY_DB = 1;
+
+/**
+ * `trim-still`: while both decks are heard, TRIM may correct the level, not do the fade (maintainer,
+ * 2026-11-03: with the channel faders held up, as in `crossfader`, TRIM is the only control left to
+ * keep the master steady when two tracks differ). Two parts: the largest swing of either deck's trim
+ * from where it was before its first turn (`≤ 6 dB`), and the turns that took the two channels' levels
+ * further apart (`= 0`): a turn is wrong-way when the channel short-term loudness gap at its start,
+ * plus the dB it added, is over 1 dB wider than the gap was. A turn is TRIM messages under 0.5 s apart.
+ */
 function trimStill(context: CheckContext, severity: Severity): CriterionResult {
-  const moves = eventsInOverlap(context, "trim", DECKS);
-  return judge({
-    id: "standing.trim-still",
-    severity,
-    unit: "count",
-    threshold: { op: "<=", value: 0, unit: "count" },
-    measured: moves.length,
-    scale: 1,
-    evidence: moves.map((move) => ({ from: move.ctx, to: move.ctx, label: `trim ${move.deck ?? ""}` })),
+  const { attempt } = context;
+  const turns = trimTurnsInOverlap(context);
+  const swings = DECKS.flatMap((deck) => {
+    const own = turns.filter((turn) => turn.deck === deck);
+    const from = own[0]?.startDb;
+    return from === undefined ? [] : own.flatMap((turn) => turn.moves.map((move) => Math.abs(move.value - from)));
   });
+  const wrongWay = turns.filter((turn) => {
+    const at = turn.from;
+    const mine = frameAt(attempt.meters[turn.deck], at);
+    const theirs = frameAt(attempt.meters[turn.deck === "A" ? "B" : "A"], at);
+    if (mine === null || theirs === null) return false;
+    const gap = mine.shortTermLufs - theirs.shortTermLufs;
+    return Math.abs(gap + turn.endDb - turn.startDb) > Math.abs(gap) + TRIM_WRONG_WAY_DB;
+  });
+  const detail = { gestures: turns.length, wrongWay: wrongWay.length };
+  const result = allOf("standing.trim-still", [
+    judge({
+      id: "standing.trim-still",
+      severity,
+      unit: "dB",
+      threshold: { op: "<=", value: TRIM_SWING_DB, unit: "dB" },
+      measured: swings.reduce((most, swing) => Math.max(most, swing), 0),
+      evidence: turns.map((turn) => ({ from: turn.from, to: turn.to, label: `trim ${turn.deck}` })),
+    }),
+    judge({
+      id: "standing.trim-still",
+      severity,
+      unit: "count",
+      threshold: { op: "<=", value: 0, unit: "count" },
+      measured: wrongWay.length,
+      scale: 1,
+      evidence: wrongWay.map((turn) => ({ from: turn.from, to: turn.to, label: `trim ${turn.deck} the wrong way` })),
+    }),
+  ]);
+  return { ...result, detail };
 }
 
 function noRecue(context: CheckContext, severity: Severity): CriterionResult {
@@ -426,14 +469,19 @@ function labelled(result: CriterionResult, transition: number): CriterionResult 
  * when no transition contains its situation.
  */
 function worstOf(definition: StandingDefinition, severity: Severity, results: readonly CriterionResult[]): CriterionResult {
-  const graded = results.filter((result) => result.status !== "notApplicable");
+  const numbered = results.map((result, index) => ({ result, transition: index + 1 })).filter(({ result }) => result.status !== "notApplicable");
   const rank = (result: CriterionResult) => [result.status === "met" ? 1 : 0, result.margin ?? Number.NEGATIVE_INFINITY] as const;
-  const worst = graded.reduce<CriterionResult | null>((found, result) => {
-    if (found === null) return result;
-    const [foundMet, foundMargin] = rank(found);
-    const [met, margin] = rank(result);
-    return met < foundMet || (met === foundMet && margin < foundMargin) ? result : found;
+  const worst = numbered.reduce<(typeof numbered)[number] | null>((found, each) => {
+    if (found === null) return each;
+    const [foundMet, foundMargin] = rank(found.result);
+    const [met, margin] = rank(each.result);
+    return met < foundMet || (met === foundMet && margin < foundMargin) ? each : found;
   }, null);
   if (worst === null) return results[0] ?? notApplicable(`standing.${definition.id}`, severity, "count", null);
-  return { ...worst, evidence: graded.flatMap((result) => result.evidence), detail: { ...worst.detail, transitions: graded.length } };
+  // `transition`: which one is reported (1 = the first), so its line can say so.
+  return {
+    ...worst.result,
+    evidence: numbered.flatMap(({ result }) => result.evidence),
+    detail: { ...worst.result.detail, transitions: numbered.length, transition: worst.transition },
+  };
 }
