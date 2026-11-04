@@ -156,6 +156,15 @@ describe("describeCriterion", () => {
     expect(describeCriterion(fadeOut)).toBe("Fade out: fader ended at 40% (needs 0%)");
   });
 
+  it("names a passed loop by its whole bars, and keeps two decimals on one that failed", () => {
+    const loopLength = (status: CriterionResult["status"], measured: number, loopBeats: number): CriterionResult => ({
+      id: "loop-transition.loop-length", severity: "fail", status, measured, unit: "ms", threshold: { op: "<=", value: 60, unit: "ms" }, margin: null, evidence: [], detail: { loopBeats },
+    });
+    expect(describeCriterion(loopLength("met", 9, 16.04))).toBe("Loop: 4 bars, 9 ms off 4 or 8 bars (need 60 or less)");
+    expect(describeCriterion(loopLength("met", 9, 15.96))).toBe("Loop: 4 bars, 9 ms off 4 or 8 bars (need 60 or less)");
+    expect(describeCriterion(loopLength("notMet", 280, 15))).toBe("Loop: 3.75 bars, 280 ms off 4 or 8 bars (need 60 or less)");
+  });
+
   const criterion = (id: CriterionResult["id"], measured: number | null, unit: CriterionResult["unit"], value: number, detail?: Record<string, number>): CriterionResult => ({
     id,
     severity: "fail",

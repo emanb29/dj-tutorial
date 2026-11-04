@@ -2,13 +2,13 @@
 // reads no file and decodes nothing while it lists, filters and sorts, and works from the keyboard and
 // from the FLX4's BROWSE and LOAD (through the app's own FocusNavigator, as ControllerNavigation drives it).
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FocusNavigator } from "../controller/focus-navigation.ts";
 import type { LibraryRow } from "./browse.ts";
 import { folderRows } from "./folder-rows.ts";
 import { LibraryBrowser, type Deck } from "./LibraryBrowser.tsx";
 import { storageKey } from "./remembered.ts";
-import { LARGE_LIBRARY_SIZE, largeLibrary } from "./test-support.ts";
+import { LARGE_LIBRARY_SIZE, largeLibrary, type LargeLibrary } from "./test-support.ts";
 
 /** Lets scrolling and React's renders settle, as the time between two BROWSE detents does. */
 const frames = async (count = 2) => {
@@ -59,8 +59,21 @@ afterEach(() => {
 });
 
 describe("a 10,000-track library on screen", () => {
+  // The slow step is the set-up, not the browser: writing, scanning and matching 10,000 files to a
+  // rekordbox.xml takes 3–4 s alone and 20 s under load (measured), and each test built it again inside
+  // its 15 s browser-test timeout. It is built once, in a hook with its own budget; the tests only read
+  // it, and each still checks that its browsing opened no file and decoded nothing beyond the scan.
+  // The browsing itself takes under 1 s alone and about 2.5 s under load; under a load average of 25 the
+  // page has still stalled for several seconds right after the set-up (likely collecting its garbage),
+  // so each test also gets 30 s, twice the default.
+  const LOADED_TIMEOUT_MS = 30_000;
+  let library: LargeLibrary;
+  beforeAll(async () => {
+    library = await largeLibrary();
+  }, 60_000);
+
   it("draws only the rows in view, and lists, searches and sorts with no file read and nothing decoded", async () => {
-    const { music, folder, decoded, openedByScan } = await largeLibrary();
+    const { music, folder, decoded, openedByScan } = library;
     browser(folderRows(music));
 
     expect(screen.getByTestId("library-count").textContent).toContain(`${LARGE_LIBRARY_SIZE.toLocaleString()} tracks`);
@@ -78,10 +91,10 @@ describe("a 10,000-track library on screen", () => {
     expect(drawnRows().length + document.querySelectorAll("li[data-facet]").length).toBeLessThan(60);
     expect(folder.opened).toBe(openedByScan);
     expect(decoded).toEqual([]);
-  });
+  }, LOADED_TIMEOUT_MS);
 
   it("scrolls to the end and back from the keyboard, drawing the rows it reaches", async () => {
-    const { music } = await largeLibrary();
+    const { music, folder, decoded, openedByScan } = library;
     browser(folderRows(music));
     const first = drawnRows()[0] as HTMLElement;
     first.focus();
@@ -94,7 +107,9 @@ describe("a 10,000-track library on screen", () => {
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Home" });
     await frames();
     expect(focusedRow()?.dataset["index"]).toBe("0");
-  });
+    expect(folder.opened).toBe(openedByScan);
+    expect(decoded).toEqual([]);
+  }, LOADED_TIMEOUT_MS);
 });
 
 describe("the keyboard", () => {

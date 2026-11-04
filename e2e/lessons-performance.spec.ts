@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { caption, keysAtBeats, learner, openLesson, playingPast, readyFromPhraseStart, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
 // Lessons 14–16 end to end, muted, on the synthetic groove (124 BPM, first beat at 0 s, bar 1 on beat
@@ -156,7 +156,7 @@ test("loop-transition: LOOP IN and OUT over A's outro, B on the loop's 1, EXIT o
   const card = resultCard(page);
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
-  await expect(card).toContainText(/Loop: 4\.00 bars/);
+  await expectFourBarLoop(card);
   await expect(card).toContainText("B in: on the loop's 1, on B's phrase");
 });
 
@@ -201,7 +201,7 @@ test("loop-transition after the bass swap: LOW B cut, B on the loop's 1, the bas
   const card = resultCard(page);
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card, await card.innerText()).toHaveAttribute("data-outcome", "passed");
-  await expect(card).toContainText(/Loop: 4\.00 bars/);
+  await expectFourBarLoop(card);
   // one-bass is graded (blend-by-ear passed): following the captions, nothing is missed, not even a warning.
   await expect(card.locator('li[data-status="notMet"]')).toHaveCount(0);
 });
@@ -240,3 +240,16 @@ test("echo-out: ECHO on, A cut on the last bar's 1, B on the phrase's 1, FX off 
   await expect(card).toContainText(/Echo cut: 0\.\d\d beats off the 1/);
   await expect(card).toContainText(/FX off/);
 });
+
+/**
+ * The card's loop line, read as numbers: a loop closed by hand (LOOP OUT) is a few ms off under load, so
+ * the exact text varies. It passes when it is within the Check's own tolerance (the "need N or less" it
+ * prints), and a passed loop is named by its whole bars: 4.
+ */
+async function expectFourBarLoop(card: Locator) {
+  const line = /Loop: ([\d.]+) bars, (\d+) ms off 4 or 8 bars \(need (\d+) or less\)/;
+  await expect(card).toContainText(line);
+  const [, bars, offMs, needMs] = line.exec(await card.innerText()) ?? [];
+  expect(Number(bars)).toBe(4);
+  expect(Number(offMs)).toBeLessThanOrEqual(Number(needMs));
+}
