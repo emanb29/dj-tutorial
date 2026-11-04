@@ -145,33 +145,105 @@ test("Mix plans at phone width: the browser fits the screen and a tap on + Add a
   await expect(playOrder(page)).toHaveText([/A · Copper Tide/]);
 });
 
-test("Mix plans in a 963 px window: the browser stays inside its card, and its rows match its header", async ({ page }) => {
-  test.setTimeout(90_000);
-  await page.setViewportSize({ width: 963, height: 1037 });
-  await openNewPlan(page, learner("library-browser-963"));
-  const library = browserRegion(page);
-  await expect(library.getByTestId("library-count")).toHaveText("5 tracks");
+/** Right edges of the New plan card, the browser and its list; and how far the page scrolls sideways. */
+async function edges(page: Page) {
+  return page.evaluate(() => {
+    const right = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (element === null) throw new Error(`${selector} is not on the page`);
+      return element.getBoundingClientRect().right;
+    };
+    const card = document.querySelector('section[aria-label="New plan"]');
+    const inner = card === null ? 0 : card.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(card).paddingRight);
+    return {
+      card: inner,
+      library: right('section[aria-label="Library browser"]'),
+      list: right('section[aria-label="Library browser"] .lb-scroll'),
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+}
 
-  const card = page.getByRole("region", { name: "New plan" });
-  const edges = async () => {
-    const [cardBox, libraryBox, listBox] = await Promise.all([card.boundingBox(), library.boundingBox(), library.locator(".lb-scroll").boundingBox()]);
-    if (cardBox === null || libraryBox === null || listBox === null) throw new Error("the card, the browser or its list is not on screen");
-    return { card: cardBox.x + cardBox.width, library: libraryBox.x + libraryBox.width, list: listBox.x + listBox.width };
-  };
-  const { card: cardRight, library: libraryRight, list: listRight } = await edges();
-  expect(libraryRight).toBeLessThanOrEqual(cardRight);
-  expect(listRight).toBeLessThanOrEqual(cardRight);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+/** Each header's left edge against its cell's in the first drawn row, px apart. */
+async function headerOffsets(page: Page): Promise<Record<string, number>> {
+  return page.evaluate(() => {
+    const row = document.querySelector("li[data-library]");
+    return Object.fromEntries(
+      Array.from(document.querySelectorAll<HTMLElement>(".lb-head [data-column]"), (head) => {
+        const column = head.dataset["column"] ?? "";
+        const cell = row?.querySelector(`.lb-col-${column}`);
+        return [column, cell == null ? Number.POSITIVE_INFINITY : Math.abs(cell.getBoundingClientRect().left - head.getBoundingClientRect().left)];
+      }),
+    );
+  });
+}
 
-  // Too narrow there for one row of columns: two lines a track, and no column headers over them.
-  await expect(library).toHaveAttribute("data-layout", "narrow");
-  await expect(library.locator(".lb-head")).toHaveCount(0);
+async function expectInsideCard(page: Page): Promise<void> {
+  const fits = await edges(page);
+  expect(fits.library).toBeLessThanOrEqual(fits.card + 0.5);
+  expect(fits.list).toBeLessThanOrEqual(fits.card + 0.5);
+  expect(fits.sideways).toBeLessThanOrEqual(0);
+}
 
-  // The filters open from a control that shows, and still fit the card.
-  const toggle = library.locator("summary", { hasText: "Filters" });
-  await expect(toggle).toBeVisible();
-  await toggle.click();
-  await expect(library.getByLabel("Genre filter")).toBeVisible();
-  expect((await edges()).library).toBeLessThanOrEqual(cardRight);
-});
+// A 1440p monitor, at 100 % and at 150 % scaling: the page uses the width, the play order sits beside
+// the library, and the browser has one row of columns with album and genre under aligned headers.
+for (const { width, height } of [
+  { width: 2560, height: 1440 },
+  { width: 1707, height: 960 },
+]) {
+  test(`Mix plans at ${String(width)}×${String(height)}: one row of columns, headers over their cells, the play order beside the library`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width, height });
+    await openNewPlan(page, learner(`library-browser-${String(width)}`));
+    const library = browserRegion(page);
+    await expect(library.getByTestId("library-count")).toHaveText("5 tracks");
+
+    await expect(library).toHaveAttribute("data-layout", "wide");
+    await expect(library.locator(".lb-head [data-column]")).toHaveText([/Title/, "Artist", "Album", "Genre", "BPM", "Key", "Length", "Rating", "Plays", "Grid"]);
+    for (const [column, apart] of Object.entries(await headerOffsets(page))) expect(apart, column).toBeLessThanOrEqual(1);
+    await expect(tracks(page).first().locator(".lb-col-album")).toHaveText("Low Sun");
+    await expect(tracks(page).first().locator(".lb-col-genre")).toHaveText("Deep House");
+    await expectInsideCard(page);
+
+    // The play order to the left of the library, level with it.
+    const order = await page.locator(".plans-new-order").boundingBox();
+    const browser = await page.locator(".plans-new-library").boundingBox();
+    if (order === null || browser === null) throw new Error("the play order or the library is not on screen");
+    expect(order.x + order.width).toBeLessThanOrEqual(browser.x);
+    expect(Math.abs(order.y - browser.y)).toBeLessThanOrEqual(1);
+
+    // Picking still works from the keyboard, the FLX4's way: Enter on a row adds it.
+    await tracks(page).first().focus();
+    await page.keyboard.press("Enter");
+    await expect(playOrder(page)).toHaveText([/A · Copper Tide/]);
+  });
+}
+
+// A laptop and a narrow window: whichever layout fits, inside the card; headers aligned when shown.
+for (const { width, height } of [
+  { width: 1440, height: 900 },
+  { width: 963, height: 1037 },
+]) {
+  test(`Mix plans at ${String(width)}×${String(height)}: the browser stays inside its card, and its rows match its header`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width, height });
+    await openNewPlan(page, learner(`library-browser-${String(width)}`));
+    const library = browserRegion(page);
+    await expect(library.getByTestId("library-count")).toHaveText("5 tracks");
+    await expectInsideCard(page);
+
+    if ((await library.getAttribute("data-layout")) === "wide") {
+      for (const [column, apart] of Object.entries(await headerOffsets(page))) expect(apart, column).toBeLessThanOrEqual(1);
+    } else {
+      // Two lines a track, and no column headers over them.
+      await expect(library.locator(".lb-head")).toHaveCount(0);
+    }
+
+    // The filters open from a control that shows, and still fit the card.
+    const toggle = library.locator("summary", { hasText: "Filters" });
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(library.getByLabel("Genre filter")).toBeVisible();
+    await expectInsideCard(page);
+  });
+}

@@ -1,11 +1,33 @@
-/* Mix plans: one column, big targets, works from 360 px up (planning itself is for laptops, later). */
+/* Mix plans: big targets, works from 360 px up. A new plan uses a wide screen: up to 1600 px, the play
+   order beside the library, so the library browser has room for its one-row columns. */
 
 .plans-page {
   box-sizing: border-box;
-  max-width: 780px;
+  max-width: 960px;
   min-height: 100dvh;
   margin: 0 auto;
   padding: var(--space-5) var(--space-4);
+}
+
+.plans-page-new {
+  max-width: 1600px;
+}
+
+.plans-new-order,
+.plans-new-library {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+@media (min-width: 1200px) {
+  .plans-panel.plans-new {
+    grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--space-5);
+  }
 }
 
 .plans-head {
@@ -25,6 +47,7 @@
 
 .plans-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--panel-edge);
