@@ -18,7 +18,7 @@ import { mapGenre } from "./genre.ts";
 import { parseTrackName, type ConfidenceBand } from "./name-parse.ts";
 import { writeAtomically, type Proposal } from "./store.ts";
 
-export const SOUNDCLOUD_STEP_VERSION = 1;
+export const SOUNDCLOUD_STEP_VERSION = 2;
 
 export interface SoundCloudTrack {
   readonly id: string;
@@ -226,6 +226,12 @@ export async function lookupAll(ids: readonly string[], options: LookupOptions):
 
 const comparable = (text: string) => text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
+/** One credit's names: "A & B", "A x B", "A, B" and "A and B" each name A and B. */
+const creditNames = (credit: string) => credit.split(/\s*(?:,|&|\+|\/|\bx\b|\band\b|\bvs\.?)\s*/i).map(comparable).filter((name) => name !== "");
+
+/** Whether the uploader is the credit, or one of the names in it. */
+export const matchesCredit = (uploader: string, credit: string) => comparable(credit) === comparable(uploader) || creditNames(credit).includes(comparable(uploader));
+
 /** Words in a channel's name that say it is a label, promoter or repost channel, not an artist. */
 const CHANNEL_WORDS = /\b(?:records|recordings|recs|rec\.|label|promo(?:tions?)?|premieres?|network|uploads|reposts?|free\s*(?:dl|downloads?)|nation|tv|radio|channel|music\s+group|collective|official\s+music)\b/i;
 export const looksLikeChannel = (uploader: string) => CHANNEL_WORDS.test(uploader);
@@ -243,7 +249,7 @@ export type UploaderEvidence = "remixer" | "original-artist" | "artist-prefix";
 export function uploaderEvidence(uploader: string, credits: readonly NamedCredits[]): UploaderEvidence | null {
   const who = comparable(uploader);
   if (who.length < 2 || looksLikeChannel(uploader)) return null;
-  const same = (value: string | null) => value !== null && comparable(value) === who;
+  const same = (value: string | null) => value !== null && matchesCredit(uploader, value);
   if (credits.some((credit) => same(credit.remixer))) return "remixer";
   if (credits.some((credit) => same(credit.originalArtist))) return "original-artist";
   if (credits.some((credit) => credit.originalArtist === null && same(credit.artist))) return "artist-prefix";
@@ -270,13 +276,13 @@ export function soundCloudProposals(track: SoundCloudTrack, named: NamedCredits)
   const proposals: Proposal[] = [];
 
   if (evidence === "remixer") {
-    const remixer = [named.remixer, fromPage.remixer].find((value) => value !== null && comparable(value) === comparable(track.uploader)) ?? track.uploader;
+    const remixer = [named.remixer, fromPage.remixer].find((value) => value !== null && matchesCredit(track.uploader, value)) ?? track.uploader;
     proposals.push(proposal("artist", remixer, "high", "uploader-is-remixer", [...base, "the uploader is the remixer"]));
   } else if (evidence === "original-artist") {
-    const original = [named.originalArtist, fromPage.originalArtist].find((value) => value !== null && comparable(value) === comparable(track.uploader)) ?? track.uploader;
+    const original = [named.originalArtist, fromPage.originalArtist].find((value) => value !== null && matchesCredit(track.uploader, value)) ?? track.uploader;
     proposals.push(proposal("originalArtist", original, "high", "uploader-is-original-artist", [...base, "the uploader is the original artist"]));
   } else if (evidence === "artist-prefix") {
-    const artist = [named.artist, fromPage.artist].find((value) => value !== null && comparable(value) === comparable(track.uploader)) ?? track.uploader;
+    const artist = [named.artist, fromPage.artist].find((value) => value !== null && matchesCredit(track.uploader, value)) ?? track.uploader;
     proposals.push(proposal("artist", artist, "high", "uploader-is-artist-prefix", [...base, 'the uploader is the "Artist - " in the title']));
   }
 

@@ -95,6 +95,8 @@ describe("uploaderEvidence", () => {
     expect(uploaderEvidence("Moss Harbor", [named])).toBe("original-artist");
     expect(uploaderEvidence("Kit Lane", [{ artist: "Kit Lane", originalArtist: null, remixer: null }])).toBe("artist-prefix");
     expect(uploaderEvidence("Someone Else", [named])).toBeNull();
+    // One of several remixers uploading counts for the whole credit.
+    expect(uploaderEvidence("Kit Lane", [{ artist: "Kit Lane & Arlo", originalArtist: "Moss Harbor", remixer: "Kit Lane & Arlo" }])).toBe("remixer");
   });
 
   it("never credits a label, promo or repost channel", () => {

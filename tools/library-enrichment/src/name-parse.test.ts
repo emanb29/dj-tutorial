@@ -123,10 +123,16 @@ const SHAPES: readonly [string, Expected][] = [
   ["Jon Newbury - Leave Me (The NBRHD Remix) ＊Vocal pitched＊ [1825100001]", { title: "Leave Me (The NBRHD Remix) [Vocal pitched]" }],
   // A list of names on the right of a plain left is ambiguous.
   ["KICKSTAND! - Tomjay x Kordo x Shiny [1493900001]", { artist: "KICKSTAND!", artistBand: "medium" }],
+  // "VIP" before "Remix" is a version word, not part of the remixer's name.
+  ["Moss Harbor - Glass Rivers (TINWHISTLE TECHNO VIP REMIX)", { artist: "TINWHISTLE", remixer: "TINWHISTLE", originalArtist: "Moss Harbor" }],
+  // A version word after the remix ("(Extended Mix)") does not hide who remixed it.
+  ["Aria Vale - Sweet Notion (Haze Remix) (Extended Mix) FREE DOWNLOAD [1734800001]", { artist: "Haze", originalArtist: "Aria Vale", remixer: "Haze", mixKind: "extended" }],
   // A style word or a year inside the remixer's group.
   ["Bee Line (ElvisK - Speed House Remix 2018)", { remixer: "ElvisK" }],
   // A leading Camelot key or a zero-padded track number is not the artist.
-  ["7A - Stay Near (Okai x Gosh Reflip)", { artist: null, title: "Stay Near (Okai x Gosh Reflip)" }],
+  ["7A - Stay Near (Okai x Gosh Reflip)", { artist: "Okai x Gosh", originalArtist: null, title: "Stay Near (Okai x Gosh Reflip)", mixKind: "flip" }],
+  // "Redo" is a re-work.
+  ["Lumen - Harbour Lights (Okai Redo)", { artist: "Okai", originalArtist: "Lumen", mixKind: "rework" }],
   ["04A - Ephram - Duck Pond", { artist: "Ephram", title: "Duck Pond" }],
   ["02 Bellora - Etude No. 4", { artist: "Bellora", title: "Etude No. 4" }],
   // "Title - X Remix": the right side is the mix, not an artist.

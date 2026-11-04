@@ -23,7 +23,7 @@
  * older version is re-run.
  */
 
-export const NAME_PARSER_VERSION = 2;
+export const NAME_PARSER_VERSION = 5;
 
 export type ConfidenceBand = "high" | "medium" | "low";
 /** Where a value came from: a tag the track already had, the raw name, or the file name. */
@@ -116,19 +116,20 @@ const STYLE_WORDS = new Set([
   "hyperpop", "jersey", "bounce", "edm", "drum", "and", "&", "official", "unofficial", "dance", "future", "melodic", "big",
   "room", "bigroom", "harddance", "frenchcore", "gabber", "tekno", "amapiano", "afro", "latin", "moombahton", "breaks",
   "breakbeat", "liquid", "neuro", "midtempo", "drill", "groove", "minimal", "progressive", "electro", "disco", "nu",
-  "speed", "sped", "slowed", "hypertechno", "hardrave", "hardgroove", "private", "-",
+  "speed", "sped", "slowed", "hypertechno", "hardrave", "hardgroove", "private", "vip", "-",
 ]);
 const YEAR = /^(?:19|20)\d\d$/;
 const isStyleWord = (word: string) => STYLE_WORDS.has(word.toLowerCase()) || YEAR.test(word);
 
 /** The last of these in a group decides its kind. Longest first, so "original mix" beats "mix". */
-const MIX_KEYWORD = /\b(original\s+mix|extended\s+mix|extended|re-?work|re-?edit|re-?mix|rmx|bootleg|flip|vip|edit|mash-?up|refix|mix)\b/gi;
+const MIX_KEYWORD = /\b(original\s+mix|extended\s+mix|extended|re-?work|re-?edit|re-?mix|rmx|bootleg|re-?flip|flip|vip|edit|mash-?up|refix|redo|mix)\b/gi;
 
 function mixKindOf(keyword: string): MixKind {
   const word = keyword.toLowerCase().replace(/[\s-]+/g, "");
   if (word === "originalmix") return "original";
   if (word.startsWith("extended")) return "extended";
-  if (word === "rework" || word === "refix") return "rework";
+  if (word === "rework" || word === "refix" || word === "redo") return "rework";
+  if (word === "reflip") return "flip";
   if (word === "reedit" || word === "edit") return "edit";
   if (word === "remix" || word === "rmx") return "remix";
   if (word === "mashup") return "mashup";
@@ -711,10 +712,19 @@ export function parseTrackName(input: NameParseInput): NameParse {
   const remixerFound = (mix: MixToken | undefined) => (mix?.remixer == null ? null : { value: mix.remixer, band: mix.band, rule: mix.rule });
   // The file's remixer only fills in for the same kind of mix (or when the name has none).
   const fileRemixer = lastMix === undefined || lastFileMix?.kind === lastMix.kind ? remixerFound(lastFileMix) : null;
-  const remixer: ProposedField<string> | null = remixerTag !== null ? { value: remixerTag, band: "high", rule: "existing-tag", source: "tag" } : pick(remixerFound(lastMix), fileRemixer);
+  // The outermost remix, edit, bootleg… that names its maker: "(X Remix) (Extended Mix)" is X's.
+  const creditOf = (list: readonly MixToken[]) => list.findLast((mix) => mix.remixer !== null && CREDITED_KINDS.has(mix.kind));
+  const nameCredit = creditOf(mixes);
+  const fileCandidate = nameCredit === undefined ? creditOf(fileMixes) : undefined;
+  const fileCredit = fileCandidate !== undefined && (mixes.length === 0 || mixes.some((mix) => mix.kind === fileCandidate.kind)) ? fileCandidate : undefined;
+  const creditFound = nameCredit !== undefined ? remixerFound(nameCredit) : null;
+  const fileCreditFound = fileCredit !== undefined ? remixerFound(fileCredit) : null;
+  const tagField: ProposedField<string> | null = remixerTag === null ? null : { value: remixerTag, band: "high", rule: "existing-tag", source: "tag" };
+  const creditField = pick(creditFound, fileCreditFound);
+  const remixer: ProposedField<string> | null = tagField ?? creditField ?? pick(remixerFound(lastMix), fileRemixer);
 
-  // The remixer of a credited kind is the artist; the name's own artist becomes the original artist.
-  const credited = mixKind !== null && CREDITED_KINDS.has(mixKind.value) ? remixer : null;
+  // The maker of a credited kind is the artist; the name's own artist becomes the original artist.
+  const credited = creditField === null ? null : (tagField ?? creditField);
   const namedArtist = pick(primary?.artist ?? null, secondary?.artist ?? null);
   const original = namedArtist !== null && credited !== null && !sameCredit(namedArtist.value, credited.value) ? { ...namedArtist, rule: `original-${namedArtist.rule}` } : null;
   let artist: ProposedField<string> | null;
