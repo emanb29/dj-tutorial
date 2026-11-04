@@ -64,7 +64,7 @@ export function MixPlansPage({ onExit }: { readonly onExit: () => void }) {
   };
 
   return (
-    <main className="plans-page">
+    <main className={`plans-page plans-page-${view.kind}`}>
       <header className="plans-head">
         <button type="button" className="btn btn-quiet" onClick={back} data-nav-back>
           ← {view.kind === "list" ? "Lessons" : "Mix plans"} <ButtonHint k="Esc" />
@@ -270,59 +270,64 @@ function NewPlan({ library, onCreate }: { readonly library: PlanLibrary; readonl
     );
   }
   return (
-    <section className="plans-panel" aria-label="New plan">
-      <label className="plans-field">
-        Name
-        <input value={name} maxLength={120} onChange={(event) => {
-            setName(event.currentTarget.value);
-          }} />
-      </label>
-      <h2>Play order</h2>
-      {order.length === 0 ? <p className="plans-caption">Pick at least 2 tracks below, in the order they play.</p> : null}
-      <ol className="plans-order">
-        {order.map((id, index) => (
-          <li key={`${id}-${String(index)}`}>
-            <span>
-              {deckOf(index)} · {byId.get(id)?.title ?? "?"}
-            </span>
-            <button type="button" className="btn btn-quiet" onClick={() => {
-                setOrder(order.filter((_, each) => each !== index));
-              }}>
-              Remove
-            </button>
-          </li>
-        ))}
-      </ol>
-      <button type="button" className="btn btn-primary" disabled={order.length < 2 || working !== null} onClick={() => void create()}>
-        Make the plan
-      </button>
-      {working === null ? null : <p role="status">{working}</p>}
-      {problem === null ? null : (
-        <p className="lesson-problem" role="alert">
-          {problem}
-        </p>
-      )}
-      <h2>Your library</h2>
-      <LibraryBrowser
-        picker="mix-plans"
-        rows={rows}
-        emptyText="Your music folder has no tracks yet."
-        controllerHint={
-          <>
-            FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd> adds it to the play order
-          </>
-        }
-        onLoad={(row) => {
-          add(row.key);
-        }}
-        actions={(row) => (
-          <button type="button" className="btn btn-quiet" tabIndex={-1} data-nav-skip aria-label={`Add ${row.title}`} onClick={() => {
-              add(row.key);
-            }}>
-            + Add
-          </button>
+    // On a wide screen the play order sits beside the library (mix-plans.css); the ring's order is the same.
+    <section className="plans-panel plans-new" aria-label="New plan">
+      <div className="plans-new-order">
+        <label className="plans-field">
+          Name
+          <input value={name} maxLength={120} onChange={(event) => {
+              setName(event.currentTarget.value);
+            }} />
+        </label>
+        <h2>Play order</h2>
+        {order.length === 0 ? <p className="plans-caption">Pick at least 2 tracks from your library, in the order they play.</p> : null}
+        <ol className="plans-order">
+          {order.map((id, index) => (
+            <li key={`${id}-${String(index)}`}>
+              <span>
+                {deckOf(index)} · {byId.get(id)?.title ?? "?"}
+              </span>
+              <button type="button" className="btn btn-quiet" onClick={() => {
+                  setOrder(order.filter((_, each) => each !== index));
+                }}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ol>
+        <button type="button" className="btn btn-primary" disabled={order.length < 2 || working !== null} onClick={() => void create()}>
+          Make the plan
+        </button>
+        {working === null ? null : <p role="status">{working}</p>}
+        {problem === null ? null : (
+          <p className="lesson-problem" role="alert">
+            {problem}
+          </p>
         )}
-      />
+      </div>
+      <div className="plans-new-library">
+        <h2>Your library</h2>
+        <LibraryBrowser
+          picker="mix-plans"
+          rows={rows}
+          emptyText="Your music folder has no tracks yet."
+          controllerHint={
+            <>
+              FLX4: turn BROWSE to a track, then <kbd className="hw-key">LOAD A</kbd> or <kbd className="hw-key">LOAD B</kbd> adds it to the play order
+            </>
+          }
+          onLoad={(row) => {
+            add(row.key);
+          }}
+          actions={(row) => (
+            <button type="button" className="btn btn-quiet" tabIndex={-1} data-nav-skip aria-label={`Add ${row.title}`} onClick={() => {
+                add(row.key);
+              }}>
+              + Add
+            </button>
+          )}
+        />
+      </div>
     </section>
   );
 }

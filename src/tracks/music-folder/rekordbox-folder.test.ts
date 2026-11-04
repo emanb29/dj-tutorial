@@ -71,6 +71,27 @@ describe("music folder with rekordbox", () => {
     expect(albums).toEqual({ "Kay Grove - Brothers.mp3": "Night Shifts", "live.mp3": null, "new.mp3": null });
   });
 
+  it("keeps the file name's title when rekordbox's is empty, blank or only punctuation", async () => {
+    const xml = (name: string) =>
+      `<?xml version="1.0" encoding="UTF-8"?><DJ_PLAYLISTS Version="1.0.0"><COLLECTION Entries="1"><TRACK Name="${name}" Artist="Kay Grove" Location="file://localhost/Users/dj/Music/Kay%20Grove%20-%20Brothers.mp3"/></COLLECTION></DJ_PLAYLISTS>`;
+    for (const name of ["", "   ", "-", " – ", "?!", "..."]) {
+      const folder = fakeFolder("Music", { "Kay Grove - Brothers.mp3": "a", "rekordbox.xml": xml(name) });
+      const { music } = setUp(folder);
+      await music.pick();
+      await music.settled();
+      expect(music.tracks().map((track) => track.title), `rekordbox Name="${name}"`).toEqual(["Brothers"]);
+    }
+  });
+
+  it("takes rekordbox's title when it has a letter or a digit in it", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><DJ_PLAYLISTS Version="1.0.0"><COLLECTION Entries="1"><TRACK Name="#1" Location="file://localhost/Users/dj/Music/Kay%20Grove%20-%20Brothers.mp3"/></COLLECTION></DJ_PLAYLISTS>`;
+    const folder = fakeFolder("Music", { "Kay Grove - Brothers.mp3": "a", "rekordbox.xml": xml });
+    const { music } = setUp(folder);
+    await music.pick();
+    await music.settled();
+    expect(music.tracks().map((track) => track.title)).toEqual(["#1"]);
+  });
+
   it("loads a matched track with rekordbox's grid and hot cues, in place of the app's guess", async () => {
     const folder = fakeFolder("Music", { "House/Kay Grove - Brothers.mp3": "a", "live.mp3": "b", "rekordbox.xml": COLLECTION });
     const { music } = setUp(folder);
