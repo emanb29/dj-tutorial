@@ -40,7 +40,7 @@ Notation: `B_d` = beat length of deck `d` at its current tempo; `M` = the master
 | `t_in`, `t_out` | entry / exit | first audible frame of the incoming deck; first frame the outgoing deck is not audible |
 | `matchTaps(taps, targets, tol)` | one-to-one matching | greedy nearest pairing within `±tol`; returns `matched`, `extras`, signed offsets |
 | `barLoud(t)` | master loudness per bar | energy mean of master momentary LUFS over the bar |
-| `loudJump(t)` | level change across a cut, dB | `|mean barLoud over 4 bars before t − 4 bars after t|` |
+| `loudJump(t)` | level change across a cut, dB | `|(mean barLoud over 4 bars after t − 4 bars before t) − (the same means of the mixer's own gain)|`; the mixer's gain is the power sum of the playing decks' `g_d` (as if every track were equally loud), so the faders' and crossfader curve's own change is taken off and what is left is the tracks' levels (see `loud-jump`) |
 | `clash` | bass clash time, s | `∫ [audible(A) ∧ audible(B) ∧ LOW_A > −6 dB ∧ LOW_B > −6 dB] dt` |
 | `holdFrac(span, lim)` | fraction of frames within limit | `#{|phaseErr| < lim} / #frames` over `span` |
 | `worstRun(span, lim)` | longest run over limit | longest contiguous run with `|phaseErr| > lim` |
@@ -61,7 +61,7 @@ the pass; **warn** is reported only; **report** is a metric for the Coach (catal
 | `on-phrase` | 9 | `cut-on-phrase` | every `t_in`: `|phraseOff(t_in, M)| ≤ 1 beat` and `|phraseOff(t_in, in)| ≤ 1 beat` | fail | fail |
 | `level-match` | 2 | `cut-on-phrase` | at each handover, `|shortTerm_A − shortTerm_B|` (pre-fader) `≤ 2 dB` | warn | fail |
 | `cued-first` | 10 | `cut-on-phrase` | incoming CUE on for `≥ 2 s` before `t_in` | warn | warn |
-| `trim-still` | 3 | `sync-blend` | no trim event during any `overlap` | warn | warn |
+| `trim-still` | 3 | `sync-blend` | TRIM used to correct the level, not to fade: during any `overlap`, each deck's trim within `6 dB` of where it was before its first turn ∧ no turn that widens the channels' short-term gap by `> 1 dB` (a turn: trim messages `< 0.5 s` apart). See below | warn | warn |
 | `no-boost` | 5 | `eq-basics` | no EQ band `> +3 dB` for `> 1 bar` | warn | warn |
 | `controls-reset` | 12 | `eq-basics` (EQ), `filter-transition` (CFX), `echo-out` (FX) | within 1 bar of a deck going silent: its EQs within ±1 dB, CFX within ±5% of centre; within 1 bar of its echoes dying out (FX return `< −50 LUFS`): Beat FX off or on another channel | warn | warn |
 | `sync-kept` | 11 | `sync-blend` | no jog bend on a synced deck | warn (sync Checks only) | n/a (sync off) |
@@ -82,6 +82,22 @@ themselves never start in the red: every one turns both trims down so the louder
 at −9 dBFS on file (Originals peak near −0.5 dBFS, and the isolator's phase shift adds up to ~5.5 dB),
 which keeps two decks summed at the crossfader's centre out of the red; `src/app/lesson/set-up-levels.browser.test.ts`
 renders every Lesson's and Placement task's set-up to check it.
+
+**trim-still allows a correction (maintainer, 2026-11-03).** It used to count every trim message in
+an overlap, so one turn of the FLX4's knob read as "9". With both channel faders held up, as in
+`crossfader`, TRIM is the only control left to keep the master steady when two tracks differ, so a
+turn that brings the levels together is good mixing. What it still warns on is TRIM used as a fader
+(a swing over 6 dB: a fade, not a correction) and a turn the wrong way (the channel meters' gap at the
+turn's start, plus the dB it added, over 1 dB wider than before). Turns before the overlap (setting
+a cued deck's level) are not in it at all. `sync-blend.trim-untouched` stays strict (no turn while
+both play): there the faders hold the level, and the Lesson teaches setting the trims first; it
+counts turns, not messages.
+
+**Transitions in a Lesson Check.** A Lesson whose Check holds more than one transition (`crossfader`:
+the blend A→B, then the cut back to A) grades the per-transition standing criteria on each one's
+view, as a set does (§5.5): its outgoing deck as A, its incoming as B, over its own section. So
+`cued-first` reads CUE A before the cut, not only CUE B before the blend, and the line names the
+transition it reports.
 
 **Pass rule (all Checks):** passed ⇔ every own criterion is met ∧ every applicable **fail** standing
 criterion is met. Warnings never block.
@@ -109,13 +125,13 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 | `cut-on-phrase` | `cut-start` | `|t_play(B) − nearest A phrase start|` | `≤ 40 ms` | same (one cut) |
 | | `cut-tight` | `|t_out(A) − t_play(B)|` | `≤ 1 beat` | |
 | | `cued-before` | CUE B on before `t_in(B)` | `≥ 2 s` | |
-| | `loud-jump` | `loudJump` at B's audio start | `≤ 2 dB` | |
+| | `loud-jump` | `loudJump` at B's audio start | `≤ 3 dB` (was 2; see below) | |
 | `tempo-fader` | `set-bpm` ×3 | `|bpm_B − target|` at "Done" | `≤ 0.05 BPM` on all 3 | 1 target |
 | | `master-tempo-ear` | correct answers | `2 of 2` | 1 of 1 |
 | `sync-blend` | `blend-start` | `|phraseOff(t_in(B), A)|` | `≤ 1 beat` | 8-bar blend |
 | | `blend-length` | `t_out(A) − t_in(B)` | `∈ [8 bars − 1 beat, 16 bars + 1 beat]` | `∈ [8, 9]` bars |
 | | `loud-steady` | max `|barLoud − mean of 4 bars before t_in|` over `[t_in, t_out + 4 bars]` | `≤ 3 dB` | |
-| | `trim-untouched` | trim events in overlap | `= 0` | |
+| | `trim-untouched` | trim turns in overlap (messages `< 0.5 s` apart are one turn) | `= 0` | |
 | `crossfader` | `xf-blend`, `xf-cut` | as `sync-blend` and `cut-on-phrase` | same thresholds | blend only |
 | | `faders-up` | min channel fader A, B during both tasks | `≥ 0.95` | |
 | `eq-basics` | `low-kill` | longest span with LOW_A `≤ −20 dB` | `≥ 7 bars` | same |
@@ -146,6 +162,20 @@ Thresholds are catalogue §1 values (starting values, Q9). Tolerances in ms are 
 | | `echo-entry` | `|t_play(B) − A's next phrase start had it kept playing|` (from A's position and rate at the cut), beats | `≤ 1 beat` | |
 | | `fx-off` | the first Beat FX OFF press after the cut − tail end (just after the last FX-return frame `≥ −50 LUFS` momentary after `t_out(A)`), bars; OFF before the tail ends counts as met | `≤ 2 bars` | |
 | `final-mix` | see §5 | | | full mix (no short form) |
+
+**The level at a cut: `loud-jump` and `xf-cut`, 3 dB (2026-11-03).** A real crossfader Check failed
+its cut at 2.5 dB while `level-match` passed the same two tracks at 1.9 dB. `loudJump` compares 4 bars
+of the master on one track with 4 bars on another, so it carries the music's own change from one
+phrase to the next as well as the trims' mismatch; it now also takes off the mixer's own part (the
+faders and the crossfader curve, as if both tracks were equally loud). The app's curve is constant
+power, so that part is 0 dB for a cut from either end, or from the centre with both decks playing,
+and +3 dB for a cut from the centre with only one deck playing to that deck's side, which is the
+curve's doing, not a level mistake; a curve with a different dip (ISS-196, ISS-197) is taken off the
+same way. The threshold is the 3 dB `loud-steady` allows the master through a blend (a cut is a
+blend with no overlap). A real mismatch still fails: Placement's B, 6 dB low, or trims 4 dB apart.
+The trims themselves are graded more finely by `standing.level-match`, on the channel meters where
+TRIM acts, at 2 dB: a warning before `final-mix`, so it can be strict and still not block a Lesson
+about timing.
 
 ## 5. `final-mix`
 

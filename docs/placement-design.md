@@ -100,7 +100,7 @@ with check-design §3 severities. The differences:
 | `beats-and-bars` | "Tap every beat. Now only the one." | 4 + 4 bars (short form) | Tap key | — | ≈ 25 s |
 
 `cut-on-phrase` adds one Placement-only criterion, `cue-point.cue-on-downbeat` (×1, ≤ 20 ms), so
-that crediting `cue-point` rests on a measurement. The trim offset makes `loud-jump` (≤ 2 dB) stand
+that crediting `cue-point` rests on a measurement. The trim offset makes `loud-jump` (≤ 3 dB) stand
 in for `gain-staging`. Every other credited Lesson is covered by the group task's own criteria or
 its standing criteria (`on-phrase`, `no-clip`, `cued-first`).
 

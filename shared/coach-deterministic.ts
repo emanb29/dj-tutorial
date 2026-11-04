@@ -153,7 +153,7 @@ const STANDING_PLAIN_NAMES: Readonly<Record<StandingId, string>> = {
   "on-phrase": "starting on the phrase",
   "level-match": "matching the levels",
   "cued-first": "cueing in headphones first",
-  "trim-still": "leaving the trim alone",
+  "trim-still": "keeping TRIM to small level fixes",
   "no-boost": "cutting, not boosting, the EQ",
   "controls-reset": "resetting EQ, filter and FX",
   "sync-kept": "keeping sync on",

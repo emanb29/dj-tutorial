@@ -1,5 +1,5 @@
 // Blend measures shared by sync-blend, crossfader, bass-swap and blend-by-ear (check-design §2, §4).
-import type { CtxSpan, CtxTime, DeckId } from "@shared/attempt.ts";
+import type { ControlEvent, CtxSpan, CtxTime, DeckId } from "@shared/attempt.ts";
 import type { CriterionId, CriterionResult, Severity } from "@shared/check-result.ts";
 import { barSeconds, loadedDeck, type CheckContext, type LoadedDeck } from "./context.ts";
 import { judge, judgeAll } from "./criterion.ts";
@@ -151,22 +151,60 @@ export function blendSpans(context: CheckContext): CtxSpan[] {
   return joined.filter((span) => span.to - span.from >= BLEND_MIN_BARS * barSeconds(master, span.from) - TIME_EPSILON);
 }
 
-/** Trim events on either deck while both are audible. */
-export function trimMovesInOverlap(context: CheckContext, span: CtxSpan = context.window) {
-  return overlapSpans(context.attempt, span).flatMap((overlap) =>
-    (["A", "B"] as const).flatMap((deck) => controlEvents(context.attempt.events, "trim", deck, overlap)),
-  );
+/**
+ * TRIM messages closer together than this are one turn of the knob. A hardware knob sends a message
+ * per detent (the FLX4: dozens for one turn), and a turn re-gripped halfway pauses for a moment.
+ */
+export const TRIM_TURN_GAP_S = 0.5;
+
+/** One turn of a deck's TRIM: its messages, and the trim before and after it, dB. */
+export interface TrimTurn {
+  readonly deck: DeckId;
+  readonly moves: readonly ControlEvent[];
+  /** Its first and last message. */
+  readonly from: CtxTime;
+  readonly to: CtxTime;
+  readonly startDb: number;
+  readonly endDb: number;
 }
 
+/** The deck's trim just before `t` (the last move strictly before it), dB. */
+function trimBefore(context: CheckContext, deck: DeckId, t: CtxTime): number {
+  const earlier = context.attempt.events.filter((event) => event.control === "trim" && event.deck === deck && event.ctx < t - TIME_EPSILON);
+  return earlier.at(-1)?.value ?? context.attempt.initialMixer[deck].trimDb;
+}
+
+/** The TRIM turns made while both decks are audible, deck A's first, each in time order. */
+export function trimTurnsInOverlap(context: CheckContext, span: CtxSpan = context.window): TrimTurn[] {
+  const overlaps = overlapSpans(context.attempt, span);
+  return (["A", "B"] as const).flatMap((deck) => {
+    const moves = overlaps.flatMap((overlap) => controlEvents(context.attempt.events, "trim", deck, overlap));
+    const groups = moves.reduce<ControlEvent[][]>((turns, move) => {
+      const last = turns.at(-1);
+      const lastAt = last?.at(-1)?.ctx;
+      if (last !== undefined && lastAt !== undefined && move.ctx - lastAt < TRIM_TURN_GAP_S) last.push(move);
+      else turns.push([move]);
+      return turns;
+    }, []);
+    return groups.flatMap((group) => {
+      const first = group[0];
+      const last = group.at(-1);
+      if (first === undefined || last === undefined) return [];
+      return [{ deck, moves: group, from: first.ctx, to: last.ctx, startDb: trimBefore(context, deck, first.ctx), endDb: last.value }];
+    });
+  });
+}
+
+/** sync-blend's TRIM rule: no turn while both decks are heard (the faders do the blend). Counted in turns, not messages. */
 export function trimUntouched(id: CriterionId, context: CheckContext, span: CtxSpan = context.window): CriterionResult {
-  const moves = trimMovesInOverlap(context, span);
+  const turns = trimTurnsInOverlap(context, span);
   return judge({
     id,
     severity: "fail",
     unit: "count",
     threshold: { op: "<=", value: 0, unit: "count" },
-    measured: moves.length,
-    evidence: moves.map((move) => ({ from: move.ctx, to: move.ctx, label: `trim ${move.deck ?? ""}` })),
+    measured: turns.length,
+    evidence: turns.map((turn) => ({ from: turn.from, to: turn.to, label: `trim ${turn.deck}` })),
   });
 }
 
