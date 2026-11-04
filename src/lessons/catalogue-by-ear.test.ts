@@ -1,4 +1,4 @@
-// Lessons 14–16 as data: each plan sets the decks up as the Lesson needs, an attempt recorded on that
+// Lessons 17–19 as data: each plan sets the decks up as the Lesson needs, an attempt recorded on that
 // plan grades as the Check should, and what the practice left in the recording before the Check's own
 // cue (still heard for the output latency) never reaches the grade. Attempts are synthetic.
 import { describe, expect, it } from "vitest";
@@ -45,7 +45,7 @@ function grade(definition: LessonDefinition, track: LessonTrack, plan: CheckPlan
 
 const byId = (result: CheckResult, id: string) => result.criteria.find((criterion) => criterion.id === id);
 
-describe("the Lesson catalogue for Lessons 14–16", () => {
+describe("the Lesson catalogue for Lessons 17–19", () => {
   it("adds nudge-phase, tempo-by-ear and blend-by-ear, in catalogue order", () => {
     const ids = LESSONS.map((lesson) => lesson.id);
     expect(ids.filter((id) => ["nudge-phase", "tempo-by-ear", "blend-by-ear"].includes(id))).toEqual(["nudge-phase", "tempo-by-ear", "blend-by-ear"]);

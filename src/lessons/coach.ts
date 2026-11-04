@@ -367,7 +367,7 @@ function describeEqFilter(criterion: CriterionResult): string | null {
 const beatsOff = (label: string, measured: number | null, never: string) =>
   measured === null ? `${label}: ${never}` : `${label}: ${measured.toFixed(2)} beats off the 1 (need 1 or less)`;
 
-/** Lessons 17–19; null for criteria of other Lessons. */
+/** Lessons 14–16; null for criteria of other Lessons. */
 function describePerformance(criterion: CriterionResult): string | null {
   const measured = criterion.measured;
   const need = thresholdValue(criterion);

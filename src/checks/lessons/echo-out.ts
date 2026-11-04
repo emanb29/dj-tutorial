@@ -1,4 +1,4 @@
-// Lesson 19, `echo-out`: ECHO on A, cut A's fader on a downbeat, B in on the phrase start A would have
+// Lesson 16, `echo-out`: ECHO on A, cut A's fader on a downbeat, B in on the phrase start A would have
 // reached, Beat FX off once the echoes die out (check-design §4). The cut and B's Play are point actions,
 // timed from the action; the echo's tail is an audible effect, read from the FX return meter.
 import { barSeconds, loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";

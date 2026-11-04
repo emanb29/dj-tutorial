@@ -1,4 +1,4 @@
-// The runtime for Lessons 14–16: hook triggers and practice reps from the by-ear drills.
+// The runtime for Lessons 17–19: hook triggers and practice reps from the by-ear drills.
 import { describe, expect, it } from "vitest";
 import { lessonDefinition } from "./catalogue.ts";
 import { initialLessonState, lessonReducer, type LessonEvent, type LessonState } from "./runtime.ts";

@@ -1,4 +1,4 @@
-// Lesson 16 (A full blend by ear) on a DDJ-FLX4: the Check's set-up leaves LOW B where the knob is, and
+// Lesson 19 (A full blend by ear) on a DDJ-FLX4: the Check's set-up leaves LOW B where the knob is, and
 // the Learner cuts it, so soft takeover never waits for the physical knob to find a value the app set on
 // its own. MIDI bytes through the bridge and the controller session into a real engine rendering offline
 // (never the speakers), as hardware.browser.test.ts does.

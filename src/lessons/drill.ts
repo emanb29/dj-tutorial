@@ -1,4 +1,4 @@
-// By-ear practice drills (Lessons 14–16) as a pure state machine: short rounds, one or two reps each,
+// By-ear practice drills (Lessons 17–19) as a pure state machine: short rounds, one or two reps each,
 // with feedback between rounds. The app feeds it live readings of the decks (phase error, tempo-fader
 // BPMs) and the Learner's tempo moves and Ready presses, and carries out what it asks: start the next
 // round, count a rep, show a line, show the covered displays. No audio and no clock of its own.

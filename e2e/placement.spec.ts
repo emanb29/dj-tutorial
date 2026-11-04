@@ -3,9 +3,10 @@ import { keysAtBeats, learner, type LessonWindow } from "./lesson-support.ts";
 
 // Placement end to end (docs/placement-design.md), muted, on the synthetic groove (124 BPM, first beat
 // at 0 s, bar 1 on beat 0; 8-bar phrases, the drop on phrase 7). A first-run Learner types a Mission,
-// passes the headphones check, says Not yet to the three hardest group tasks, passes the phrases task
-// (tapping phrases 5–7 and naming the drop, pad 4), and says Not yet to cue-point (the one narrowing
-// task left: nudge-phase and sync-blend sit on the cut-on-phrase task just missed). The Summary credits
+// passes the headphones check, says Not yet to the recorded-mix path's two hardest group tasks (the live
+// path's blend-by-ear is asked only on top of a bass-swap credit), passes the phrases task (tapping
+// phrases 5–7 and naming the drop, pad 4), and says Not yet to cue-point (the one narrowing task left:
+// sync-blend sits on the cut-on-phrase task just missed). The Summary credits
 // Lessons 1–3 and starts at Lesson 4, and the profile and Curriculum say so too.
 //
 // Screenshots land in test-results/placement/ for review (gitignored).
@@ -56,7 +57,6 @@ async function expectPlacedProfile(page: Page, learnerId: string): Promise<void>
   expect(profile.mission).toBe("post my own mixes");
   expect(profile.headphones?.checkedAt).toEqual(expect.any(String));
   expect(profile.placements?.[0]?.tasks.map((task) => [task.lessonId, task.outcome])).toEqual([
-    ["blend-by-ear", "notYet"],
     ["bass-swap", "notYet"],
     ["cut-on-phrase", "notYet"],
     ["phrases", "passed"],
@@ -75,7 +75,7 @@ async function expectPlacedProfile(page: Page, learnerId: string): Promise<void>
 test.describe("Placement on a laptop (1440×900, keyboard)", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("Mission, three Not yets, a phrases pass, Summary: Lessons 1–3 credited, Start opens Lesson 4", async ({ page }) => {
+  test("Mission, two Not yets, a phrases pass, Summary: Lessons 1–3 credited, Start opens Lesson 4", async ({ page }) => {
     test.setTimeout(180_000);
     const learnerId = learner("placement-desk");
     await page.goto(`/?learner=${learnerId}&track=synthetic`);
@@ -95,19 +95,12 @@ test.describe("Placement on a laptop (1440×900, keyboard)", () => {
     await gate.getByRole("button", { name: "Right" }).click();
     await expect(gate).toBeHidden();
 
-    // blend-by-ear: the music is already playing, one caption line, the controller in full view.
-    await taskPlaying(page, "blend-by-ear");
-    await expect(caption(page)).toContainText("Match by ear");
-    // SYNC withheld (BEAT SYNC B stays open for Master Tempo, held).
-    await expect(page.locator('[data-control="B.sync"]')).toHaveAttribute("data-own-locked", "true");
-    await expect(page.locator('[data-control="B.tempo"]')).toHaveAttribute("data-locked", "false");
-    await page.waitForTimeout(600);
-    await page.screenshot({ path: `${SHOTS}/desktop-2-task.png` });
-    await page.keyboard.press("KeyN");
-
-    // bass-swap, then cut-on-phrase: Not yet (N).
+    // bass-swap first (the recorded-mix path's hardest): the music is already playing, one caption line,
+    // the controller in full view. Not yet (N), then cut-on-phrase: Not yet.
     await taskPlaying(page, "bass-swap");
     await expect(caption(page)).toContainText("swap bass");
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: `${SHOTS}/desktop-2-task.png` });
     await page.keyboard.press("KeyN");
     await taskPlaying(page, "cut-on-phrase");
     await expect(caption(page)).toContainText("Cue B by ear");
@@ -129,7 +122,7 @@ test.describe("Placement on a laptop (1440×900, keyboard)", () => {
     await page.screenshot({ path: `${SHOTS}/desktop-3-card.png` });
     await page.keyboard.press("Space");
 
-    // Narrowing: cue-point (Foundations); nudge-phase and sync-blend are skipped.
+    // Narrowing: cue-point (Foundations); sync-blend is skipped.
     await taskPlaying(page, "cue-point");
     await expect(caption(page)).toContainText("Cue on a 1 by ear");
     await page.keyboard.press("KeyN");
@@ -181,17 +174,15 @@ test.describe("Placement on a phone (412×915, touch)", () => {
     await gate.getByRole("button", { name: "Right" }).tap();
 
     const notYet = page.getByRole("button", { name: "Not yet" });
-    await taskPlaying(page, "blend-by-ear");
+    await taskPlaying(page, "bass-swap");
     await expect(notYet).toBeInViewport();
     const box = await notYet.boundingBox();
     expect(box?.height).toBeGreaterThanOrEqual(44);
     await page.waitForTimeout(600);
     await page.screenshot({ path: `${SHOTS}/phone-2-task.png` });
     await notYet.tap();
-    for (const task of ["bass-swap", "cut-on-phrase"]) {
-      await taskPlaying(page, task);
-      await notYet.tap();
-    }
+    await taskPlaying(page, "cut-on-phrase");
+    await notYet.tap();
 
     await taskPlaying(page, "phrases");
     // Touch wording: the caption names TAP, not Space.

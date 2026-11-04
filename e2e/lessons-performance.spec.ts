@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { caption, keysAtBeats, learner, openLesson, playingPast, readyFromPhraseStart, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
-// Lessons 17–19 end to end, muted, on the synthetic groove (124 BPM, first beat at 0 s, bar 1 on beat
+// Lessons 14–16 end to end, muted, on the synthetic groove (124 BPM, first beat at 0 s, bar 1 on beat
 // 0, so bar n starts on beat 4(n − 1)). Keys are pressed on beats of the engine's own heard playhead;
 // engine commands stand in for knob turns and the jog wheel.
 

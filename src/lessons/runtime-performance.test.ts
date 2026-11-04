@@ -1,4 +1,4 @@
-// The runtime for Lessons 17–19: hook triggers and practice reps for hot cues, loops and the echo out.
+// The runtime for Lessons 14–16: hook triggers and practice reps for hot cues, loops and the echo out.
 import { describe, expect, it } from "vitest";
 import { lessonDefinition } from "./catalogue.ts";
 import { initialLessonState, lessonReducer, triggerStep, type LessonEvent, type LessonState } from "./runtime.ts";

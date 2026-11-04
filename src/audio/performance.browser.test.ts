@@ -5,7 +5,7 @@ import { createAudioEngine, type CommandEvent } from "./engine.ts";
 import type { BusMeterFrame } from "./meter.ts";
 import { at, clickBuffer, expectOk, KEYBOARD, offlineContext, peakSec, SAMPLE_RATE, send, toneBuffer } from "./offline-test-support.ts";
 
-// Hot cues, loops and Beat FX ECHO (Lessons 17–19), rendered offline at 48 kHz, never through speakers.
+// Hot cues, loops and Beat FX ECHO (Lessons 14–16), rendered offline at 48 kHz, never through speakers.
 // An offline render has no output latency and no lookahead here, so heard time = applied time = render time.
 
 const grid = (bpm: number): BeatGrid => ({ bpm, firstBeat: 0, downbeatIndex: 0, rmsResidualMs: 1 });

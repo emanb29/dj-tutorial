@@ -15,8 +15,10 @@ Inputs:
   and phrase markers.
 
 Settled (from the brief): each Lesson teaches 1–2 concepts, unlocks the controls they need, and ends
-in a deterministic Check. Sync is allowed as a teaching aid; only `final-mix` forbids it. v1 is done
-when the Learner passes `final-mix`.
+in a deterministic Check. Sync is allowed as a teaching aid; only the live path (Lessons 17–20) forbids
+it. Since 2026-11-03 the course has **two paths** (see "Two paths" below): the recorded-mix path
+(Lessons 1–16, the default) ends in a recorded mix; the live path (Lessons 17–20, optional and later)
+ends in `final-mix`, the live set by ear.
 
 ## LCME Debut (≈ grade 1) criteria used below
 
@@ -40,6 +42,10 @@ sync; **avail** = unlocked, the Learner may use it; **off** = locked off.
 
 Thresholds are starting values to tune after the maintainer plays through (Q9).
 
+Numbers changed on 2026-11-03: hot cues, loops and the echo out (were 17–19) are now 14–16, on the
+recorded-mix path; the by-ear Lessons (were 14–16) are now 17–19, on the live path. Ids never changed,
+so stored progress is unaffected.
+
 | # | id | Title | Concepts | Controls unlocked | Prereqs | Sync | Check (what is measured, rough threshold) | LCME |
 |---|---|---|---|---|---|---|---|---|
 | 1 | `deck-basics` | Play a track out loud | Deck; channel fader | Load, Play/Pause, channel fader (deck A), master level | — | n/a | Fade a track in from silence and back out with the channel fader: master audible within 4 bars of Play, fader fully down at the end, no master clipping | L2 |
@@ -55,15 +61,15 @@ Thresholds are starting values to tune after the maintainer plays through (Q9).
 | 11 | `eq-basics` | Shape the sound with EQ | EQ (HI/MID/LOW); cutting, not boosting | HI, MID, LOW per channel | `gain-staging`, `phrases` | n/a | Cut LOW fully for one phrase and bring it back on the next phrase start: return within ±1 beat; no band above +3 dB for more than 1 bar; all EQs within ±1 dB of centre at the end | L6 |
 | 12 | `bass-swap` | Swap the bass | EQ mixing; bass swap | — | `eq-basics`, `sync-blend` | on | Sync blend with B's LOW cut, then swap the lows at a phrase start: both LOW EQs above −6 dB at the same time for ≤1 beat in total, swap within ±1 beat of a phrase start, no clipping | L4, L6 |
 | 13 | `filter-transition` | The filter | Filter (CFX knob: HPF/LPF); filter transition | CFX knob per channel | `eq-basics`, `sync-blend` | avail | High-pass A out over 8–16 bars while B comes in: filter reaches ≥70% HPF before A's fader closes; A's CFX back at centre before A can be heard again (by the Check's end) | L6 (beyond: Breakthrough "filters") |
-| 14 | `nudge-phase` | Nudge it back in line | Pitch bend with the jog wheel; phase | Jog wheel pitch bend (while playing), phase meter | `cut-on-phrase`, `tempo-fader` | off | Same tempo, B starts up to ¼ beat out of phase: bring the phase error under 15 ms within 4 bars and hold it there for 8 bars; ≤1 CUE press on B (re-cueing is counted) | L5 |
-| 15 | `tempo-by-ear` | Match tempo by ear | Hearing which deck is faster; correcting with the tempo fader | — (BPM display and phase meter hidden) | `nudge-phase` | off | Tracks 0.5–2% apart, display covered: within 32 bars get tempos within ±0.1 BPM and phase under 20 ms, held for 8 bars; tempo fader reversals reported (overcorrecting) | L5 (beyond: Breakthrough asks this) |
-| 16 | `blend-by-ear` | A full blend by ear | Holding a long blend; recovering drift | — | `tempo-by-ear`, `bass-swap` | off | Display covered, ≤2% apart: 16-bar blend with a bass swap, start on a phrase start: phase error <25 ms for ≥85% of the time both are audible, never >60 ms for more than 1 bar; bass-clash and balance limits from `bass-swap` | L4, L5, L6 |
-| 17 | `hot-cues` | Hot cues | Hot cue (pads in Hot Cue mode) | 8 pads per deck, HOT CUE pad mode | `cue-point`, `phrases` | avail | Set hot cues on 3 phrase starts, then trigger each on A's phrase start: within ±40 ms; quantize off | L3 (beyond: Breakthrough "hot cue jump") |
-| 18 | `loop-transition` | Loop to buy time | Loop (4-beat auto loop, loop in/out); loop transition | LOOP IN, LOOP OUT, 4 BEAT/EXIT | `sync-blend`, `phrases` | avail | Loop A's last 4 bars, bring B in on a phrase start, exit the loop on a downbeat: loop length exactly 4 or 8 bars, start and exit within ±1 beat of a downbeat, no audible double-trigger | (beyond: Breakthrough "loop") |
-| 19 | `echo-out` | The echo out | Beat FX ECHO; echo out | BEAT FX select (ECHO only), channel select, beat ◀/▶, depth, ON/OFF | `cut-on-phrase`, `sync-blend` | avail | Engage ECHO on A, cut A's fader on a downbeat, B starts on the phrase start: cut within ±1 beat; Beat FX off within 2 bars after the repeats die out; no dead air | L7 (beyond: Artist "echo") |
+| 14 | `hot-cues` | Hot cues | Hot cue (pads in Hot Cue mode) | 8 pads per deck, HOT CUE pad mode | `cue-point`, `phrases` | avail | Set hot cues on 3 phrase starts, then trigger each on A's phrase start: within ±40 ms; quantize off | L3 (beyond: Breakthrough "hot cue jump") |
+| 15 | `loop-transition` | Loop to buy time | Loop (4-beat auto loop, loop in/out); loop transition | LOOP IN, LOOP OUT, 4 BEAT/EXIT | `sync-blend`, `phrases` | avail | Loop A's last 4 bars, bring B in on a phrase start, exit the loop on a downbeat: loop length exactly 4 or 8 bars, start and exit within ±1 beat of a downbeat, no audible double-trigger | (beyond: Breakthrough "loop") |
+| 16 | `echo-out` | The echo out | Beat FX ECHO; echo out | BEAT FX select (ECHO only), channel select, beat ◀/▶, depth, ON/OFF | `cut-on-phrase`, `sync-blend` | avail | Engage ECHO on A, cut A's fader on a downbeat, B starts on the phrase start: cut within ±1 beat; Beat FX off within 2 bars after the repeats die out; no dead air | L7 (beyond: Artist "echo") |
+| 17 | `nudge-phase` | Nudge it back in line | Pitch bend with the jog wheel; phase | Jog wheel pitch bend (while playing), phase meter | `cut-on-phrase`, `tempo-fader` | off | Same tempo, B starts up to ¼ beat out of phase: bring the phase error under 15 ms within 4 bars and hold it there for 8 bars; ≤1 CUE press on B (re-cueing is counted) | L5 |
+| 18 | `tempo-by-ear` | Match tempo by ear | Hearing which deck is faster; correcting with the tempo fader | — (BPM display and phase meter hidden) | `nudge-phase` | off | Tracks 0.5–2% apart, display covered: within 32 bars get tempos within ±0.1 BPM and phase under 20 ms, held for 8 bars; tempo fader reversals reported (overcorrecting) | L5 (beyond: Breakthrough asks this) |
+| 19 | `blend-by-ear` | A full blend by ear | Holding a long blend; recovering drift | — | `tempo-by-ear`, `bass-swap` | off | Display covered, ≤2% apart: 16-bar blend with a bass swap, start on a phrase start: phase error <25 ms for ≥85% of the time both are audible, never >60 ms for more than 1 bar; bass-clash and balance limits from `bass-swap` | L4, L5, L6 |
 | 20 | `final-mix` | Your first set | Prepared mix; choosing tracks that mix well | — (all unlocked; sync and quantize locked off; display covered) | `blend-by-ear`, `cut-on-phrase` | **off** | ≥3 tracks of one genre, tempos within ±2%, ≥1 blend and ≥1 cut, all by ear: every transition starts within ±1 beat of a phrase start; during blends phase error <25 ms for ≥85% of the time, never >60 ms for more than 1 bar; no clipping; no dead air; channel loudness within 2 dB at each handover | L1–L7 |
 
-Control growth: after Lesson 20 the virtual controller shows every FLX4 control in v1 scope (Deck A,
+Control growth: after both paths the virtual controller shows every FLX4 control in v1 scope (Deck A,
 mixer, Deck B as in `entry-level-controllers` §3). Out of v1 and never unlocked: pad modes other
 than Hot Cue, Beat FX other than ECHO, Smart CFX / Smart Fader, mic, stems, Vinyl-mode scratching.
 The filter is the CFX knob.
@@ -99,7 +105,7 @@ flowchart TD
   gain-staging --> eq-basics
   phrases --> eq-basics
 
-  subgraph G3["Skip group: By ear (Placement task = blend-by-ear)"]
+  subgraph G3["Live path. Skip group: By ear (Placement task = blend-by-ear)"]
     nudge-phase --> tempo-by-ear
     tempo-by-ear --> blend-by-ear
   end
@@ -107,7 +113,7 @@ flowchart TD
   tempo-fader --> nudge-phase
   bass-swap --> blend-by-ear
 
-  subgraph G4["Electives (each skipped by its own Check)"]
+  subgraph G4["Recorded path, electives for the live set (each skipped by its own Check)"]
     crossfader
     filter-transition
     hot-cues
@@ -126,6 +132,10 @@ flowchart TD
 
   blend-by-ear --> final-mix
   cut-on-phrase --> final-mix
+
+  cut-on-phrase --> first-mix(["Milestone: make your first mix"])
+  G4 --> recorded-mix(["Milestone: your recorded mix (final project)"])
+  bass-swap --> recorded-mix
 ```
 
 Notes:
@@ -134,8 +144,13 @@ Notes:
   narrows down instead of restarting.
 - `tempo-fader` sits in the Sync-mixing group but is also a prerequisite of the By-ear group; a
   Learner who passes `blend-by-ear` in Placement has shown it too.
-- The critical path to `final-mix` is Lessons 1–9, 11, 12 and 14–16, then 20 (15 Lessons). Electives are
-  off it (Q11).
+- The recorded final project (`recorded-mix`) needs every recorded-path Lesson, 1–16, and nothing on
+  the live path. The live path's own critical path to `final-mix` is Lessons 1–9, 11, 12 and 17–19, then
+  20 (15 Lessons); the crossfader, filter and performance Lessons are electives for it (Q11), not for the
+  recorded mix.
+- Placement descends the recorded-mix path's groups (Sync mixing, Foundations, Timing). It asks the By
+  ear task only once Sync mixing is credited, as one more task for the live path, and narrows it to
+  `nudge-phase` when it fails. A beginner never spends a task on by-ear mixing.
 
 ## 3. Where the 15 beginner mistakes get caught
 
@@ -255,3 +270,86 @@ The maintainer's Mission is to post their own mixes and edits (DJ remixes, not p
 - **Remix targets** for the remix finder and Lesson track sets follow the Learner's taste. The default is the maintainer's (`docs/maintainer-profile.md`): house, indie-dance and nu-disco remixes of indie, pop and rock songs.
 - **Bass music** (shared flips plus composer tracks) is practice material and an optional second genre after `blend-by-ear`. The final project defaults to house; the Learner may choose bass music instead.
 - The `loop-transition` and `hot-cues` electives are placed early only if the Learner chooses bass music.
+
+## Two paths (2026-11-03, ISS-199)
+
+| Path | Lessons | Rules | Ends in |
+|---|---|---|---|
+| **Recorded mix** (default) | 1–13 (deck basics through the filter), 14 `hot-cues`, 15 `loop-transition`, 16 `echo-out`, with "Make your first mix" after Lesson 7 | Sync, quantize and the BPM display allowed where each Lesson allows them: a recorded mix is judged on how it sounds, not on how it was made | `recorded-mix`: the recorded final project |
+| **Live set** (optional, later) | 17 `nudge-phase`, 18 `tempo-by-ear`, 19 `blend-by-ear` | Sync off, display covered (as before) | 20 `final-mix`: the live set, with today's exam rules (sync and quantize locked off, display covered) |
+
+Every Lesson and every Check stays in the app. The code holds the paths in `shared/catalogue.ts`
+(`RECORDED_PATH_LESSON_IDS`, `LIVE_PATH_LESSON_IDS`, `MILESTONES`); the list (`src/app/lesson/course-list.ts`)
+shows them as two sections, "Recorded mixes" and "Live sets (later)".
+
+**Prerequisites.** No Lesson's prerequisites changed, so stored progress never loses an open Lesson
+(`shared/catalogue.test.ts` checks every Lesson against the frozen table in
+`shared/catalogue-test-support.ts`; `src/app/lesson/course-list.test.ts` checks stored profiles). The
+recorded-mix path is closed under prerequisites: none of Lessons 1–16 needs a live Lesson. What changed:
+
+- The recorded final project needs Lessons 1–16 and nothing on the live path (it does not need the
+  `blend-by-ear` chain). The crossfader, filter and performance Lessons are part of it, not electives.
+- `startLesson` (the Placement summary's "Next") follows course order: the recorded-mix path, then the
+  live path. On the list, LOAD A goes to the next recorded-path Lesson, and to "Your recorded mix" once
+  Lessons 1–16 are passed; the live path is reached by turning BROWSE to it.
+- Placement descends Sync mixing → Foundations → Timing, and asks By ear only on top of a Sync mixing
+  credit (§2 notes).
+
+**Milestones.** "Make your first mix" and "Your recorded mix" are steps on the recorded-mix path that are
+not Lessons: no Check, nothing stored yet. Each opens once its prerequisites are passed and opens Mix
+plans (FLX4: BROWSE to it, press; or LOAD A when it is the next step).
+
+### Early win: make your first mix
+
+Right after Lesson 7 (the cut), the Learner makes a first postable mix: 3–5 of their own tracks, cuts on
+the 1, planned and then rendered. Lesson 9 adds the crossfade recipe. This is the short, visible win
+the course was missing: the first file worth sharing comes after seven short Lessons, not twenty.
+
+How it connects, step by step:
+
+1. **Today (main):** the milestone row's "Plan it" opens Mix plans (`/mix-plans`). The Learner picks
+   tracks from their music folder and a Transition recipe ("Cut on the 1"; "Crossfade" once Lesson 9 is
+   passed). The Complexity rating already counts a control whose Lesson isn't Passed.
+2. **When the Mix Editor (ISS-187) merges:** the same row opens the plan in the Mix Editor; nothing
+   in the list changes.
+3. **When Render (ISS-190) merges:** Render, on Mix plans, makes the WAV/MP3 to post. The milestone
+   then reads "Plan it, render it".
+4. **Follow-up (gated, `shared/learner.ts`):** a finished render of 3+ tracks records `firstMixAt` (and the
+   final project's `recordedMixAt`) in the profile, so the row shows "Made" and LOAD A moves on. Until
+   then the milestones record nothing, and `isCourseComplete` still follows `final-mix`.
+
+### Proposal: selection and flow on the recorded-mix path
+
+A recorded mix is judged by the listener on track choice and flow as much as on transitions, and the
+course teaches neither (mistake 14, key clash, is not caught; §3). Proposal, not built:
+
+- **Where:** a short Lesson between 16 (`echo-out`) and the recorded final project, "Choose and order
+  your tracks" (`set-flow`), plus a set-builder step inside the final project that uses it.
+- **Concepts:** key compatibility (the Camelot wheel: same key, ±1, relative major/minor; the set
+  builder's `keysCompatible` already does this), energy (intro / build / peak / wind-down, from the
+  sections the app already finds: `energySections`), and track order (tempo steps of 2% or less, keys
+  that move round the wheel, energy that rises before it falls).
+- **Check idea (deterministic, no audio judgement):** the Learner orders 5 cards from their library
+  (BPM, key, energy shown). It passes when every neighbouring pair is key-compatible or joined by a cut,
+  no tempo step is over 2%, and the energy curve has one peak in the back half. All problems are listed
+  at once, each with its fix. Thresholds are starting values, to tune like Q9.
+- **Final project:** the same rules become set-builder warnings (never blocking), next to the existing
+  key and tempo warnings.
+
+## Decisions (pedagogy owner, 2026-11-03)
+
+The goal, from the maintainer: **make recorded mixes for themselves and friends and post them to
+SoundCloud.** Streaming live is wanted eventually but is not a priority. The most comfortable interface
+they have found is a mix editor (plan, then render). They like learning "the right way", and short,
+visible wins keep the course going.
+
+1. **Two paths.** The recorded-mix path is the default and ends in a recorded final project; the live
+   path (by ear, then `final-mix` with the exam rules) is optional and later. Every Lesson and Check stays.
+2. **Renumbered** so the list reads in course order: 1–16 recorded, 17–20 live (see §1).
+3. **An early win** after Lesson 7: "Make your first mix", through Mix plans now and the Mix Editor and
+   Render as they merge.
+4. **Selection and flow** proposed as a short Lesson plus set-builder warnings, with the Check idea above;
+   not built yet.
+5. This supersedes "v1 is done when the Learner passes `final-mix`" for the default path: the recorded
+   final project is the default end. Course completion in the profile still follows `final-mix` until the
+   milestones are recorded (follow-up above).

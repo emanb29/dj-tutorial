@@ -20,6 +20,18 @@ _Avoid_: Course, content library
 The ordered selection of Lessons from the Lesson catalogue chosen for one Learner, built from their Skill profile and revised as it changes.
 _Avoid_: Path, plan, syllabus
 
+**Recorded-mix path**:
+The default route through the Lesson catalogue (Lessons 1–16), ending in a recorded mix the Learner can post. Sync and the BPM display are allowed, because a recorded mix is judged on how it sounds.
+_Avoid_: Easy mode, beginner track
+
+**Live path**:
+The optional, later Lessons (17–20) for mixing live by ear, ending in the live set (`final-mix`) with sync locked off and the display covered.
+_Avoid_: Advanced mode, pro track
+
+**Milestone**:
+A step on the recorded-mix path that is not a Lesson and has no Check, such as making a first mix. It opens a screen once its prerequisites are passed.
+_Avoid_: Achievement, badge
+
 **Placement**:
 The hands-on assessment at the start that measures what a Learner can already do, so the Curriculum skips what they've mastered. Never self-reported.
 _Avoid_: Onboarding quiz, self-assessment

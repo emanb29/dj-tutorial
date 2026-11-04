@@ -1,23 +1,10 @@
-// The minimal Lesson list: Lessons 1–3 with passed / retained state from the Skill profile.
-// A Lesson opens once its prerequisites are passed; progress is never time-gated.
-import { lessonRetention } from "@checks";
-import { COURSE, hasPlacement, startLesson, type CourseLessonId } from "@lessons";
-import { catalogueIndex, lessonById } from "@shared/catalogue.ts";
+// The Lesson list, in two paths (docs/lesson-catalogue.md, "Two paths"): the recorded-mix path, with its
+// first-mix and final-project milestones, then the optional live path. Rows come from course-list.ts.
+import { hasPlacement, type CourseLessonId } from "@lessons";
 import type { LearnerRecord } from "@shared/learner.ts";
 import { ButtonHint, useControllerConnected } from "../controller/KeyHint.tsx";
+import { courseSections, courseStart, type CourseRow, type CourseSection, type CourseStart, type LessonStanding } from "./course-list.ts";
 import "./lesson-list.css";
-
-export type LessonStanding = "locked" | "ready" | "passed" | "retained" | "lapsed";
-
-export function lessonStanding(learner: LearnerRecord, lessonId: CourseLessonId): LessonStanding {
-  const profile = learner.skillProfile;
-  if (profile.lessons[lessonId]?.passedAt != null) {
-    const retention = lessonRetention(profile, lessonId);
-    return retention === "retained" || retention === "lapsed" ? retention : "passed";
-  }
-  const open = lessonById(lessonId).prerequisites.every((id) => profile.lessons[id]?.passedAt != null);
-  return open ? "ready" : "locked";
-}
 
 const STANDING_WORDS: Readonly<Record<LessonStanding, string>> = {
   locked: "Locked",
@@ -37,12 +24,25 @@ interface LessonListProps {
   readonly onGradeMix: () => void;
   /** Freestyle: both decks and the library, no grading; open from the start. */
   readonly onFreestyle: () => void;
-  /** Mix plans: sets planned from the music folder; open from the start. */
+  /**
+   * Mix plans: sets planned from the music folder; open from the start. Both milestones open it too:
+   * the Mix Editor and Render join it there (catalogue "Early win").
+   */
   readonly onMixPlans: () => void;
 }
 
+const isStart = (row: CourseRow, start: CourseStart) =>
+  row.kind === "lesson" ? start.kind === "lesson" && start.lessonId === row.lessonId : start.kind === "milestone" && start.milestoneId === row.milestoneId;
+
+function startWords(sections: readonly CourseSection[], start: CourseStart): string {
+  const row = sections.flatMap((section) => section.rows).find((candidate) => isStart(candidate, start));
+  if (row === undefined) return "";
+  return row.kind === "lesson" ? `starts Lesson ${String(row.number)} (${row.title})` : `opens ${row.title}`;
+}
+
 export function LessonList({ learner, offline, onStart, onRetakePlacement, onGradeMix, onFreestyle, onMixPlans }: LessonListProps) {
-  const startHere = startLesson(learner.skillProfile);
+  const sections = courseSections(learner);
+  const start = courseStart(learner);
   const controllerConnected = useControllerConnected();
   return (
     <section className="lesson-list" aria-label="Lessons">
@@ -67,36 +67,61 @@ export function LessonList({ learner, offline, onStart, onRetakePlacement, onGra
       </p>
       {controllerConnected ? (
         <p className="lesson-list-flx4" data-testid="flx4-hint">
-          FLX4: turn BROWSE to a Lesson, press it · <ButtonHint k="Enter" /> starts Lesson {catalogueIndex(startHere) + 1} ({lessonById(startHere).title})
+          FLX4: turn BROWSE to a Lesson, press it · <ButtonHint k="Enter" /> {startWords(sections, start)}
         </p>
       ) : null}
-      <ol>
-        {COURSE.map((lesson) => {
-          const standing = lessonStanding(learner, lesson.id);
-          const prerequisites = lessonById(lesson.id).prerequisites.map((id) => lessonById(id).title);
-          return (
-            <li key={lesson.id} data-lesson={lesson.id} data-standing={standing} data-start={lesson.id === startHere || undefined}>
-              <span className="lesson-number">{catalogueIndex(lesson.id) + 1}</span>
-              <span className="lesson-title">{lesson.title}</span>
-              <span className="lesson-standing">{STANDING_WORDS[standing]}</span>
-              {standing === "locked" ? (
-                <span className="lesson-needs">Pass “{prerequisites.join("”, “")}” first</span>
-              ) : (
-                <button
-                  type="button"
-                  data-nav-default={lesson.id === startHere || undefined}
-                  className={standing === "ready" ? "btn btn-primary" : "btn"}
-                  onClick={() => {
-                    onStart(lesson.id);
-                  }}
-                >
-                  {standing === "ready" ? "Start" : "Play again"}
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+      {sections.map((section) => (
+        <section key={section.path} className="lesson-path" data-path={section.path} aria-labelledby={`lesson-path-${section.path}`}>
+          <h2 id={`lesson-path-${section.path}`} className="lesson-path-title">
+            {section.title}
+          </h2>
+          <p className="lesson-path-caption">{section.caption}</p>
+          <ol>
+            {section.rows.map((row) => {
+              const here = isStart(row, start);
+              if (row.kind === "milestone") {
+                return (
+                  <li key={row.milestoneId} className="lesson-milestone" data-milestone={row.milestoneId} data-standing={row.standing} data-start={here || undefined}>
+                    <span className="lesson-number" aria-hidden="true">
+                      ★
+                    </span>
+                    <span className="lesson-title">{row.title}</span>
+                    <span className="lesson-standing">{row.caption}</span>
+                    {row.needs !== null ? (
+                      <span className="lesson-needs">{row.needs}</span>
+                    ) : (
+                      <button type="button" data-nav-default={here || undefined} className="btn btn-primary" onClick={onMixPlans}>
+                        Plan it
+                      </button>
+                    )}
+                  </li>
+                );
+              }
+              return (
+                <li key={row.lessonId} data-lesson={row.lessonId} data-standing={row.standing} data-start={here || undefined}>
+                  <span className="lesson-number">{row.number}</span>
+                  <span className="lesson-title">{row.title}</span>
+                  <span className="lesson-standing">{STANDING_WORDS[row.standing]}</span>
+                  {row.needs !== null ? (
+                    <span className="lesson-needs">{row.needs}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      data-nav-default={here || undefined}
+                      className={row.standing === "ready" ? "btn btn-primary" : "btn"}
+                      onClick={() => {
+                        onStart(row.lessonId);
+                      }}
+                    >
+                      {row.standing === "ready" ? "Start" : "Play again"}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ))}
     </section>
   );
 }

@@ -1,4 +1,4 @@
-// Lesson 14, `nudge-phase`: bring B back in phase with the jog wheel and hold it (check-design §4).
+// Lesson 17, `nudge-phase`: bring B back in phase with the jog wheel and hold it (check-design §4).
 import type { CtxSpan, CtxTime } from "@shared/attempt.ts";
 import type { LessonCheck, TaskOf } from "../context.ts";
 import { barSeconds } from "../context.ts";

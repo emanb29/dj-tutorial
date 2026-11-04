@@ -28,12 +28,12 @@ export const LESSON_IDS = [
   "eq-basics",
   "bass-swap",
   "filter-transition",
-  "nudge-phase",
-  "tempo-by-ear",
-  "blend-by-ear",
   "hot-cues",
   "loop-transition",
   "echo-out",
+  "nudge-phase",
+  "tempo-by-ear",
+  "blend-by-ear",
   "final-mix",
 ] as const;
 
