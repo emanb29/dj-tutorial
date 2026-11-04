@@ -351,7 +351,7 @@ export function LessonPlayer({ lessonId, learner, onLearnerChange, saveStatus, o
 
   // Deck set-up follows the phase: practice cues the deck, each Check attempt auto-jumps and records.
   const inPractice = phase.kind === "hook" || phase.kind === "practice";
-  // A by-ear drill (Lessons 14–16) starts its own rounds from the set-up, and its last hook step shows a reveal a re-cue would cut off.
+  // A by-ear drill (Lessons 17–19) starts its own rounds from the set-up, and its last hook step shows a reveal a re-cue would cut off.
   const setUp = practiceSetUp(phase.kind, session?.deckTrack("B") != null && definition.drill === undefined);
   const attempt = phase.kind === "check" ? phase.attempt : null;
   const practiceCount = useCallback(() => session?.phraseCount() ?? null, [session]);

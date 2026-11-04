@@ -1,4 +1,4 @@
-// Lesson 15, `tempo-by-ear`: match B's tempo to A's by ear, display hidden (check-design §4).
+// Lesson 18, `tempo-by-ear`: match B's tempo to A's by ear, display hidden (check-design §4).
 import type { CtxTime } from "@shared/attempt.ts";
 import { barSeconds, type LessonCheck, type TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";

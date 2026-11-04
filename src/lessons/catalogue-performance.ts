@@ -1,4 +1,4 @@
-// Lessons 17–19 as data (docs/lesson-catalogue.md §1, check-design §4): hot cues, the loop transition
+// Lessons 14–16 as data (docs/lesson-catalogue.md §1, check-design §4): hot cues, the loop transition
 // and the echo out. Captions, not prose: a few words, the key in brackets. All three play one track;
 // loop-transition and echo-out bring the same track in on deck B from another phrase.
 import type { LessonId, LessonTask } from "@shared/attempt.ts";
@@ -14,7 +14,7 @@ const phrasesNeeded = (track: LessonTrack, last: number) =>
   track.phraseStarts.length < last + 1 ? [`The track is too short: this Lesson plays up to phrase ${String(last + 1)}.`] : [];
 
 // ---------------------------------------------------------------------------------------------
-// Lesson 17: hot-cues
+// Lesson 14: hot-cues
 // ---------------------------------------------------------------------------------------------
 
 /** The phrases the three pads hold, in pad order (drop, groove, outro), and the run the triggers start from. */
@@ -115,7 +115,7 @@ const hotCues: LessonDefinition = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Lesson 18: loop-transition
+// Lesson 15: loop-transition
 // ---------------------------------------------------------------------------------------------
 
 /** Bars of A before LOOP IN: a whole phrase, from its start, to count. */
@@ -214,7 +214,7 @@ const loopTransition: LessonDefinition = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Lesson 19: echo-out
+// Lesson 16: echo-out
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -303,7 +303,7 @@ const echoOut: LessonDefinition = {
 
 export type PerformanceLessonId = "hot-cues" | "loop-transition" | "echo-out";
 
-/** Lessons 17–19, in catalogue order. */
+/** Lessons 14–16, in catalogue order. */
 export const PERFORMANCE_LESSONS: readonly (LessonDefinition & { readonly id: PerformanceLessonId })[] = [
   { ...hotCues, id: "hot-cues" },
   { ...loopTransition, id: "loop-transition" },

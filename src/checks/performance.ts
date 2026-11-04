@@ -1,4 +1,4 @@
-// Hot cues, loops and Beat FX on the event timeline (Lessons 17–19): which loop is on, Beat FX's state
+// Hot cues, loops and Beat FX on the event timeline (Lessons 14–16): which loop is on, Beat FX's state
 // at a moment, and where an echo's tail dies out. Units are the contract's (shared/attempt.ts `ControlId`).
 import { BEAT_FX_DEFAULT, type Attempt, type BeatFxSnapshot, type ControlEvent, type ControlId, type CtxSpan, type CtxTime, type DeckId } from "@shared/attempt.ts";
 import type { LoadedDeck } from "./context.ts";

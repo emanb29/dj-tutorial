@@ -167,3 +167,29 @@ li[data-standing="lapsed"] .lesson-standing {
   color: var(--ink-dim);
   font-size: var(--text-sm);
 }
+
+/* The two paths (catalogue "Two paths"): the recorded-mix path, then the optional live path. */
+.lesson-path + .lesson-path {
+  margin-top: var(--space-6);
+}
+
+.lesson-path-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 750;
+}
+
+.lesson-path-caption {
+  margin: var(--space-1) 0 var(--space-3);
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+}
+
+/* A milestone (first mix, recorded mix): a star instead of a number, a one-line caption under the title. */
+.lesson-milestone .lesson-number {
+  color: var(--accent);
+}
+
+.lesson-milestone[data-standing="ready"] .lesson-standing {
+  color: var(--ink);
+}

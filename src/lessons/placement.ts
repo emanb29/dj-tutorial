@@ -4,7 +4,7 @@ import { applyCheckResult, DUE_SLACK_HOURS, lessonOfCriterion, RETENTION_LADDER_
 import { LESSON_IDS, lessonById, type LessonId, type SkipGroupId } from "@shared/catalogue.ts";
 import type { CheckResult, CriterionId, VoidAttempt } from "@shared/check-result.ts";
 import type { CurriculumRequest } from "@shared/coach-contract.ts";
-import { deterministicCurriculum, requiredRoute } from "@shared/coach-deterministic.ts";
+import { deterministicCurriculum } from "@shared/coach-deterministic.ts";
 import { describeIssues, LearnerRecordSchema, type LearnerRecord } from "@shared/learner.ts";
 import {
   PLACEMENTS_KEPT,
@@ -26,13 +26,21 @@ export interface PlacementGroup {
   readonly narrowingTask: LessonId;
 }
 
-/** Skip groups, hardest first: the descent order (§3). */
-export const PLACEMENT_GROUPS: readonly PlacementGroup[] = [
-  { groupId: "byEar", groupTask: "blend-by-ear", narrowingTask: "nudge-phase" },
+/** The live path's skip group (catalogue "Two paths"): asked only on top of a Sync mixing credit. */
+export const LIVE_PLACEMENT_GROUP: PlacementGroup = { groupId: "byEar", groupTask: "blend-by-ear", narrowingTask: "nudge-phase" };
+
+/** The recorded-mix path's skip groups, hardest first: the descent order (§3). */
+export const RECORDED_PLACEMENT_GROUPS: readonly PlacementGroup[] = [
   { groupId: "syncMixing", groupTask: "bass-swap", narrowingTask: "sync-blend" },
   { groupId: "foundations", groupTask: "cut-on-phrase", narrowingTask: "cue-point" },
   { groupId: "timing", groupTask: "phrases", narrowingTask: "beats-and-bars" },
 ];
+
+/** Every skip group, hardest first: the narrowing order. */
+export const PLACEMENT_GROUPS: readonly PlacementGroup[] = [LIVE_PLACEMENT_GROUP, ...RECORDED_PLACEMENT_GROUPS];
+
+/** The recorded-mix path's hardest group task: crediting it is what opens the live path's task. */
+const LIVE_TASK_AFTER: LessonId = "bass-swap";
 
 /** Every Lesson Placement can run as a task. */
 export type PlacementTaskId = "blend-by-ear" | "nudge-phase" | "bass-swap" | "sync-blend" | "cut-on-phrase" | "cue-point" | "phrases" | "beats-and-bars";
@@ -131,10 +139,16 @@ export function nextStep(result: Pick<PlacementResult, "tasks">, profileBefore: 
     return task !== undefined && task.outcome !== "passed";
   };
 
-  // Descent: group tasks top to bottom; the first pass (or a group already passed) ends it.
-  for (const group of PLACEMENT_GROUPS) {
+  // Descent: the recorded-mix path's group tasks top to bottom; the first pass (or a group already passed) ends it.
+  for (const group of RECORDED_PLACEMENT_GROUPS) {
     if (credited.has(group.groupTask)) break;
     if (!ran.has(group.groupTask)) return { kind: "task", task: { lessonId: asTaskId(group.groupTask), groupId: group.groupId, step: "group" } };
+  }
+
+  // The live path (optional, later) is asked only of a Learner who already mixes with sync: one more task.
+  const live = LIVE_PLACEMENT_GROUP;
+  if (credited.has(LIVE_TASK_AFTER) && !credited.has(live.groupTask) && !ran.has(live.groupTask)) {
+    return { kind: "task", task: { lessonId: asTaskId(live.groupTask), groupId: live.groupId, step: "group" } };
   }
 
   // Narrowing: one smaller task per failed group, hardest first, never on top of a just-failed prerequisite.
@@ -187,9 +201,12 @@ export function withTaskOutcome(
   return { result: { ...result, tasks: [...result.tasks, record] }, rerun: false };
 }
 
-/** First Lesson of the deterministic required route that is not passed (`final-mix` when all are). */
+/**
+ * The first Lesson not passed in course order: the recorded-mix path, then the live path (catalogue
+ * "Two paths"); `final-mix` when all are. Course order lists every prerequisite first, so it is open.
+ */
 export function startLesson(profile: PassedLessons): LessonId {
-  return requiredRoute(passedIn(profile))[0] ?? "final-mix";
+  return LESSON_IDS.find((id) => profile.lessons[id]?.passedAt == null) ?? "final-mix";
 }
 
 const HOUR_MS = 3_600_000;

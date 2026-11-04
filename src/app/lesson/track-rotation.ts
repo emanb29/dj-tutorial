@@ -19,7 +19,7 @@ export const TRACK_HISTORY_KEY = "learn-to-dj.recent-tracks";
  *   focus (revised 2026-10-17)"). Every house subgenre in the index qualifies (deep, nu-disco, indie
  *   dance, future, electro, melodic, jackin) except electro swing: its swung groove makes the beat
  *   harder to hear, the reason Q7 keeps swung music out of Checks.
- * - Techno (125–135 BPM) only in the By-ear group (Lessons 14–16), as Q7 decides: same steady kick,
+ * - Techno (125–135 BPM) only in the By-ear group (Lessons 17–19), as Q7 decides: same steady kick,
  *   a harder tempo for a beginner's first Lessons.
  * - Never UK garage (swung 2-step), dubstep and other bass music (half-time), or drum & bass (broken
  *   beats, 170+ BPM): Q7 keeps them out of every v1 Check.

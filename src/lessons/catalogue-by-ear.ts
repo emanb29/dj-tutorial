@@ -1,4 +1,4 @@
-// Lessons 14–16 as data (docs/lesson-catalogue.md §1, check-design §4): nudging B into phase with the
+// Lessons 17–19 as data (docs/lesson-catalogue.md §1, check-design §4): nudging B into phase with the
 // jog wheel, matching tempo by ear, and a long blend by ear. SYNC is locked off in all three; from 15
 // the BPM display and phase meter are covered. These are the hardest skills in the course, so practice
 // is a drill of short rounds (`PracticeDrill`, run live by the app): one rep every few seconds, with
@@ -54,7 +54,7 @@ const at = <Value>(list: readonly Value[], attempt: number, fallback: Value): Va
 const tempoSetup = (tempoPercent: number) => ({ sync: false, tempoRange: 6 as const, tempoPercent });
 
 // ---------------------------------------------------------------------------------------------
-// Lesson 14: nudge-phase
+// Lesson 17: nudge-phase
 // ---------------------------------------------------------------------------------------------
 
 /** Bars of listening before phase grading starts, then converge (≤ 4) and hold (8). */
@@ -163,7 +163,7 @@ function byEarPositions(track: LessonTrack, phrases: number): { posA: number; po
 const apartFader = (track: LessonTrack, apartPercent: number) => tempoPercentApart(track.grid.bpm, trackOnDeck(track, "B").grid.bpm, apartPercent);
 
 // ---------------------------------------------------------------------------------------------
-// Lesson 15: tempo-by-ear
+// Lesson 18: tempo-by-ear
 // ---------------------------------------------------------------------------------------------
 
 const MATCH_LEAD_BARS = 2;
@@ -250,7 +250,7 @@ const tempoByEar: LessonDefinition = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Lesson 16: blend-by-ear
+// Lesson 19: blend-by-ear
 // ---------------------------------------------------------------------------------------------
 
 /** A phrase to match B in the headphones, 16 bars of blend, 4 after A's out (loud-steady reads them). */
@@ -356,7 +356,7 @@ const blendByEar: LessonDefinition = {
 
 export type ByEarLessonId = "nudge-phase" | "tempo-by-ear" | "blend-by-ear";
 
-/** Lessons 14–16, in catalogue order. */
+/** Lessons 17–19, in catalogue order. */
 export const BY_EAR_LESSONS: readonly (LessonDefinition & { readonly id: ByEarLessonId })[] = [
   { ...nudgePhase, id: "nudge-phase" },
   { ...tempoByEar, id: "tempo-by-ear" },
@@ -365,7 +365,7 @@ export const BY_EAR_LESSONS: readonly (LessonDefinition & { readonly id: ByEarLe
 
 const pct = (ratio: number) => `${String(Math.round(ratio * 100))}%`;
 
-/** Result-card lines for Lessons 14–16; null for other criteria. */
+/** Result-card lines for Lessons 17–19; null for other criteria. */
 export function describeByEar(criterion: CriterionResult): string | null {
   const { measured } = criterion;
   switch (criterion.id) {

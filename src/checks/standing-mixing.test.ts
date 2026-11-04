@@ -147,17 +147,17 @@ describe("standing.one-bass", () => {
   });
 
   it("warns past 1 beat of bass clash in a blend, once blend-by-ear is passed", () => {
-    expect(byId(cold("bass-swap", clash(48 + BEAT), { passedUpTo: "hot-cues" }), "standing.one-bass")).toMatchObject({
+    expect(byId(cold("bass-swap", clash(48 + BEAT), { passedUpTo: "final-mix" }), "standing.one-bass")).toMatchObject({
       severity: "warn",
       status: "met",
       measured: 1,
     });
-    expect(byId(cold("bass-swap", clash(48 + BEAT + 0.04), { passedUpTo: "hot-cues" }), "standing.one-bass")?.status).toBe("notMet");
+    expect(byId(cold("bass-swap", clash(48 + BEAT + 0.04), { passedUpTo: "final-mix" }), "standing.one-bass")?.status).toBe("notMet");
     expect(byId(cold("bass-swap", clash(48 + BEAT + 0.04)), "standing.one-bass")).toBeUndefined();
   });
 
   it("does not grade an overlap shorter than 4 bars: that is a cut, not a blend", () => {
-    expect(byId(cold("bass-swap", { ...clash(48), inB: 32, outA: 32 + 3 * BAR }, { passedUpTo: "hot-cues" }), "standing.one-bass")?.status).toBe(
+    expect(byId(cold("bass-swap", { ...clash(48), inB: 32, outA: 32 + 3 * BAR }, { passedUpTo: "final-mix" }), "standing.one-bass")?.status).toBe(
       "notApplicable",
     );
   });

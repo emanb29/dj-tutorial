@@ -1,4 +1,4 @@
-// Lesson 18, `loop-transition`: loop A's last phrase for 4 or 8 bars, bring B in on the loop's 1,
+// Lesson 15, `loop-transition`: loop A's last phrase for 4 or 8 bars, bring B in on the loop's 1,
 // exit the loop on a downbeat (check-design §4). Button presses are point actions, timed from the press;
 // the loop's audio is in A's playhead model.
 import type { CtxTime } from "@shared/attempt.ts";

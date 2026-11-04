@@ -1,4 +1,4 @@
-// Lesson 16, `blend-by-ear`: a long blend with a bass swap, held in phase by ear (check-design §4).
+// Lesson 19, `blend-by-ear`: a long blend with a bass swap, held in phase by ear (check-design §4).
 import { blendAtLeast, blendPhaseHold, clashShort, handover, loudSteady, swapOnPhrase } from "../blend.ts";
 import type { LessonCheck, TaskOf } from "../context.ts";
 import { overlapSpans } from "../mix.ts";

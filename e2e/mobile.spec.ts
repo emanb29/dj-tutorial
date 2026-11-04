@@ -684,9 +684,9 @@ test.describe("Lesson 20, the set, on a phone (412×915, portrait, touch)", () =
   });
 });
 
-// Lessons 17–19 on a phone: the pads, the loop buttons and the Beat FX strip are on screen and
+// Lessons 14–16 on a phone: the pads, the loop buttons and the Beat FX strip are on screen and
 // finger-sized when a step asks for them, and the captions name them (no key).
-test.describe("Lessons 17–19 on a phone (412×915, touch)", () => {
+test.describe("Lessons 14–16 on a phone (412×915, touch)", () => {
   test.use(phone(412, 915));
   const FIRST_SIX = ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point"];
   const TO_SYNC_BLEND = [...FIRST_SIX, "cut-on-phrase", "tempo-fader", "sync-blend"];

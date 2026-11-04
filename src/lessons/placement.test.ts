@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CurriculumRequestSchema } from "@shared/coach-contract.ts";
 import type { CheckResult, CriterionId, CriterionResult, CriterionStatus } from "@shared/check-result.ts";
-import type { LessonId } from "@shared/catalogue.ts";
+import { LESSON_IDS, RECORDED_PATH_LESSON_IDS, type LessonId } from "@shared/catalogue.ts";
 import { LearnerRecordSchema, emptyLearnerRecord } from "@shared/learner.ts";
 import { PlacementResultSchema, type PlacementResult } from "@shared/placement.ts";
 import { emptySkillProfile, type SkillProfile } from "@shared/skill-profile.ts";
@@ -93,48 +93,57 @@ describe("ancestorsOf", () => {
 });
 
 describe("nextStep: descent and narrowing (placement-design §3)", () => {
-  it("starts with the hardest group task", () => {
-    expect(nextTask(emptyResult(), NONE, 0)).toBe("blend-by-ear");
+  it("starts with the recorded-mix path's hardest group task, not the live path's", () => {
+    expect(nextTask(emptyResult(), NONE, 0)).toBe("bass-swap");
   });
 
-  it("ends after one task when blend-by-ear passes", () => {
-    const { order, end } = run({ "blend-by-ear": "pass" });
-    expect(order).toEqual(["blend-by-ear"]);
+  it("asks the live path's task only once Sync mixing is credited, and ends when it passes", () => {
+    const { order, end } = run({ "bass-swap": "pass", "blend-by-ear": "pass" });
+    expect(order).toEqual(["bass-swap", "blend-by-ear"]);
     expect(end).toEqual({ kind: "end", reason: "noTaskLeft" });
   });
 
-  it("fails By ear and Sync mixing, passes Foundations, then narrows By ear and Sync mixing (5 tasks)", () => {
-    const { order } = run({ "cut-on-phrase": "pass" });
-    expect(order).toEqual(["blend-by-ear", "bass-swap", "cut-on-phrase", "nudge-phase", "sync-blend"]);
+  it("narrows the live path to nudge-phase when blend-by-ear fails on top of a Sync mixing pass", () => {
+    expect(run({ "bass-swap": "pass" }).order).toEqual(["bass-swap", "blend-by-ear", "nudge-phase"]);
   });
 
-  it("never tests a Lesson on top of a just-failed prerequisite: every group fails → cue-point, beats-and-bars (6 tasks)", () => {
+  it("fails Sync mixing, passes Foundations, then narrows Sync mixing; the live path is never asked (3 tasks)", () => {
+    const { order } = run({ "cut-on-phrase": "pass" });
+    expect(order).toEqual(["bass-swap", "cut-on-phrase", "sync-blend"]);
+  });
+
+  it("never tests a Lesson on top of a just-failed prerequisite: every group fails → cue-point, beats-and-bars (5 tasks)", () => {
     const { order, end } = run({});
-    expect(order).toEqual(["blend-by-ear", "bass-swap", "cut-on-phrase", "phrases", "cue-point", "beats-and-bars"]);
-    expect(end).toEqual({ kind: "end", reason: "taskCap" });
+    expect(order).toEqual(["bass-swap", "cut-on-phrase", "phrases", "cue-point", "beats-and-bars"]);
+    expect(end).toEqual({ kind: "end", reason: "noTaskLeft" });
   });
 
   it("skips a narrowing task that an earlier narrowing pass already credited", () => {
     const { order } = run({ "cue-point": "pass" });
     // cue-point credits beats-and-bars, so the Timing narrowing task is not run.
-    expect(order).toEqual(["blend-by-ear", "bass-swap", "cut-on-phrase", "phrases", "cue-point"]);
+    expect(order).toEqual(["bass-swap", "cut-on-phrase", "phrases", "cue-point"]);
   });
 
   it("counts Not yet as not passed, for narrowing and for the ancestor rule", () => {
-    const { order } = run({ "blend-by-ear": "notYet", "bass-swap": "notYet", "cut-on-phrase": "notYet", phrases: "pass" });
-    // nudge-phase and sync-blend sit on cut-on-phrase (not yet): skipped. cue-point does not.
-    expect(order).toEqual(["blend-by-ear", "bass-swap", "cut-on-phrase", "phrases", "cue-point"]);
+    const { order } = run({ "bass-swap": "notYet", "cut-on-phrase": "notYet", phrases: "pass" });
+    // sync-blend sits on cut-on-phrase (not yet): skipped. cue-point does not.
+    expect(order).toEqual(["bass-swap", "cut-on-phrase", "phrases", "cue-point"]);
   });
 
   it("starts no new task at or after 6:00 from the first hook", () => {
-    const one = withTaskOutcome(emptyResult(), { lessonId: "blend-by-ear", groupId: "byEar", step: "group" }, { kind: "notYet" }, 0).result;
+    const one = withTaskOutcome(emptyResult(), { lessonId: "bass-swap", groupId: "syncMixing", step: "group" }, { kind: "notYet" }, 0).result;
     expect(nextStep(one, NONE, 359)).toMatchObject({ kind: "task" });
     expect(nextStep(one, NONE, 360)).toEqual({ kind: "end", reason: "timeCap" });
   });
 
   it("on a re-take, never re-tests a passed Lesson and skips a group whose task is passed", () => {
     const { order } = run({}, passedProfile(["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase"]));
-    expect(order).toEqual(["blend-by-ear", "bass-swap", "nudge-phase", "sync-blend"]);
+    expect(order).toEqual(["bass-swap", "sync-blend"]);
+  });
+
+  it("on a re-take with Sync mixing already passed, goes straight to the live path's task", () => {
+    const passed = ancestorsOf("bass-swap").concat("bass-swap");
+    expect(nextTask(emptyResult(), passedProfile(passed), 0)).toBe("blend-by-ear");
   });
 });
 
@@ -162,7 +171,7 @@ describe("withTaskOutcome: voids", () => {
 
 describe("creditedLessons", () => {
   it("credits nothing from fails or Not yet (untested = not passed)", () => {
-    expect(creditedLessons(run({ "blend-by-ear": "notYet" }).result)).toEqual([]);
+    expect(creditedLessons(run({ "bass-swap": "notYet" }).result)).toEqual([]);
   });
 
   it("credits a passed group task's Lesson, its skip group and every ancestor", () => {
@@ -183,7 +192,7 @@ describe("creditedLessons", () => {
   });
 
   it("credits the whole critical path except final-mix for blend-by-ear, tempo-fader included", () => {
-    const credited = creditedLessons(run({ "blend-by-ear": "pass" }).result);
+    const credited = creditedLessons(run({ "bass-swap": "pass", "blend-by-ear": "pass" }).result);
     expect(credited).toContain("tempo-fader");
     expect(credited).toContain("tempo-by-ear");
     expect(credited).not.toContain("final-mix");
@@ -206,7 +215,8 @@ describe("creditedLessons", () => {
     });
 
     it("is not credited by a sync-blend or nudge-phase pass, which never measure the tempo fader", () => {
-      const credited = creditedLessons(run({ "cut-on-phrase": "pass", "nudge-phase": "pass", "sync-blend": "pass" }).result);
+      expect(creditedLessons(run({ "cut-on-phrase": "pass", "sync-blend": "pass" }).result)).not.toContain("tempo-fader");
+      const credited = creditedLessons(run({ "bass-swap": "pass", "blend-by-ear": "fail", "nudge-phase": "pass" }).result);
       expect(credited).toEqual(expect.arrayContaining(["nudge-phase", "sync-blend"]));
       expect(credited).not.toContain("tempo-fader");
     });
@@ -214,7 +224,13 @@ describe("creditedLessons", () => {
 });
 
 describe("startLesson", () => {
-  it("is the first required Lesson not passed, skipping electives", () => {
+  it("follows the recorded-mix path first: the crossfader, the filter and the performance Lessons come before the live path", () => {
+    expect(startLesson(passedProfile(["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase", "tempo-fader", "sync-blend"]))).toBe("crossfader");
+    expect(startLesson(passedProfile([...RECORDED_PATH_LESSON_IDS]))).toBe("nudge-phase");
+    expect(startLesson(passedProfile([...LESSON_IDS]))).toBe("final-mix");
+  });
+
+  it("is the first Lesson not passed in course order", () => {
     expect(startLesson(NONE)).toBe("deck-basics");
     expect(startLesson(passedProfile(["deck-basics", "beats-and-bars", "phrases"]))).toBe("gain-staging");
     expect(startLesson(passedProfile(["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase", "sync-blend", "eq-basics", "bass-swap"]))).toBe("tempo-fader");
@@ -311,17 +327,16 @@ describe("withPlacement", () => {
 
 describe("placementCurriculumRequest (placement-design §7)", () => {
   it("sends every passed Lesson and one summary per graded attempt, with reason placement", () => {
-    const { result, checks } = run({ "blend-by-ear": "notYet", "cut-on-phrase": "pass" });
+    const { result, checks } = run({ "cut-on-phrase": "pass" });
     const profileAfter = applyPlacement(NONE, result, checks);
     const request = placementCurriculumRequest({ mission: "  post mixes  ", profileAfter, graded: checks }, "6f2a1d8e-6a59-4c1b-9a0e-0e9f0b2f4c11");
     expect(request.reason).toBe("placement");
     expect(request.mission).toBe("post mixes");
     expect(request.demonstrated).toEqual(creditedLessons(result));
-    // bass-swap failed, cut-on-phrase passed, nudge-phase and sync-blend failed: four graded; Not yet sends none.
+    // bass-swap failed, cut-on-phrase passed, sync-blend failed: three graded, one summary each.
     expect(request.placementResults.map((summary) => [summary.lessonId, summary.outcome])).toEqual([
       ["bass-swap", "failed"],
       ["cut-on-phrase", "passed"],
-      ["nudge-phase", "failed"],
       ["sync-blend", "failed"],
     ]);
     expect(CurriculumRequestSchema.safeParse(request).success).toBe(true);

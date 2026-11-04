@@ -40,7 +40,7 @@ export const STANDING_TAUGHT_IN: Readonly<Record<StandingId, LessonId>> = {
   "technique-mix": "final-mix",
 };
 
-/** The critical path to `final-mix` (catalogue §2): Lessons 1–9, 11, 12, 14–16 and 20. */
+/** The critical path to `final-mix` (catalogue §2): Lessons 1–9, 11, 12, 17–19 and 20 (the live path's). */
 export const FINAL_MIX_ROUTE: readonly LessonId[] = [
   "deck-basics",
   "beats-and-bars",
