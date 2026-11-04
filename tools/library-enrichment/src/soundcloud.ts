@@ -3,8 +3,10 @@
  * CLI is given --soundcloud.
  *
  * - Lookups go through yt-dlp's metadata-only mode (no audio, no format URLs), which keeps up with
- *   SoundCloud's client changes so this tool does not have to. yt-dlp's --sleep-requests keeps it at
- *   most one HTTP request per second; one yt-dlp runs at a time, on a batch pulled from the list.
+ *   SoundCloud's client changes so this tool does not have to. One yt-dlp runs at a time, on a
+ *   batch pulled from the list, paced per track (the CLI's --seconds-per-track), with yt-dlp's
+ *   --sleep-requests spacing the requests inside one lookup.
+ * - Rate limited: exponential back-off, then a clean, resumable stop.
  * - Every answer is cached on disk, misses too, with a TTL; a cached ID is never asked again.
  * - The uploader is evidence for who made the track only when it matches the remixer or the
  *   "Artist - " part of the title. It is never credited by itself: labels, promo and repost
@@ -176,48 +178,74 @@ export interface LookupOptions {
   readonly cache: SoundCloudCache;
   readonly fetcher: Fetcher;
   readonly batchSize: number;
-  /** Pause between batches, so the gap between two yt-dlp runs is a request gap too. */
-  readonly pauseMs: number;
+  /**
+   * The pace: each batch takes at least this long per ID, start to start, so one ID's whole lookup
+   * (however many requests it needs) never comes sooner than this after the last.
+   */
+  readonly msPerTrack: number;
+  /** At least this long from one batch's end to the next one's start: a gap between requests too. */
+  readonly minGapMs: number;
+  /** When rate limited: wait this, doubling each time in a row, up to `maxBackoffMs`. */
+  readonly firstBackoffMs: number;
+  readonly maxBackoffMs: number;
+  /** Back-offs in a row before the run stops (resumable: the cache keeps every answer). */
+  readonly maxBackoffs: number;
   readonly now: () => Date;
   readonly sleep: (ms: number) => Promise<void>;
-  readonly onBatch?: (done: number, total: number) => void;
+  readonly onLookup?: (id: string, lookup: Lookup, done: number, total: number) => void;
+  readonly log?: (line: string) => void;
 }
 
 export interface LookupSummary {
   readonly fromCache: number;
   readonly fetched: number;
-  /** Set when SoundCloud said to slow down twice in a row: the run stopped there. */
+  /** Set when SoundCloud kept saying to slow down after every back-off: the run stopped there. */
   readonly stoppedByRateLimit: boolean;
 }
 
-const RATE_LIMITED = /HTTP Error 429|rate.?limit/i;
-const RATE_LIMIT_BACKOFF_MS = 120_000;
+const RATE_LIMITED = /HTTP Error 429|too many requests|rate.?limit/i;
+export const isRateLimited = (lookup: Lookup) => lookup.status === "error" && RATE_LIMITED.test(lookup.message);
 
-/** Looks up every ID not in the cache, one batch at a time, and caches each answer. */
+/** Looks up every ID not in the cache, one batch at a time at the given pace, and caches each answer. */
 export async function lookupAll(ids: readonly string[], options: LookupOptions): Promise<LookupSummary> {
   const pending = [...new Set(ids)].filter((id) => options.cache.get(id, options.now()) === null);
   const fromCache = new Set(ids).size - pending.length;
   let fetched = 0;
-  let limitedBefore = false;
+  let backoffs = 0;
+  let lastStart: number | null = null;
+  let lastSize = 0;
+  let lastEnd: number | null = null;
   for (let start = 0; start < pending.length; ) {
     const batch = pending.slice(start, start + options.batchSize);
+    if (lastStart !== null && lastEnd !== null) {
+      const ready = Math.max(lastStart + lastSize * options.msPerTrack, lastEnd + options.minGapMs);
+      const wait = ready - options.now().getTime();
+      if (wait > 0) await options.sleep(wait);
+    }
+    lastStart = options.now().getTime();
+    lastSize = batch.length;
     const results = await options.fetcher.fetchBatch(batch);
-    const limited = [...results.values()].some((lookup) => lookup.status === "error" && RATE_LIMITED.test(lookup.message));
-    if (limited) {
-      // Back off once, then try the same batch again; a second refusal ends the run.
-      if (limitedBefore) return { fromCache, fetched, stoppedByRateLimit: true };
-      limitedBefore = true;
-      console.warn(`SoundCloud asked to slow down; waiting ${String(RATE_LIMIT_BACKOFF_MS / 1000)} s.`);
-      await options.sleep(RATE_LIMIT_BACKOFF_MS);
+    lastEnd = options.now().getTime();
+    if ([...results.values()].some(isRateLimited)) {
+      if (backoffs >= options.maxBackoffs) {
+        options.log?.(`Stopped: still rate limited after ${String(backoffs)} back-offs in a row. Run the same command later to resume; the cache keeps what was found.`);
+        return { fromCache, fetched, stoppedByRateLimit: true };
+      }
+      const wait = Math.min(options.firstBackoffMs * 2 ** backoffs, options.maxBackoffMs);
+      backoffs++;
+      options.log?.(`Rate limited; back-off ${String(backoffs)} of ${String(options.maxBackoffs)}: waiting ${String(Math.round(wait / 60_000))} min, then trying the same IDs again.`);
+      await options.sleep(wait);
       continue;
     }
-    limitedBefore = false;
+    backoffs = 0;
     const fetchedAt = options.now().toISOString();
-    for (const id of batch) options.cache.put({ id, fetchedAt, lookup: results.get(id) ?? { status: "error", message: "no answer" } });
-    fetched += batch.length;
+    for (const id of batch) {
+      const lookup = results.get(id) ?? { status: "error", message: "no answer" };
+      options.cache.put({ id, fetchedAt, lookup });
+      fetched++;
+      options.onLookup?.(id, lookup, fetched, pending.length);
+    }
     start += batch.length;
-    options.onBatch?.(start, pending.length);
-    if (start < pending.length) await options.sleep(options.pauseMs);
   }
   return { fromCache, fetched, stoppedByRateLimit: false };
 }

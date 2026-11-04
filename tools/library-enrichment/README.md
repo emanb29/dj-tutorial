@@ -19,7 +19,7 @@ npm run typecheck
 npm run lint
 
 npm run enrich -- run --xml COLLECTION.xml --data DATA [--path-map E:/=/mnt/e/]
-npm run enrich -- run --xml COLLECTION.xml --data DATA --soundcloud [--sample 50 | --limit N]
+npm run enrich -- run --xml COLLECTION.xml --data DATA --soundcloud [--sample 50 | --limit N] [--seconds-per-track 20]
 npm run enrich -- report --data DATA --out REPORT_DIR
 npm run enrich -- apply --data DATA [--fields artist,originalArtist,remixer,mix,genre,genreRaw,year]
 npm run enrich -- rollback --data DATA (--run RUN_ID | --last)
@@ -39,8 +39,10 @@ npm run enrich -- export-xml --xml COLLECTION.xml --data DATA --out ENRICHED.xml
   1. **Names** (`src/name-parse.ts`), offline: artist, original artist, clean title, remixer, mix,
      featuring, flags and the SoundCloud ID, from the track's name and file name.
   2. **SoundCloud** (`src/soundcloud.ts`), only with `--soundcloud`: genre, tags, uploader and dates,
-     by ID, through `yt-dlp` in metadata-only mode, at most one request a second, every answer cached
-     (misses too) with a TTL.
+     by ID, through `yt-dlp` in metadata-only mode. One track per `--seconds-per-track` (default 20),
+     its requests at least a third of that apart. Every answer is cached (misses too) with a TTL, so a
+     stopped pass resumes where it was. Rate limited, it backs off 5, 10, then 20 minutes (capped at
+     an hour), then stops. A lock file (`DATA/run.lock`) keeps a second pass out.
 - **The artist rule.** A remix, edit, bootleg, flip, VIP, re-work or mashup by X is X's track:
   artist = X, and the name's first artist is the original artist. The clean title keeps "(X Remix)".
   A hand-set artist always wins. The uploader counts only when it is the remixer or the title's

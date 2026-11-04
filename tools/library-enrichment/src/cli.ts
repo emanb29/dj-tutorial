@@ -1,6 +1,6 @@
 // The library enrichment tool. Personal tooling, not part of the app: see ../README.md.
 //
-//   npm run enrich -- run --xml COLLECTION.xml --data DIR [--path-map E:/=/mnt/e/] [--soundcloud [--sample N | --limit N]]
+//   npm run enrich -- run --xml COLLECTION.xml --data DIR [--path-map E:/=/mnt/e/] [--soundcloud [--sample N | --limit N] [--seconds-per-track 20]]
 //   npm run enrich -- report --data DIR --out DIR
 //   npm run enrich -- apply --data DIR [--fields artist,originalArtist,remixer,mix,genre,year]
 //   npm run enrich -- rollback --data DIR (--run ID | --last)
@@ -17,12 +17,33 @@ import { contentHashOfFile } from "./content-hash.ts";
 import { projectEdits } from "./export.ts";
 import { parsePathMap, readCollection, writeEnriched, type CollectionTrack, type PathMapping } from "./rekordbox-xml.ts";
 import { reviewCards, reviewHtml } from "./review.ts";
-import { lookupAll, soundCloudCache, ytDlpFetcher } from "./soundcloud.ts";
+import { mapGenre } from "./genre.ts";
+import { acquireLock } from "./lock.ts";
+import { lookupAll, soundCloudCache, ytDlpFetcher, type Lookup } from "./soundcloud.ts";
 import { runNamesStep, runSoundCloudStep, scanCollection, sourceIdOf, type FileProbe } from "./steps.ts";
 import { ENRICHED_FIELDS, baseHas, loadStore, saveStore, writeAtomically, type EnrichedField, type Store, type StoreItem } from "./store.ts";
 
 const DEFAULT_APPLY_FIELDS: readonly EnrichedField[] = ["artist", "originalArtist", "remixer", "mix", "genre", "genreRaw", "year"];
 const REVIEW_FIELDS: readonly EnrichedField[] = ["artist", "originalArtist", "remixer", "mix", "genre", "year"];
+
+const DEFAULT_SECONDS_PER_TRACK = 20;
+const PROGRESS_EVERY = 50;
+const log = (line: string) => {
+  console.log(`${new Date().toISOString()} ${line}`);
+};
+
+/** Holds the data folder's lock for a command that writes the store; a second pass is refused. */
+function lockData(dataDir: string): void {
+  const lock = acquireLock(dataDir);
+  if (!lock.ok) fail([`Another pass (PID ${String(lock.holder)}) is using ${dataDir}. Wait for it, or stop it, then run again.`]);
+  process.on("exit", lock.release);
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.on(signal, () => {
+      log(`Stopped by ${signal}. Run the same command to resume: the cache keeps every answer so far.`);
+      process.exit(0);
+    });
+  }
+}
 
 const OPTIONS = {
   xml: { type: "string" },
@@ -32,6 +53,7 @@ const OPTIONS = {
   soundcloud: { type: "boolean" },
   sample: { type: "string" },
   limit: { type: "string" },
+  "seconds-per-track": { type: "string" },
   "yt-dlp": { type: "string" },
   decisions: { type: "string" },
   fields: { type: "string" },
@@ -107,6 +129,7 @@ function positiveInteger(name: string, value: string | undefined): number | null
 async function run(values: Values, mappings: readonly PathMapping[]) {
   need(values, "xml", "data");
   const dataDir = resolve(values.data ?? "");
+  lockData(dataDir);
   const store = loadStore(dataDir);
   const tracks = readTracks(values.xml ?? "");
   const { summary } = await scanCollection(tracks, mappings, store, realProbe);
@@ -124,20 +147,40 @@ async function run(values: Values, mappings: readonly PathMapping[]) {
     const ids = [...new Set(items.map(sourceIdOf).filter((id) => id !== null))].toSorted();
     const chosen = sample !== null ? spread(ids, sample) : limit !== null ? ids.slice(0, limit) : ids;
     const cache = soundCloudCache(join(dataDir, "soundcloud-cache"));
-    console.log(`Step 2 (SoundCloud): ${String(chosen.length)} of ${String(ids.length)} IDs; at most 1 request a second.`);
+    const secondsPerTrack = positiveInteger("seconds-per-track", values["seconds-per-track"]) ?? DEFAULT_SECONDS_PER_TRACK;
+    // A lookup takes up to 3 requests; spacing them by a third of the track's time keeps each under it.
+    const secondsPerRequest = Math.ceil(secondsPerTrack / 3);
+    log(`Step 2 (SoundCloud): ${String(chosen.length)} of ${String(ids.length)} IDs, 1 track per ${String(secondsPerTrack)} s, requests at least ${String(secondsPerRequest)} s apart.`);
+    const tally = { ok: 0, notFound: 0, error: 0, genre: 0 };
+    const startedAt = Date.now();
     const looked = await lookupAll(chosen, {
       cache,
-      fetcher: ytDlpFetcher({ binary: values["yt-dlp"] ?? "yt-dlp", sleepRequestsSec: 1 }),
-      batchSize: 25,
-      pauseMs: 1000,
+      fetcher: ytDlpFetcher({ binary: values["yt-dlp"] ?? "yt-dlp", sleepRequestsSec: secondsPerRequest }),
+      batchSize: 1,
+      msPerTrack: secondsPerTrack * 1000,
+      minGapMs: secondsPerRequest * 1000,
+      firstBackoffMs: 5 * 60_000,
+      maxBackoffMs: 60 * 60_000,
+      maxBackoffs: 3,
       now: () => new Date(),
       sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
-      onBatch: (done, total) => {
-        console.log(`  looked up ${String(done)} / ${String(total)}`);
+      log,
+      onLookup: (_id: string, lookup: Lookup, done: number, total: number) => {
+        if (lookup.status === "ok") {
+          tally.ok++;
+          if (mapGenre(lookup.track.genre, lookup.track.tags) !== null) tally.genre++;
+        } else if (lookup.status === "not-found") tally.notFound++;
+        else tally.error++;
+        if (done % PROGRESS_EVERY !== 0 && done !== total) return;
+        const remaining = total - done;
+        const etaMs = ((Date.now() - startedAt) / done) * remaining;
+        log(
+          `progress: ${String(done)} done, ${String(remaining)} remaining; hits ${String(tally.ok)} (${String(tally.notFound)} not found, ${String(tally.error)} errors); genres ${String(tally.genre)}; ETA ${(etaMs / 3_600_000).toFixed(1)} h (${new Date(Date.now() + etaMs).toISOString()})`,
+        );
       },
     });
     const ranSoundCloud = items.filter((item) => runSoundCloudStep(item, cache, now)).length;
-    console.log(`  ${String(looked.fetched)} looked up, ${String(looked.fromCache)} from the cache; step 2 ran on ${String(ranSoundCloud)} tracks.${looked.stoppedByRateLimit ? " Stopped early: SoundCloud is rate limiting. Run again later; the cache keeps what was found." : ""}`);
+    log(`  ${String(looked.fetched)} looked up, ${String(looked.fromCache)} from the cache; step 2 ran on ${String(ranSoundCloud)} tracks.${looked.stoppedByRateLimit ? " Stopped early: SoundCloud is rate limiting. Run again later; the cache keeps what was found." : ""}`);
   }
   saveStore(dataDir, store);
   console.log(`Store: ${join(dataDir, "store.json")} (a dry run: nothing applied; see "report").`);
@@ -219,6 +262,7 @@ function report(values: Values) {
 function apply(values: Values) {
   need(values, "data");
   const dataDir = resolve(values.data ?? "");
+  lockData(dataDir);
   const store = loadStore(dataDir);
   const fields = values.fields === undefined ? DEFAULT_APPLY_FIELDS : values.fields.split(",").map((field) => field.trim());
   const unknown = fields.filter((field) => !(ENRICHED_FIELDS as readonly string[]).includes(field));
@@ -237,6 +281,7 @@ function apply(values: Values) {
 function undo(values: Values) {
   need(values, "data");
   const dataDir = resolve(values.data ?? "");
+  lockData(dataDir);
   const journals = join(dataDir, "journal");
   let runId = values.run;
   if (values.last === true) runId = readdirSync(journals).filter((name) => name.endsWith(".jsonl")).toSorted().at(-1)?.replace(/\.jsonl$/, "");

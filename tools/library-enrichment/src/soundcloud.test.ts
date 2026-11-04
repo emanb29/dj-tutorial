@@ -32,41 +32,67 @@ describe("parseYtDlpOutput", () => {
 
 describe("lookupAll", () => {
   const ok = (id: string): Lookup => ({ status: "ok", track: { ...PAGE, id } });
+  const limited: Lookup = { status: "error", message: "HTTP Error 429: Too Many Requests" };
+  const MINUTE = 60_000;
 
-  function setUp(answer: (ids: readonly string[], call: number) => Map<string, Lookup>) {
+  /** A fake clock: sleeping and fetching move it, so the test sees when each lookup started. */
+  function setUp(answer: (ids: readonly string[], call: number) => Map<string, Lookup>, fetchMs = 3000) {
     const cache = soundCloudCache(mkdtempSync(join(tmpdir(), "enrich-sc-")));
+    let clock = Date.parse("2026-01-01T00:00:00Z");
+    const t0 = clock;
     const calls: string[][] = [];
+    const starts: number[] = [];
     const sleeps: number[] = [];
+    const logs: string[] = [];
     const fetcher: Fetcher = {
       fetchBatch: (ids) => {
         calls.push([...ids]);
+        starts.push(clock - t0);
+        clock += fetchMs;
         return Promise.resolve(answer(ids, calls.length));
       },
     };
-    let clock = Date.parse("2026-01-01T00:00:00Z");
     const options = {
       cache,
       fetcher,
-      batchSize: 2,
-      pauseMs: 1000,
+      batchSize: 1,
+      msPerTrack: 20_000,
+      minGapMs: 7000,
+      firstBackoffMs: 5 * MINUTE,
+      maxBackoffMs: 60 * MINUTE,
+      maxBackoffs: 3,
       now: () => new Date(clock),
       sleep: (ms: number) => {
         sleeps.push(ms);
+        clock += ms;
         return Promise.resolve();
       },
+      log: (line: string) => logs.push(line),
     };
-    return { cache, calls, sleeps, options, advance: (ms: number) => (clock += ms) };
+    return { cache, calls, starts, sleeps, logs, options, advance: (ms: number) => (clock += ms) };
   }
 
-  it("asks in batches, pauses between them, and caches every answer, misses too", async () => {
-    const { calls, sleeps, options, cache } = setUp((ids) => new Map(ids.map((id) => [id, id === "3" ? { status: "not-found" } : ok(id)])));
+  it("paces one track per 20 s, start to start, and caches every answer, misses too", async () => {
+    const { calls, starts, options, cache } = setUp((ids) => new Map(ids.map((id) => [id, id === "3" ? { status: "not-found" } : ok(id)])));
     expect(await lookupAll(["1", "2", "3", "1"], options)).toEqual({ fromCache: 0, fetched: 3, stoppedByRateLimit: false });
-    expect(calls).toEqual([["1", "2"], ["3"]]);
-    expect(sleeps).toEqual([1000]);
+    expect(calls).toEqual([["1"], ["2"], ["3"]]);
+    expect(starts).toEqual([0, 20_000, 40_000]);
     expect(cache.get("3", options.now())?.lookup).toEqual({ status: "not-found" });
     // A second run asks nothing.
     expect(await lookupAll(["1", "2", "3"], options)).toEqual({ fromCache: 3, fetched: 0, stoppedByRateLimit: false });
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("keeps a gap after a slow lookup, so requests never bunch up", async () => {
+    const { starts, options } = setUp((ids) => new Map(ids.map((id) => [id, ok(id)])), 18_000);
+    await lookupAll(["1", "2"], options);
+    expect(starts).toEqual([0, 25_000]);
+  });
+
+  it("paces a batch by its size", async () => {
+    const { starts, options } = setUp((ids) => new Map(ids.map((id) => [id, ok(id)])));
+    await lookupAll(["1", "2", "3"], { ...options, batchSize: 2 });
+    expect(starts).toEqual([0, 40_000]);
   });
 
   it("asks again once an answer is older than its TTL", async () => {
@@ -77,13 +103,20 @@ describe("lookupAll", () => {
     expect(calls).toEqual([["1"], ["1"]]);
   });
 
-  it("backs off once when rate limited, then stops rather than retrying forever", async () => {
-    const limited = (ids: readonly string[]) => new Map<string, Lookup>(ids.map((id) => [id, { status: "error", message: "HTTP Error 429: Too Many Requests" }]));
-    const { calls, sleeps, options, cache } = setUp(limited);
+  it("backs off 5, 10, then 20 minutes when rate limited, then stops cleanly, caching nothing it was refused", async () => {
+    const { calls, sleeps, logs, options, cache } = setUp((ids) => new Map(ids.map((id) => [id, limited])));
     expect(await lookupAll(["1", "2"], options)).toEqual({ fromCache: 0, fetched: 0, stoppedByRateLimit: true });
-    expect(calls).toHaveLength(2);
-    expect(sleeps).toEqual([120_000]);
+    expect(calls).toHaveLength(4);
+    expect(sleeps.filter((ms) => ms >= MINUTE)).toEqual([5 * MINUTE, 10 * MINUTE, 20 * MINUTE]);
     expect(cache.get("1", options.now())).toBeNull();
+    expect(logs.at(-1)).toMatch(/Stopped: still rate limited after 3 back-offs/);
+  });
+
+  it("caps the back-off at an hour, and starts again from 5 minutes after a success", async () => {
+    const answers = [true, true, true, false, true, false];
+    const { sleeps, options } = setUp((ids, call) => new Map(ids.map((id) => [id, answers[call - 1] === true ? limited : ok(id)])));
+    await lookupAll(["1", "2"], { ...options, firstBackoffMs: 25 * MINUTE });
+    expect(sleeps.filter((ms) => ms >= MINUTE)).toEqual([25 * MINUTE, 50 * MINUTE, 60 * MINUTE, 25 * MINUTE]);
   });
 });
 
