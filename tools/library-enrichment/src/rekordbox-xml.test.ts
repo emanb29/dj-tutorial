@@ -8,10 +8,10 @@ const XML = `<?xml version="1.0" encoding="UTF-8"?>
   <PRODUCT Name="rekordbox" Version="7.0.0" Company="AlphaTheta"/>
   <COLLECTION Entries="2">
     <TRACK TrackID="11" Name="Moss Harbor - Glass Rivers (Tinwhistle Remix) [1234567890]" Artist="" Genre=""
-           Year="0" Comments="" Remixer="" Mix="" Location="file://localhost/E:/Music%20Library/In/Moss%20Harbor%20-%20Glass%20Rivers.m4a">
+           Year="0" Comments="" Remixer="" Mix="" Location="file://localhost/E:/DJ%20Crate/In/Moss%20Harbor%20-%20Glass%20Rivers.m4a">
       <TEMPO Inizio="0.1" Bpm="128.00" Metro="4/4" Battito="1"/>
     </TRACK>
-    <TRACK TrackID="12" Name="Fish &amp; Chips" Artist="Kit Lane" Location="file://localhost/E:/Music%20Library/In/fish.m4a"/>
+    <TRACK TrackID="12" Name="Fish &amp; Chips" Artist="Kit Lane" Location="file://localhost/E:/DJ%20Crate/In/fish.m4a"/>
   </COLLECTION>
   <PLAYLISTS>
     <NODE Type="0" Name="ROOT" Count="1"><NODE Name="A" Type="1" KeyType="0" Entries="1"><TRACK Key="11"/></NODE></NODE>
@@ -53,7 +53,7 @@ describe("writeEnriched", () => {
 describe("localPath", () => {
   it("decodes a Location and maps its drive onto a local folder", () => {
     const map = parsePathMap(["E:/=/mnt/e/"]);
-    expect(localPath("file://localhost/E:/Music%20Library/In/a%20b.m4a", map)).toBe("/mnt/e/Music Library/In/a b.m4a");
+    expect(localPath("file://localhost/E:/DJ%20Crate/In/a%20b.m4a", map)).toBe("/mnt/e/DJ Crate/In/a b.m4a");
     expect(localPath("file://localhost/C:/x.m4a", map)).toBe("C:/x.m4a");
     expect(localPath("file://localhost/Users/dj/a.mp3", [])).toBe("/Users/dj/a.mp3");
     expect(localPath("http://example.com/a.mp3", map)).toBeNull();
