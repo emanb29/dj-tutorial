@@ -5,7 +5,7 @@ import type { LessonCheck, TaskOf } from "../context.ts";
 import { judge } from "../criterion.ts";
 import { deckControlChanges, filterAt, type DeckControlChange } from "../deck-controls.ts";
 import { TIME_EPSILON } from "../measures.ts";
-import { takenOutTime } from "../mix.ts";
+import { nextHeardTime, takenOutTime } from "../mix.ts";
 
 const HPF_DEPTH = 0.7;
 /** The filter counts as on past this; within it, as centred (±5%). */
@@ -49,8 +49,12 @@ export const filterTransition: LessonCheck<TaskOf<"filter-transition">> = {
     const centredAt = (from: CtxTime): CtxTime | null =>
       Math.abs(filterAt(attempt, "A", from)) <= CFX_CENTRE_BAND
         ? from
-        : (filterMoves.find((change) => change.ctx > from && Math.abs(change.value) <= CFX_CENTRE_BAND)?.ctx ?? null);
+        : (filterMoves.find((change) => change.ctx > from && change.ctx < window.to && Math.abs(change.value) <= CFX_CENTRE_BAND)?.ctx ?? null);
     const backAt = outAt === null ? null : centredAt(outAt);
+    // Housekeeping, not timing (maintainer, 2026-11-03): A is silent once out, so CFX A may go back
+    // whenever the Learner likes, as long as it is centred before A can be heard again (its fader or
+    // the crossfader opening it, a Play, a load), or by the Check's end.
+    const deadline = outAt === null ? null : (nextHeardTime(attempt, "A", outAt, window) ?? window.to);
 
     return {
       criteria: [
@@ -73,8 +77,11 @@ export const filterTransition: LessonCheck<TaskOf<"filter-transition">> = {
           id: "filter-transition.cfx-back",
           severity: "fail",
           unit: "bars",
-          threshold: { op: "<=", value: 1, unit: "bars" },
-          measured: backAt === null || outAt === null || bar === null ? null : (backAt - outAt) / bar,
+          // Bars late: from when A could be heard again (or the end) to CFX A centred; ≤ 0 is in time.
+          threshold: { op: "<=", value: 0, unit: "bars" },
+          measured: backAt === null || deadline === null || bar === null ? null : (backAt - deadline) / bar,
+          scale: 1,
+          ...(backAt === null || outAt === null || bar === null ? {} : { detail: { barsAfterOut: (backAt - outAt) / bar } }),
           evidence: backAt === null || outAt === null ? [] : [{ from: outAt, to: backAt, label: "CFX back" }],
         }),
       ],

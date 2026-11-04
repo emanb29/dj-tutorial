@@ -29,7 +29,7 @@
  * folder), which wins over one this device picked. Without one (or with the API out of reach), as above.
  */
 import { abortedError, decodeAndHash, matchesQuery, type AudioDecoder } from "../load-audio.ts";
-import { blobPrefix, handlePrefix, isAudioFile, memoryHandleStore, trackForFile, type DirectoryHandleLike, type HandleStore, type ReadPrefix } from "../local-files.ts";
+import { blobPrefix, handlePrefix, hasWords, isAudioFile, memoryHandleStore, trackForFile, type DirectoryHandleLike, type HandleStore, type ReadPrefix } from "../local-files.ts";
 import { camelotFromTonality, knownGridFromRekordbox, rekordboxGrid } from "../rekordbox/grid.ts";
 import type { RekordboxLink, RekordboxStatus, XmlCandidate } from "../rekordbox/rekordbox-link.ts";
 import type { RekordboxTrack } from "../rekordbox/xml.ts";
@@ -221,7 +221,8 @@ function withRekordbox(base: Track, linked: RekordboxTrack | null): Track {
   const key = camelot ?? (filled(linked.tonality) ? linked.tonality.trim() : null);
   return {
     ...base,
-    ...(filled(linked.name) ? { title: linked.name.trim() } : {}),
+    // A title of only punctuation ("-") is as good as none: the file name's stays.
+    ...(hasWords(linked.name) ? { title: linked.name.trim() } : {}),
     ...(filled(linked.artist) ? { artist: linked.artist.trim() } : {}),
     ...(filled(linked.genre) ? { genre: linked.genre.trim() } : {}),
     ...(bpm === null ? {} : { bpmHint: bpm }),

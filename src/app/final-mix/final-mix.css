@@ -19,10 +19,11 @@
 
 .set-builder {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* The library gets the larger share, so its browser has room for one row of columns on a wide screen. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
   gap: var(--space-4);
   width: 100%;
-  max-width: 1100px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: var(--space-3);
   box-sizing: border-box;

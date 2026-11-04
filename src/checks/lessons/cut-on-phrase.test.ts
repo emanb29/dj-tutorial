@@ -120,9 +120,17 @@ describe("cut-on-phrase", () => {
     expect(byId(check({ cueOnAt: null }), "cut-on-phrase.cued-before")).toMatchObject({ status: "notMet", measured: 0 });
   });
 
-  it("fails a master loudness jump over 2 dB across the cut", () => {
-    expect(byId(check({ jumpDb: 2 }), "cut-on-phrase.loud-jump")?.status).toBe("met");
-    expect(byId(check({ jumpDb: -2.5 }), "cut-on-phrase.loud-jump")).toMatchObject({ status: "notMet" });
+  it("fails a master loudness jump over 3 dB across the cut (the 3 dB loud-steady allows a blend)", () => {
+    expect(byId(check({ jumpDb: 3 }), "cut-on-phrase.loud-jump")?.status).toBe("met");
+    expect(byId(check({ jumpDb: -3.5 }), "cut-on-phrase.loud-jump")).toMatchObject({ status: "notMet" });
+  });
+
+  it("takes the crossfader curve's own change off the jump: centred with A alone (−3 dB) to all B (0 dB) is +3 dB by design", () => {
+    // The crossfader starts centred; it is slammed to B with the cut, so B plays at 0 dB where A played at −3 dB.
+    const toB = [event(32, "crossfader", 1)];
+    expect(byId(check({ jumpDb: 3, extraEvents: toB }), "cut-on-phrase.loud-jump")).toMatchObject({ status: "met", measured: expect.closeTo(0, 1) as number });
+    // The curve's 3 dB, and B 3.5 dB hotter than A: a real mismatch still fails.
+    expect(byId(check({ jumpDb: 6.5, extraEvents: toB }), "cut-on-phrase.loud-jump")).toMatchObject({ status: "notMet", measured: expect.closeTo(3.5, 1) as number });
   });
 
   it("fails everything timing-related when B never plays", () => {

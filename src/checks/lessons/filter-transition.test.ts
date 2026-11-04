@@ -55,11 +55,13 @@ describe("filter-transition", () => {
     expect(byId(check(sweep({ from: 56 - 10 * BAR }), "short"), "filter-transition.filter-length")?.status).toBe("notMet");
   });
 
-  it("needs CFX A back within ±5% of centre within 1 bar of A going silent", () => {
-    expect(byId(check(sweep({ backAt: 56 + BAR })), "filter-transition.cfx-back")?.status).toBe("met");
-    expect(byId(check(sweep({ backAt: 56 + BAR + 0.1 })), "filter-transition.cfx-back")?.status).toBe("notMet");
+  it("needs CFX A back within ±5% of centre before A can be heard again, at the Learner's leisure (maintainer: A is silent then)", () => {
+    // A's fader closed at 56 s; the window runs to 96 s and A is never opened again.
+    expect(byId(check(sweep({ backAt: 56 + 1.14 * BAR })), "filter-transition.cfx-back")).toMatchObject({ status: "met", detail: { barsAfterOut: expect.closeTo(1.14, 2) as number } });
+    expect(byId(check(sweep({ backAt: 90 })), "filter-transition.cfx-back")?.status).toBe("met");
     expect(byId(check(sweep({ backAt: null })), "filter-transition.cfx-back")).toMatchObject({ status: "notMet", measured: null });
   });
+
 
   it("times the filter from the move that starts the sustained sweep, ignoring an earlier nudge back to centre", () => {
     const nudgeFirst = [event(20, "filter", 0.3, "A"), event(20.3, "filter", 0, "A"), ...sweep()];
@@ -80,7 +82,7 @@ describe("filter-transition", () => {
     if (!("criteria" in result)) throw new Error("expected a graded result");
     expect(result.outcome).toEqual({ kind: "passed" });
     expect(byId(result, "filter-transition.filter-length")?.measured).toBeCloseTo(8);
-    expect(byId(result, "filter-transition.cfx-back")?.measured).toBeCloseTo(0.5);
+    expect(byId(result, "filter-transition.cfx-back")?.detail?.["barsAfterOut"]).toBeCloseTo(0.5);
   });
 
   it("measures depth, length and reset from the first frame A is not audible, not from the start of its fader drag", () => {

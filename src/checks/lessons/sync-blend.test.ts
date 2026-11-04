@@ -82,6 +82,12 @@ describe("sync-blend", () => {
     expect(byId(check({ extraEvents: [event(70, "trim", -2, "B")] }), "sync-blend.trim-untouched")?.status).toBe("met");
   });
 
+  it("stays strict on TRIM (the faders hold the level here) but counts turns of the knob, not its messages", () => {
+    // Two turns of a hardware knob: 5 and 4 messages, each under 0.5 s apart; the turns 3 s apart.
+    const turns = [...[-0.2, -0.4, -0.6, -0.8, -1].map((db, index) => event(40 + index * 0.06, "trim", db, "B")), ...[-1.2, -1.4, -1.6, -1.8].map((db, index) => event(43 + index * 0.06, "trim", db, "B"))];
+    expect(byId(check({ extraEvents: turns }), "sync-blend.trim-untouched")).toMatchObject({ status: "notMet", measured: 2 });
+  });
+
   it("measures the blend to the first frame A is not audible, not to the start of a slow fader drag", () => {
     // A's fader dragged down at 50 Hz from 62 s; it drops under −24 dB at 70 s, 19 bars after B came in
     // (at 0.3 on the fader: the crossfader's centre is −3 dB).

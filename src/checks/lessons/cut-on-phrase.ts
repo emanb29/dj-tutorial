@@ -11,7 +11,15 @@ import { cueOnDownbeat } from "./cue-point.ts";
 
 /** CUE on the incoming deck for this long before it comes in (`cued-before`, `cued-first`). */
 export const CUED_BEFORE_S = 2;
-export const LOUD_JUMP_DB = 2;
+/**
+ * `loud-jump` (and `crossfader.xf-cut`'s level part), dB, after the mixer's own part is taken off
+ * (`loudJump`). It is the master's bar loudness over 4 bars of one track against 4 bars of another,
+ * so it holds the music's own change from one phrase to the next as well as the trims' mismatch: the
+ * same 3 dB as `loud-steady` allows the master through a blend (a cut is a blend with no overlap). A
+ * real mismatch still fails: Placement's B, 6 dB low, or trims 4 dB apart. The trims themselves are
+ * graded more finely by `standing.level-match` (2 dB, on the channel meters, where TRIM acts).
+ */
+export const LOUD_JUMP_DB = 3;
 
 export const cutOnPhrase: LessonCheck<TaskOf<"cut-on-phrase">> = {
   situations: { transition: true },

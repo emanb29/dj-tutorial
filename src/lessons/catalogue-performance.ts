@@ -192,7 +192,7 @@ const loopTransition: LessonDefinition = {
           ? [
               { after: { kind: "play", deck: "B" } as const, caption: "Next loop's 1: swap the bass. LOW A down, LOW B up" },
               { after: { kind: "swap" } as const, caption: "Next loop's 1: EXIT (G)" },
-              // controls-reset: LOW A back within a bar of A going quiet.
+              // controls-reset: LOW A back in the middle before A is heard again (or the Check ends).
               { after: { kind: "loop-exit" } as const, caption: "Fader A down (S), then LOW A to the middle" },
             ]
           : [

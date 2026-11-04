@@ -161,10 +161,17 @@ export function isAudioFile(file: Pick<File, "name" | "type">): boolean {
   return hasAudioExtension(file.name);
 }
 
-/** The track for a file at `path`: "Artist - Title" from the name; the id is path, size and lastModified. */
+/** Whether a title says something: a letter or a digit, not only spaces or punctuation ("-", "?"). */
+export const hasWords = (text: string) => /[\p{L}\p{N}]/u.test(text);
+
+/**
+ * The track for a file at `path`: "Artist - Title" from the name (the whole name when the title part
+ * is only punctuation); the id is path, size and lastModified.
+ */
 export function trackForFile(file: Pick<File, "name" | "size" | "lastModified">, path: string): Track {
   const stem = file.name.replace(/\.[^.]+$/, "");
-  const split = /^(.+?)\s+-\s+(.+)$/.exec(stem);
+  const parts = /^(.+?)\s+-\s+(.+)$/.exec(stem);
+  const split = parts !== null && hasWords(parts[2] ?? "") ? parts : null;
   return {
     id: `${path}|${String(file.size)}|${String(file.lastModified)}`,
     source: "local-file",

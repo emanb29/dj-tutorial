@@ -196,6 +196,37 @@ function peakLine(deck: "A" | "B", criterion: CriterionResult): string {
   return criterion.measured === null ? `Deck ${deck}: no Ready (R) with 8 bars after it` : `Deck ${deck} peak: ${signed(criterion.measured, 1)} dBFS (${need})`;
 }
 
+/** "Transition 2: " when a Check has several transitions and this line is about one of them. */
+function transitionPrefix(criterion: CriterionResult): string {
+  const transition = criterion.detail?.["transition"];
+  return transition === undefined || (criterion.detail?.["transitions"] ?? 0) < 2 ? "" : `Transition ${String(transition)}: `;
+}
+
+/** Standing criteria with a line of their own; null for the rest (they read as their plain name). */
+function describeStanding(criterion: CriterionResult): string | null {
+  const measured = criterion.measured;
+  const need = thresholdValue(criterion);
+  const prefix = transitionPrefix(criterion);
+  switch (criterion.id) {
+    case "standing.level-match":
+      return measured === null ? `${prefix}Levels: not measured` : `${prefix}Levels ${measured.toFixed(1)} dB apart at the handover (need ${String(need)} or less)`;
+    case "standing.controls-reset":
+      if (criterion.status !== "notMet") return "Knobs reset before each deck was heard again";
+      return measured === null ? "Knobs: a deck's EQ, CFX or FX was never reset" : "Knobs: a deck came back in before its EQ, CFX or FX was reset";
+    case "standing.cued-first":
+      return measured === null ? `${prefix}CUE 🎧: the next track never came in` : `${prefix}CUE 🎧 on ${measured.toFixed(1)} s before it came in (need ${String(need)})`;
+    case "standing.trim-still": {
+      const turns = criterion.detail?.["gestures"] ?? 0;
+      const wrongWay = criterion.detail?.["wrongWay"] ?? 0;
+      if (criterion.status !== "notMet") return turns === 0 ? "TRIM: not touched mid-transition" : `TRIM: level kept steady (moved ${String(turns)}×)`;
+      if (criterion.unit === "dB") return `${prefix}TRIM: swung ${(measured ?? 0).toFixed(1)} dB mid-transition (keep it within ${String(need)}: let the faders fade)`;
+      return `${prefix}TRIM: ${String(wrongWay)} ${wrongWay === 1 ? "turn" : "turns"} took the levels further apart (turn toward the other deck's level)`;
+    }
+    default:
+      return null;
+  }
+}
+
 /** Lessons 4–7; null for criteria of other Lessons. */
 function describeMixing(criterion: CriterionResult): string | null {
   const measured = criterion.measured;
@@ -285,7 +316,7 @@ function describeSyncMixing(criterion: CriterionResult): string | null {
     case "sync-blend.loud-steady":
       return loudSteadyLine(measured);
     case "sync-blend.trim-untouched":
-      return measured === 0 ? "TRIM left alone during the blend" : `TRIM moved ${String(measured ?? 0)} times during the blend (need none)`;
+      return measured === 0 ? "TRIM left alone during the blend" : `TRIM turned ${String(measured ?? 0)}× during the blend (need none: the faders hold the level)`;
     case "crossfader.xf-blend":
       return criterion.status === "met" ? "Crossfader blend: on the phrase, 8–16 bars, level steady" : crossfaderPart("Blend", criterion);
     case "crossfader.xf-cut":
@@ -326,7 +357,8 @@ function describeEqFilter(criterion: CriterionResult): string | null {
       return measured === null ? "Filter: no sweep was still on as A went out" : `Filter on ${measured.toFixed(1)} bars before A went out${span}`;
     }
     case "filter-transition.cfx-back":
-      return measured === null ? "CFX A: not back to the middle after A went out" : `CFX A back ${measured.toFixed(2)} bars after A went out (need ${String(need)} or less)`;
+      if (criterion.status === "met") return "CFX A back in the middle before A was heard again";
+      return measured === null ? "CFX A: not back in the middle by the end" : "CFX A: still filtered when A came back in";
     default:
       return null;
   }
@@ -429,7 +461,8 @@ export function describeCriterion(criterion: CriterionResult): string {
       return `Sections named: ${String(questions - (measured ?? questions))} of ${String(questions)} right`;
     }
     default: {
-      const mixing = describeMixing(criterion) ?? describeSyncMixing(criterion) ?? describeEqFilter(criterion) ?? describeByEar(criterion) ?? describePerformance(criterion);
+      const mixing =
+        describeStanding(criterion) ?? describeMixing(criterion) ?? describeSyncMixing(criterion) ?? describeEqFilter(criterion) ?? describeByEar(criterion) ?? describePerformance(criterion);
       if (mixing !== null) return mixing;
       const name = criterionPlainName(criterion.id);
       const label = name.charAt(0).toUpperCase() + name.slice(1);
