@@ -282,6 +282,7 @@ export function Freestyle({ trackPreference, onExit }: FreestyleProps) {
               onRowFocus={(row) => {
                 itemsByKey.get(row.key)?.want?.();
               }}
+              preview={(row) => itemsByKey.get(row.key)?.preview ?? null}
               actions={(row) =>
                 DECKS.map((deck) => {
                   const blocker = session.loadBlocker(deck);

@@ -26,7 +26,15 @@ export function ControllerNavigation() {
       if (command === null) return;
       root.setAttribute(NAV_ATTRIBUTE, "");
       const said =
-        command.kind === "move" ? navigator.move(command.step) : command.kind === "select" ? navigator.select() : command.loadDeck === undefined ? navigator.key(command.code) : navigator.load(command.loadDeck, command.code);
+        command.kind === "move"
+          ? navigator.move(command.step)
+          : command.kind === "jump"
+            ? navigator.jump(command.step)
+            : command.kind === "select"
+              ? navigator.select()
+              : command.loadDeck === undefined
+                ? navigator.key(command.code)
+                : navigator.load(command.loadDeck, command.code);
       root.toggleAttribute("data-controller-changing", navigator.changingValue);
       if (said !== null) setNotice(said);
     });

@@ -1,12 +1,14 @@
 // The library browser in a real Chromium page: it draws only the rows in view of a 10,000-track folder,
 // reads no file and decodes nothing while it lists, filters and sorts, and works from the keyboard and
 // from the FLX4's BROWSE and LOAD (through the app's own FocusNavigator, as ControllerNavigation drives it).
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FocusNavigator } from "../controller/focus-navigation.ts";
 import type { LibraryRow } from "./browse.ts";
 import { folderRows } from "./folder-rows.ts";
 import { LibraryBrowser, type Deck } from "./LibraryBrowser.tsx";
+import { PreviewPlayer } from "./preview-player.ts";
+import { folderPreview } from "./preview-source.ts";
 import { storageKey } from "./remembered.ts";
 import { LARGE_LIBRARY_SIZE, largeLibrary, type LargeLibrary } from "./test-support.ts";
 
@@ -92,6 +94,40 @@ describe("a 10,000-track library on screen", () => {
     expect(folder.opened).toBe(openedByScan);
     expect(decoded).toEqual([]);
   }, LOADED_TIMEOUT_MS);
+
+  it("with the mini player, opens no file until ▶ is pressed, then that one file only", async () => {
+    const { music, folder, decoded, openedByScan } = await largeLibrary();
+    const files = new Map(music.files().map((file) => [file.trackId, file]));
+    const player = new PreviewPlayer({ route: () => Promise.resolve({ kind: "default" }) });
+    render(
+      <LibraryBrowser
+        picker="test"
+        rows={folderRows(music)}
+        emptyText="No tracks."
+        controllerHint=""
+        onLoad={() => undefined}
+        player={player}
+        preview={(each) => {
+          const file = files.get(each.key);
+          return file === undefined ? null : folderPreview(file, null);
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "bpm" } });
+    await frames();
+    expect(folder.opened).toBe(openedByScan);
+
+    const play = drawnRows()[0]?.querySelector("button.lb-preview");
+    if (play == null) throw new Error("the first row has no ▶");
+    fireEvent.click(play);
+    // The invented files are not audio: the one opened fails to play, and says so.
+    await waitFor(() => {
+      expect(player.snapshot().status).toBe("failed");
+    });
+    expect(screen.getByRole("alert").textContent).toContain("would not play");
+    expect(folder.opened).toBe(openedByScan + 1);
+    expect(decoded).toEqual([]);
+  });
 
   it("scrolls to the end and back from the keyboard, drawing the rows it reaches", async () => {
     const { music, folder, decoded, openedByScan } = library;

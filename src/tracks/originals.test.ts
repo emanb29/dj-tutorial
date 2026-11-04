@@ -61,6 +61,17 @@ describe("originals source", () => {
     });
   });
 
+  it("previews by streaming the audio URL (byte ranges), with the meta's grid and sections as hints, fetched only when asked", async () => {
+    const { fetch, calls } = server();
+    const source = createOriginalsSource({ fetch, decode: fakeDecoder().decode });
+    const preview = source.preview?.(await onlyTrack(source)) ?? null;
+
+    expect(preview?.media).toEqual({ kind: "url", url: "/api/originals/007/audio" });
+    expect(calls.map((call) => call.url)).toEqual(["/api/originals"]);
+    expect(await preview?.hints()).toMatchObject({ durationSec: 5, grid: { bpm: 120, barOneSec: 0.5 }, sections: [{ startSec: 0.5, section: "intro" }, { startSec: 2.5, section: "outro" }] });
+    expect(calls.map((call) => call.url)).not.toContain("/api/originals/007/audio");
+  });
+
   it("loads the audio and turns meta.json into an exact grid, so the track skips analysis", async () => {
     const { fetch, calls } = server();
     const source = createOriginalsSource({ fetch, decode: fakeDecoder(5).decode });

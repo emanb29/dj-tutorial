@@ -3,6 +3,7 @@
 // open one to see its tracks found on this device ("Find <file>" when one is not), its decks and what
 // is wrong with it. Plans stay on this device; tracks are never uploaded.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { IndexedDbAnalysisCache } from "@analysis";
 import { deckOf } from "./deck-layout.ts";
 import { pickedTrack, planLibrary, type PlanLibrary } from "./library.ts";
 import { gridForFile, resolvePlanTracks, type TrackResolution } from "./resolve.ts";
@@ -10,6 +11,7 @@ import { createMixPlanStore, type StoredPlan } from "./store.ts";
 import { ButtonHint } from "../controller/KeyHint.tsx";
 import { LibraryBrowser } from "../library-browser/LibraryBrowser.tsx";
 import { folderRows } from "../library-browser/folder-rows.ts";
+import { folderPreview } from "../library-browser/preview-source.ts";
 import { useMusicFolder } from "../music-folder/MusicFolderPanel.tsx";
 import { musicFolder } from "../music-folder/shared-folder.ts";
 import { mixPlanFileName, mixPlanFileText, parseMixPlanFile } from "@shared/mix-plan-file.ts";
@@ -232,6 +234,9 @@ function NewPlan({ library, onCreate }: { readonly library: PlanLibrary; readonl
   const snapshot = useMusicFolder(folder);
   // Metadata only (folder-rows.ts): a new snapshot (a scan batch, a BPM found) lists the rows again.
   const rows = useMemo(() => (snapshot.found === 0 ? [] : folderRows(folder)), [folder, snapshot]);
+  // The mini player's previews: the files as the folder knows them, opened only on play.
+  const filesById = useMemo(() => new Map(snapshot.found === 0 ? [] : folder.files().map((file) => [file.trackId, file])), [folder, snapshot]);
+  const [analysisCache] = useState(() => new IndexedDbAnalysisCache());
   const [name, setName] = useState("New set");
   const [order, setOrder] = useState<readonly string[]>([]);
   const [working, setWorking] = useState<string | null>(null);
@@ -318,6 +323,10 @@ function NewPlan({ library, onCreate }: { readonly library: PlanLibrary; readonl
           }
           onLoad={(row) => {
             add(row.key);
+          }}
+          preview={(row) => {
+            const file = filesById.get(row.key);
+            return file === undefined ? null : folderPreview(file, analysisCache);
           }}
           actions={(row) => (
             <button type="button" className="btn btn-quiet" tabIndex={-1} data-nav-skip aria-label={`Add ${row.title}`} onClick={() => {

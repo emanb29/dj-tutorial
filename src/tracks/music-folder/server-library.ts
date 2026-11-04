@@ -91,6 +91,7 @@ function fileHandle(url: string, name: string, lastModified: number, options: Se
   return {
     kind: "file",
     name,
+    url,
     getFile: async () => {
       const response = await (options.fetch ?? fetch)(url);
       if (!response.ok) throw notSent(name, response);

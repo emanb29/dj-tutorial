@@ -9,9 +9,16 @@
 // the rows; BROWSE press opens a list (sort, browse by, a filter) or presses a button; LOAD A / LOAD B
 // pick the track with the ring (the picker says what picking does); SHIFT + BROWSE leaves an open
 // facet list. The keyboard: Tab or ↑ / ↓, Enter (A), Shift + Enter (B), Esc.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+//
+// The mini player, where the picker gives a preview: each row's ▶ plays that track from where it says
+// what it is (preview-start.ts), one at a time (preview-player.ts); the playing row shows a progress bar
+// to tap and the time. BROWSE press (Space) on a row plays or pauses it; SHIFT + BROWSE turn (← / →)
+// jumps 16 bars. Opening a file waits for play, so a row that is never played is never read.
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import type { TrackPreview } from "@tracks";
+import { PREVIEW_BUTTONS } from "../controller/flx4-keys.ts";
 import { useControllerConnected } from "../controller/KeyHint.tsx";
-import { FLX4_LOAD_EVENT, TYPING_NOTICE, type Flx4LoadDetail } from "../controller/focus-navigation.ts";
+import { FLX4_LOAD_EVENT, FLX4_PREVIEW_JUMP_EVENT, TYPING_NOTICE, type Flx4LoadDetail, type Flx4PreviewJumpDetail } from "../controller/focus-navigation.ts";
 import {
   bpmText,
   COLUMN_NAMES,
@@ -33,6 +40,7 @@ import {
 } from "./browse.ts";
 import { columnTemplate, COLUMN_GAP_PX, layoutFor, ROW_PADDING_PX, shownColumns } from "./layout.ts";
 import { LibraryFilters } from "./LibraryFilters.tsx";
+import { previewPlayer, type PreviewPlayer, type PreviewSnapshot } from "./preview-player.ts";
 import { readBrowseState, writeBrowseState, type BrowseState } from "./remembered.ts";
 import { VirtualList } from "./VirtualList.tsx";
 import "./library-browser.css";
@@ -60,11 +68,15 @@ export interface LibraryBrowserProps {
   readonly emptyText: string;
   /** The ring starts on the first row when nothing has it (data-nav-start). */
   readonly navStart?: boolean;
+  /** The row's preview for the mini player; null: none for this track. Without it, rows have no ▶. Reads nothing. */
+  readonly preview?: (row: LibraryRow) => TrackPreview | null;
+  /** The player previews go through: the app's one by default (tests give their own). */
+  readonly player?: PreviewPlayer;
 }
 
 const pressed = (descending: boolean) => (descending ? "↓" : "↑");
 
-export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus, actions, controllerHint, emptyText, navStart = false }: LibraryBrowserProps) {
+export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus, actions, controllerHint, emptyText, navStart = false, preview, player: givenPlayer }: LibraryBrowserProps) {
   const [state, setState] = useState<BrowseState>(() => readBrowseState(picker));
   const [typing, setTyping] = useState(false);
   const [focusFirst, setFocusFirst] = useState(0);
@@ -75,6 +87,10 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
   const [widthPx, setWidthPx] = useState(0);
   const [actionsPx, setActionsPx] = useState(0);
   const [scrollbarPx, setScrollbarPx] = useState(0);
+  const [player] = useState(() => givenPlayer ?? previewPlayer());
+  const [owner] = useState(() => Symbol(picker));
+  const playerState = useSyncExternalStore(player.subscribe, player.snapshot);
+  const previewing = playerState.owner === owner ? playerState : null;
 
   // The layout follows the browser's own width (a card on a wide screen can be narrow), so measure it.
   useLayoutEffect(() => {
@@ -125,6 +141,24 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
   useEffect(() => {
     latest.current = { byKey, onLoad, onLoadOffList };
   });
+
+  const togglePreview = (row: LibraryRow) => {
+    const source = preview?.(row) ?? null;
+    if (source !== null) void player.toggle(owner, row.key, source);
+  };
+
+  // SHIFT + BROWSE turn jumps this browser's playing preview; leaving the page stops it.
+  useEffect(() => {
+    const onJump = (event: Event) => {
+      if (player.snapshot().owner !== owner) return;
+      if (player.jump((event as CustomEvent<Flx4PreviewJumpDetail>).detail.step)) event.preventDefault();
+    };
+    window.addEventListener(FLX4_PREVIEW_JUMP_EVENT, onJump);
+    return () => {
+      window.removeEventListener(FLX4_PREVIEW_JUMP_EVENT, onJump);
+      player.stopIfOwner(owner);
+    };
+  }, [player, owner]);
   useEffect(() => {
     const onFlx4Load = (event: Event) => {
       const { deck } = (event as CustomEvent<Flx4LoadDetail>).detail;
@@ -275,6 +309,12 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
           {controllerHint}
         </p>
       ) : null}
+      {preview === undefined ? null : <PreviewHint controller={controllerConnected} />}
+      {previewing?.problem == null ? null : (
+        <p className="lb-note lb-preview-problem" role="alert">
+          {previewing.problem}
+        </p>
+      )}
       {browseBy !== null && facets !== null ? (
         <div className="lb-facets">
           <p className="lb-note">
@@ -337,14 +377,55 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
             navStart={navStart}
             focusFirstSignal={focusFirst}
             itemKey={(row) => row.key}
-            rowProps={(row) => ({ "aria-label": row.title, className: "lb-row", "data-library": row.key })}
-            {...(onRowFocus === undefined ? {} : { onRowFocus })}
-            onRowKey={(row, event) => {
-              if (event.key !== "Enter") return false;
-              onLoad(row, event.shiftKey ? "B" : "A");
-              return true;
+            rowProps={(row) => {
+              const status = previewing?.key === row.key ? previewing.status : undefined;
+              return { "aria-label": row.title, className: status === undefined ? "lb-row" : "lb-row lb-previewing", "data-library": row.key, "data-preview": status };
             }}
-            render={(row) => <TrackCells row={row} columns={columns} actions={actions?.(row) ?? null} />}
+            {...(onRowFocus === undefined ? {} : { onRowFocus })}
+            {...(preview === undefined ? {} : { onRowPress: togglePreview })}
+            onRowKey={(row, event) => {
+              if (event.key === "Enter") {
+                onLoad(row, event.shiftKey ? "B" : "A");
+                return true;
+              }
+              if (preview === undefined) return false;
+              if (event.key === " ") {
+                togglePreview(row);
+                return true;
+              }
+              const by = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              return by !== 0 && previewing?.key === row.key && player.jump(by);
+            }}
+            render={(row) => (
+              <TrackCells
+                row={row}
+                columns={columns}
+                actions={actions?.(row) ?? null}
+                previewButton={
+                  preview === undefined ? null : (
+                    <PreviewButton
+                      title={row.title}
+                      status={previewing?.key === row.key ? previewing.status : "idle"}
+                      available={preview(row) !== null}
+                      onPress={() => {
+                        togglePreview(row);
+                      }}
+                    />
+                  )
+                }
+                player={
+                  previewing?.key === row.key ? (
+                    <MiniPlayer
+                      title={row.title}
+                      state={previewing}
+                      onSeek={(sec) => {
+                        player.seek(sec);
+                      }}
+                    />
+                  ) : null
+                }
+              />
+            )}
           />
         </>
       )}
@@ -365,8 +446,8 @@ const CELLS: Readonly<Record<SortColumn, (row: LibraryRow) => ReactNode>> = {
   gridReady: (row) => (row.gridReady ? <span aria-label="Grid ready">▦ grid</span> : ""),
 };
 
-/** The row's cells, one per shown column, in the header's order; the picker's buttons last. */
-function TrackCells({ row, columns, actions }: { readonly row: LibraryRow; readonly columns: readonly SortColumn[]; readonly actions: ReactNode }) {
+/** The row's cells, one per shown column, in the header's order; ▶ and the picker's buttons last; the mini player while it previews. */
+function TrackCells({ row, columns, actions, previewButton, player }: { readonly row: LibraryRow; readonly columns: readonly SortColumn[]; readonly actions: ReactNode; readonly previewButton: ReactNode; readonly player: ReactNode }) {
   return (
     <>
       {columns.map((column) => (
@@ -374,7 +455,93 @@ function TrackCells({ row, columns, actions }: { readonly row: LibraryRow; reado
           {CELLS[column](row)}
         </span>
       ))}
-      {actions === null ? null : <span className="lb-actions">{actions}</span>}
+      {actions === null && previewButton === null ? null : (
+        <span className="lb-actions">
+          {previewButton}
+          {actions}
+        </span>
+      )}
+      {player}
     </>
+  );
+}
+
+const PLAY = { glyph: "▶", label: (title: string) => `Play a preview of ${title}` };
+const PREVIEW_BUTTON: Readonly<Record<PreviewSnapshot["status"], { readonly glyph: string; readonly label: (title: string) => string }>> = {
+  idle: PLAY,
+  paused: PLAY,
+  failed: PLAY,
+  opening: { glyph: "…", label: (title) => `Stop opening ${title}` },
+  playing: { glyph: "❚❚", label: (title) => `Pause the preview of ${title}` },
+};
+
+/** ▶ / ❚❚ for the screen; the FLX4 and the keyboard have BROWSE press and Space on the row. */
+function PreviewButton({ title, status, available, onPress }: { readonly title: string; readonly status: PreviewSnapshot["status"]; readonly available: boolean; readonly onPress: () => void }) {
+  const shown = PREVIEW_BUTTON[status];
+  return (
+    <button
+      type="button"
+      className="btn lb-preview"
+      tabIndex={-1}
+      data-nav-skip
+      aria-label={shown.label(title)}
+      aria-pressed={status === "playing"}
+      disabled={!available}
+      {...(available ? {} : { title: "No preview for this track" })}
+      onClick={onPress}
+    >
+      {shown.glyph}
+    </button>
+  );
+}
+
+/** The playing row's progress: tap or click the bar to seek; the time so far, of the whole. */
+function MiniPlayer({ title, state, onSeek }: { readonly title: string; readonly state: PreviewSnapshot; readonly onSeek: (sec: number) => void }) {
+  const duration = state.durationSec;
+  const fraction = duration === null ? 0 : Math.min(1, state.positionSec / duration);
+  const seek = (event: MouseEvent<HTMLDivElement>) => {
+    if (duration === null) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    onSeek(duration * Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)));
+  };
+  return (
+    <div className="lb-player" data-testid="mini-player">
+      <div
+        className="lb-seek"
+        role="slider"
+        tabIndex={-1}
+        data-nav-skip
+        aria-label={`Where in ${title}`}
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration ?? 0)}
+        aria-valuenow={Math.round(state.positionSec)}
+        aria-valuetext={`${lengthText(state.positionSec)} of ${lengthText(duration)}`}
+        onClick={seek}
+      >
+        <span className="lb-seek-fill" style={{ width: `${String(fraction * 100)}%` }} />
+      </div>
+      <span className="lb-elapsed" data-testid="preview-elapsed">
+        {state.status === "opening" ? "Opening…" : `${lengthText(state.positionSec)} / ${lengthText(duration)}`}
+        {state.inHeadphones ? " · headphones" : ""}
+      </span>
+    </div>
+  );
+}
+
+/** One line: how to preview from the FLX4 (named from the one table, flx4-keys.ts) or the keyboard. */
+function PreviewHint({ controller }: { readonly controller: boolean }) {
+  const { play, jump } = PREVIEW_BUTTONS;
+  return (
+    <p className="lb-note" data-testid="preview-hint">
+      {controller ? (
+        <>
+          <kbd className="hw-key">{play.button}</kbd> on a track: preview · <kbd className="hw-key">{jump.button}</kbd>: jump 16 bars
+        </>
+      ) : (
+        <>
+          ▶ or <kbd>{play.key}</kbd> on a track: preview · <kbd>{jump.key}</kbd>: jump 16 bars
+        </>
+      )}
+    </p>
   );
 }

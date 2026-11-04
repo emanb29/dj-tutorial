@@ -165,7 +165,7 @@ function Flx4Legend() {
       </thead>
       <tbody>
         {rows.map((row) => (
-          <tr key={row.button}>
+          <tr key={`${row.button}: ${row.does}`}>
             <th scope="row">{row.button}</th>
             <td>{row.does}</td>
             <td>

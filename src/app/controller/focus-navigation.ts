@@ -32,6 +32,16 @@ export interface Flx4LoadDetail {
   readonly deck: "A" | "B";
 }
 
+/**
+ * Dispatched on window for SHIFT + BROWSE turn, with the detents as `detail.step`. A library whose
+ * preview plays jumps it (src/app/library-browser) and calls preventDefault(); otherwise the ring moves.
+ */
+export const FLX4_PREVIEW_JUMP_EVENT = "flx4-preview-jump";
+
+export interface Flx4PreviewJumpDetail {
+  readonly step: number;
+}
+
 /** Key presses the FLX4 made, so the decks' keyboard and the wording ignore them. */
 const pressedHere = new WeakSet<Event>();
 
@@ -140,6 +150,13 @@ export class FocusNavigator {
     const next = at === null ? (by > 0 ? start(this.doc, list) : list.at(-1)) : list[(((list.indexOf(at) + by) % list.length) + list.length) % list.length];
     if (next != null) ring(next);
     return null;
+  }
+
+  /** SHIFT + BROWSE turn: first offered to a playing preview (FLX4_PREVIEW_JUMP_EVENT); else a move. */
+  jump(by: number): NavigationNotice | null {
+    const event = new CustomEvent<Flx4PreviewJumpDetail>(FLX4_PREVIEW_JUMP_EVENT, { detail: { step: by }, cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented ? null : this.move(by);
   }
 
   /** BROWSE press: presses the control with the ring. With no ring, puts it where it starts. */

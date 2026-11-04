@@ -28,6 +28,8 @@ export interface FileHandleLike {
   getFile(): Promise<File>;
   /** Reads only the first `length` bytes, where that costs less than getting the File (the server's library: one Range request). */
   readPrefix?: ReadPrefix;
+  /** A URL that serves the file with byte ranges (the server's library): a preview streams it rather than getting the File. */
+  readonly url?: string;
 }
 
 /** Reads a file's first `length` bytes (all of a shorter file). */
@@ -324,6 +326,12 @@ export function createLocalFileSource(options: LocalFileOptions = {}): LocalFile
       }
       loadOptions.onProgress?.({ stage: "fetching", loadedBytes: size, totalBytes: size, fraction: 0.8 });
       return decodeAndHash(track, bytes, decode, loadOptions);
+    },
+
+    preview(track) {
+      const entry = track.source === "local-file" ? files.get(track.id) : undefined;
+      if (entry === undefined) return null;
+      return { media: { kind: "file", read: () => Promise.resolve(entry.file) }, hints: () => Promise.resolve({}) };
     },
   };
 }

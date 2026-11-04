@@ -42,6 +42,31 @@ export interface LargeLibrary {
   readonly openedByScan: number;
 }
 
+/** A real, playable WAV file, a quiet 220 Hz tone (8 kHz, mono): for the mini player's tests, which never sound (muted Chromium). */
+export function wavFile(name: string, seconds: number): File {
+  const rate = 8000;
+  const samples = Math.round(seconds * rate);
+  const bytes = new DataView(new ArrayBuffer(44 + samples * 2));
+  const text = (at: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) bytes.setUint8(at + index, value.charCodeAt(index));
+  };
+  text(0, "RIFF");
+  bytes.setUint32(4, 36 + samples * 2, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  bytes.setUint32(16, 16, true);
+  bytes.setUint16(20, 1, true);
+  bytes.setUint16(22, 1, true);
+  bytes.setUint32(24, rate, true);
+  bytes.setUint32(28, rate * 2, true);
+  bytes.setUint16(32, 2, true);
+  bytes.setUint16(34, 16, true);
+  text(36, "data");
+  bytes.setUint32(40, samples * 2, true);
+  for (let index = 0; index < samples; index += 1) bytes.setInt16(44 + index * 2, Math.round(1000 * Math.sin((2 * Math.PI * 220 * index) / rate)), true);
+  return new File([bytes.buffer], name, { type: "audio/wav" });
+}
+
 /** The folder, picked and scanned, with background analysis paused (the app's default). */
 export async function largeLibrary(size = LARGE_LIBRARY_SIZE): Promise<LargeLibrary> {
   const folder = fakeFolder("Music");

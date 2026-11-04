@@ -33,7 +33,7 @@ import { blobPrefix, handlePrefix, hasWords, isAudioFile, memoryHandleStore, tra
 import { camelotFromTonality, knownGridFromRekordbox, rekordboxGrid } from "../rekordbox/grid.ts";
 import type { RekordboxLink, RekordboxStatus, XmlCandidate } from "../rekordbox/rekordbox-link.ts";
 import type { RekordboxTrack } from "../rekordbox/xml.ts";
-import type { LoadedTrack, Result, Track, TrackError, TrackSource } from "../types.ts";
+import type { LoadedTrack, Result, Track, TrackCue, TrackError, TrackMedia, TrackSource } from "../types.ts";
 import { entryKey, memoryEntryCache, type EntryCache, type EntryRecord } from "./entry-cache.ts";
 import { createPullWorker } from "./pull-worker.ts";
 import { diffScan, MAX_FOLDER_FILES, type FileStamp, type ScannedFile, type ScanOptions, type ScanSummary } from "./scan.ts";
@@ -150,6 +150,8 @@ interface Entry {
   readonly stamp: FileStamp;
   readonly read: () => Promise<File>;
   readonly readPrefix: ReadPrefix;
+  /** Where the file streams from with byte ranges (the server's library); null for a local file. */
+  readonly url: string | null;
   /** What the file name and the analysis say. */
   base: Track;
   /** The rekordbox entry for this file, when the collection has one. */
@@ -174,10 +176,17 @@ export interface FolderFile {
   readonly contentHash: string | null;
   /** rekordbox's grid for the file, where it is one tempo in 4/4; it wins over the analysis's. */
   readonly rekordboxGrid: { readonly bpm: number; readonly firstBeatSec: number; readonly downbeatPhase: number } | null;
+  /** The cues the Learner set in rekordbox (hot and memory); none when rekordbox does not know the file. */
+  readonly cues: readonly TrackCue[];
   /** Opens the file (nothing is read until something reads it). */
   readonly read: () => Promise<File>;
   /** Reads only the file's first bytes: a file in the server's library sends just those, not all of it. */
   readonly readPrefix: ReadPrefix;
+  /**
+   * Where a preview streams it from without reading it in full: a picked folder's file is local
+   * (`read`, through an object URL); a file in the server's library is its URL, served with byte ranges.
+   */
+  readonly media: TrackMedia;
 }
 
 /** A wanted track goes ahead of these many others at most; older wishes are dropped (the background gets them). */
@@ -402,7 +411,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
   });
 
   /** Adds a batch of found files: unchanged ones stay, new and changed ones take their cached result or wait for analysis. */
-  const absorb = async (found: readonly { path: string; name: string; stamp: FileStamp; read: () => Promise<File>; readPrefix: ReadPrefix }[], signal: AbortSignal) => {
+  const absorb = async (found: readonly { path: string; name: string; stamp: FileStamp; read: () => Promise<File>; readPrefix: ReadPrefix; url: string | null }[], signal: AbortSignal) => {
     const fresh = found.filter(({ path, stamp }) => {
       const known = entries.get(path);
       return known?.stamp.size !== stamp.size || known.stamp.lastModified !== stamp.lastModified;
@@ -411,10 +420,10 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
     const records = await entryCache.getMany(fresh.map(({ path, stamp }) => entryKey(path, stamp.size, stamp.lastModified)));
     // A batch from a walk that was stopped (another folder picked, forgotten) must not come back.
     if (signal.aborted) return;
-    for (const { path, name, stamp, read, readPrefix } of fresh) {
+    for (const { path, name, stamp, read, readPrefix, url } of fresh) {
       drop(path);
       const track = trackForFile({ name, ...stamp }, path);
-      const entry: Entry = { path, key: track.id, stamp, read, readPrefix, base: track, linked: null, track, state: "pending", contentHash: null };
+      const entry: Entry = { path, key: track.id, stamp, read, readPrefix, url, base: track, linked: null, track, state: "pending", contentHash: null };
       entries.set(path, entry);
       pathByKey.set(entry.key, path);
       const record = records.get(entry.key);
@@ -436,7 +445,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
       const found = batch.map((file) => {
         const stamp = { size: file.size, lastModified: file.lastModified };
         seen.set(file.path, stamp);
-        return { path: file.path, name: file.name, stamp, read: () => file.handle.getFile(), readPrefix: handlePrefix(file.handle) };
+        return { path: file.path, name: file.name, stamp, read: () => file.handle.getFile(), readPrefix: handlePrefix(file.handle), url: file.handle.url ?? null };
       });
       absorbing = absorbing.then(() => absorb(found, signal));
     };
@@ -567,8 +576,10 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
         durationSec: entry.track.durationSec ?? null,
         contentHash: entry.contentHash,
         rekordboxGrid: grid?.kind === "constant" ? { bpm: grid.bpm, firstBeatSec: grid.firstBeatSec, downbeatPhase: grid.downbeatPhase } : null,
+        cues: entry.linked?.cues ?? [],
         read: entry.read,
         readPrefix: entry.readPrefix,
+        media: entry.url === null ? { kind: "file", read: entry.read } : { kind: "url", url: entry.url },
       };
     });
 
@@ -688,6 +699,7 @@ export function createMusicFolder(options: MusicFolderOptions): MusicFolder {
         stamp: { size: file.size, lastModified: file.lastModified },
         read: () => Promise.resolve(file),
         readPrefix: blobPrefix(file),
+        url: null,
       }));
       const now = new Set(found.map((file) => file.path));
       for (const path of [...entries.keys()]) if (!now.has(path)) drop(path);

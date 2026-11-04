@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MusicLibraryIndex } from "@shared/music-library.ts";
+import { libraryFileUrl, type MusicLibraryIndex } from "@shared/music-library.ts";
 import { memoryHandleStore, type DirectoryHandleLike } from "../local-files.ts";
 import { memoryRekordboxCache } from "../rekordbox/cache.ts";
 import { createRekordboxLink } from "../rekordbox/rekordbox-link.ts";
@@ -189,6 +189,18 @@ describe("music folder on the server's library", () => {
     await music.settled();
     expect(music.snapshot().analysed).toBe(2);
     expect(music.files().map((file) => file.contentHash).toSorted()).toEqual(["hash-abc", "hash-other"]);
+  });
+
+  it("gives each file its URL for a preview to stream with byte ranges, so a preview never downloads it whole", async () => {
+    const server = fakeServer(LIBRARY, { "House/Kay Grove - Brothers.mp3": "abc", "Other - Track.mp3": "other" });
+    const { music } = setUp(server);
+    await music.start();
+    await music.settled();
+
+    expect(music.files().map((file) => file.media).toSorted((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))).toEqual([
+      { kind: "url", url: libraryFileUrl("House/Kay Grove - Brothers.mp3") },
+      { kind: "url", url: libraryFileUrl("Other - Track.mp3") },
+    ]);
   });
 
   it("refuses to pick, allow, import or forget: the folder belongs to the server's .env", async () => {

@@ -12,10 +12,17 @@
 // | LOAD B               | Ready                                                  | R               |
 // | SHIFT + LOAD A       | practice                                               | P               |
 // | SHIFT + LOAD B       | Not yet (Placement)                                    | N               |
+// | BROWSE press, a track| a library: preview it, play / pause (the mini player)  | Space           |
+// | SHIFT + BROWSE turn  | a library: jump the preview 16 bars (30 s, no grid)    | ← / →           |
 //
 // Freestyle, the rekordbox way: BROWSE turns through the library's tracks, and LOAD A / LOAD B load the
 // one with the ring onto that deck (a playing deck refuses, as on screen). A page takes LOAD over by
 // handling the FLX4_LOAD_EVENT (focus-navigation.ts); everywhere else LOAD is Enter and R.
+//
+// The library's mini player (src/app/library-browser): BROWSE press with the ring on a track previews
+// it (a track row has no button of its own to press), and SHIFT + BROWSE turn jumps the preview that
+// plays. A page takes SHIFT + BROWSE turn by handling FLX4_PREVIEW_JUMP_EVENT; with no preview playing
+// it moves the ring, as BROWSE turn does.
 //
 // The panel's controls a planned Transition plays (FLX4_LAYOUT, below) are here too: their names and
 // which side of the unit each sits on, which the Mix Editor's Execution plan reads to name a move and
@@ -31,6 +38,8 @@ export type ControllerKeyCode = "Enter" | "KeyR" | "KeyP" | "KeyN" | "Escape";
 export type Flx4Command =
   /** BROWSE turn: `step` buttons on (negative: back), or a list's or slider's value while it is changed. */
   | { readonly kind: "move"; readonly step: number }
+  /** SHIFT + BROWSE turn: jump the library preview `step` times 16 bars; with none playing, a move. */
+  | { readonly kind: "jump"; readonly step: number }
   /** BROWSE press: press the button with the ring. */
   | { readonly kind: "select" }
   /**
@@ -71,10 +80,18 @@ export function pressName(press: ControllerPress): string {
   return press.shift ? `SHIFT + ${name}` : name;
 }
 
+/** The library's mini player, with the ring on a track (src/app/library-browser). */
+export const PREVIEW_BUTTONS = {
+  play: { button: "BROWSE press", does: "On a track in a library: preview it (play / pause)", key: "Space" },
+  jump: { button: "SHIFT + BROWSE turn", does: "Jump the preview 16 bars (30 s with no grid)", key: "← / →" },
+} as const;
+
 /** Moving around a page, listed before the keys. */
 export const NAVIGATION_BUTTONS: readonly { readonly button: string; readonly does: string; readonly key: string }[] = [
   { button: "BROWSE turn", does: "Move the ring between buttons", key: "Tab" },
   { button: "BROWSE press", does: "Press the button with the ring", key: "Space" },
+  PREVIEW_BUTTONS.play,
+  PREVIEW_BUTTONS.jump,
 ];
 
 const BY_KEY: ReadonlyMap<string, ControllerButton> = new Map(CONTROLLER_KEYS.map((entry) => [entry.key, entry]));
@@ -92,7 +109,7 @@ export function shortButtonForKey(key: string): string | null {
 
 /** What a decoded FLX4 message means for the page around the decks, or null (a deck control, a release). */
 export function flx4Command(input: Flx4Input): Flx4Command | null {
-  if (input.kind === "browse-turn") return input.ticks === 0 ? null : { kind: "move", step: input.ticks };
+  if (input.kind === "browse-turn") return input.ticks === 0 ? null : { kind: input.shift ? "jump" : "move", step: input.ticks };
   if (input.kind !== "button" || !input.pressed) return null;
   if (input.control !== "load" && input.control !== "browse-press") return null;
   const entry = CONTROLLER_KEYS.find(({ press }) => press.control === input.control && press.deck === input.deck && press.shift === input.shift);

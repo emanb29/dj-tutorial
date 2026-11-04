@@ -3,7 +3,7 @@
 // grooves. Listing is cheap; a track is prepared (grid known) when the Learner adds it to the set,
 // and its audio is decoded again only when it goes onto a deck, so a long set never holds every
 // track's audio at once.
-import { analyseTrack, IndexedDbAnalysisCache } from "@analysis";
+import { analyseTrack, IndexedDbAnalysisCache, type AnalysisCache } from "@analysis";
 import { HOT_CUE_SLOTS } from "@audio";
 import {
   camelotOf,
@@ -20,13 +20,16 @@ import {
   createStarterPackSource,
   decoderAt,
   type AudioDecoder,
+  type FolderFile,
   type LocalFileSource,
   type MusicFolder,
   type Track,
+  type TrackPreview,
   type TrackSource,
 } from "@tracks";
 import type { LibraryRow } from "../library-browser/browse.ts";
 import { trackRow } from "../library-browser/folder-rows.ts";
+import { folderPreview } from "../library-browser/preview-source.ts";
 
 export interface LibraryItem {
   readonly key: string;
@@ -48,6 +51,8 @@ export interface LibraryItem {
   readonly prepare: (options: PrepareOptions) => Promise<PrepareResult>;
   /** The Learner is about to use it (the ring is on it): find its grid first. Music-folder tracks only. */
   readonly want?: () => void;
+  /** The library browser's mini player plays this, opening nothing until it is played; null: no preview. */
+  readonly preview: TrackPreview | null;
 }
 
 /** An item as the library browser lists it: what its source knows, nothing read from the file. */
@@ -105,6 +110,8 @@ function syntheticItems(): LibraryItem[] {
       camelot,
       genre: "house",
       gridReady: true,
+      // Synthesised on demand at the engine's rate: no file or URL to stream.
+      preview: null,
       prepare: ({ sampleRate }) =>
         Promise.resolve({
           ok: true,
@@ -130,6 +137,7 @@ function sourceItem(source: TrackSource, track: Track): LibraryItem {
     ...(track.durationSec === undefined ? {} : { durationSec: track.durationSec }),
     ...(track.playCount === undefined ? {} : { playCount: track.playCount }),
     gridReady: track.source === "original",
+    preview: source.preview?.(track) ?? null,
     // The sources decode at the engine's sample rate already (listLibrary).
     async prepare({ signal, onStatus }) {
       onStatus(`Fetching "${track.title}"…`);
@@ -162,11 +170,13 @@ function sourceItem(source: TrackSource, track: Track): LibraryItem {
  * A music-folder track as a library item. Its grid comes from the folder's background analysis
  * (asked for first, and waited for), so preparing it then finds the grid in the analysis cache.
  */
-function folderItem(folder: MusicFolder, source: TrackSource, track: Track, album: string | null): LibraryItem {
+function folderItem(folder: MusicFolder, source: TrackSource, track: Track, file: FolderFile | null, cache: AnalysisCache): LibraryItem {
   const item = sourceItem(source, track);
+  const album = file?.album ?? null;
   return {
     ...item,
     ...(album === null ? {} : { album }),
+    preview: file === null ? null : folderPreview(file, cache),
     gridReady: folder.gridReady(track.id),
     want: () => {
       folder.want(track.id);
@@ -187,12 +197,13 @@ export interface FolderLibrary {
 
 export function folderLibrary(music: MusicFolder, decode: AudioDecoder): FolderLibrary {
   const source = music.source(decode);
+  const cache = new IndexedDbAnalysisCache();
   let made = new Map<Track, LibraryItem>();
   return {
     music,
     items: () => {
-      const albums = new Map(music.files().map((file) => [file.trackId, file.album]));
-      made = new Map(music.tracks().map((track) => [track, made.get(track) ?? folderItem(music, source, track, albums.get(track.id) ?? null)] as const));
+      const files = new Map(music.files().map((file) => [file.trackId, file]));
+      made = new Map(music.tracks().map((track) => [track, made.get(track) ?? folderItem(music, source, track, files.get(track.id) ?? null, cache)] as const));
       return [...made.values()];
     },
   };

@@ -79,5 +79,11 @@ export function createStarterPackSource(options: StarterPackOptions = {}): Track
       if (!bytes.ok) return bytes;
       return decodeAndHash(track, bytes.value, decode, loadOptions);
     },
+    // archive.org serves byte ranges, so a preview streams the file.
+    preview(track) {
+      const url = track.source === "starter-pack" ? urls.get(track.id) : undefined;
+      if (url === undefined) return null;
+      return { media: { kind: "url", url }, hints: () => Promise.resolve(track.durationSec === undefined ? {} : { durationSec: track.durationSec }) };
+    },
   };
 }

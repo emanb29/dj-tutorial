@@ -119,7 +119,36 @@ export type TrackError =
   | { readonly kind: "permission-denied"; readonly message: string; readonly fix: string }
   | { readonly kind: "bad-response"; readonly message: string; readonly fix: string; readonly problems: readonly string[] };
 
-export type Result<Value> = { readonly ok: true; readonly value: Value } | { readonly ok: false; readonly error: TrackError };
+/**
+ * Where a track's encoded audio can be streamed from without reading it in full, for a preview in an
+ * `<audio>` element: a local file (played through an object URL, opened only when asked) or a URL the
+ * server serves with byte ranges (the Originals, the starter pack, a server-side library).
+ */
+export type TrackMedia = { readonly kind: "file"; readonly read: () => Promise<File> } | { readonly kind: "url"; readonly url: string };
+
+/**
+ * What is known about where the music is, from metadata only (never the audio): where a preview
+ * starts and how far it jumps. Every field is optional; src/app/library-browser/preview-start.ts decides.
+ */
+export interface PreviewHints {
+  readonly durationSec?: number;
+  /** The Learner's rekordbox cues: one named "Drop" or "Chorus" is where a preview starts. */
+  readonly cues?: readonly Pick<TrackCue, "kind" | "name" | "startSec">[];
+  /** Named sections (an Original's generator phrases: intro, build, drop…). */
+  readonly sections?: readonly Pick<KnownPhrase, "startSec" | "section">[];
+  /** The analysis's phrase hints that rise in energy (src/analysis/types.ts `PhraseHint`). */
+  readonly energyRises?: readonly { readonly timeSec: number; readonly energyChangeDb: number }[];
+  /** The tempo and where bar 1 is, where a grid is known: a preview starts on a bar and jumps 16 bars. */
+  readonly grid?: { readonly bpm: number; readonly barOneSec: number };
+}
+
+/** A track's preview: its media, and its hints, both fetched only once the Learner presses play. */
+export interface TrackPreview {
+  readonly media: TrackMedia;
+  readonly hints: () => Promise<PreviewHints>;
+}
+
+export type Result<Value> ={ readonly ok: true; readonly value: Value } | { readonly ok: false; readonly error: TrackError };
 
 export interface TrackSource {
   readonly kind: TrackSourceKind;
@@ -129,4 +158,6 @@ export interface TrackSource {
   search(query: string, options?: SearchOptions): Promise<Result<readonly Track[]>>;
   /** Fetches (or reads) and decodes the track, and computes its content hash. */
   load(track: Track, options?: LoadOptions): Promise<Result<LoadedTrack>>;
+  /** How to preview the track without decoding it (the library browser's mini player); null or absent: no preview. */
+  preview?(track: Track): TrackPreview | null;
 }

@@ -14,7 +14,11 @@ describe("flx4Command", () => {
   it("BROWSE turn moves the ring, one button per tick, either way", () => {
     expect(command([0xb6, 0x40, 0x01])).toEqual({ kind: "move", step: 1 });
     expect(command([0xb6, 0x40, 0x7f])).toEqual({ kind: "move", step: -1 });
-    expect(command([0xb6, 0x64, 0x02])).toEqual({ kind: "move", step: 2 });
+  });
+
+  it("SHIFT + BROWSE turn jumps a library preview (a move where none plays)", () => {
+    expect(command([0xb6, 0x64, 0x02])).toEqual({ kind: "jump", step: 2 });
+    expect(command([0xb6, 0x64, 0x7f])).toEqual({ kind: "jump", step: -1 });
   });
 
   it("BROWSE press presses the button with the ring; with SHIFT it is back (Esc)", () => {

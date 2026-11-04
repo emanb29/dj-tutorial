@@ -178,6 +178,7 @@ export function SetBuilder({ library, picked, preparing, problem, onAdd, onFiles
           onLoad={(row) => {
             add(row.key);
           }}
+          preview={(row) => itemsByKey.get(row.key)?.preview ?? null}
           actions={(row) => (
             <button
               type="button"

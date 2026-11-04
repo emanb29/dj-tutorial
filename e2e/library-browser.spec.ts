@@ -10,7 +10,7 @@ const REKORDBOX_XML = `<?xml version="1.0" encoding="UTF-8"?>
   <PRODUCT Name="rekordbox" Version="7.0.0" Company="AlphaTheta"/>
   <COLLECTION Entries="4">
     <TRACK Name="Copper Tide" Artist="Mira Vale" Album="Low Sun" Genre="Deep House" AverageBpm="122.00" Tonality="Am" TotalTime="360" Rating="204" PlayCount="12"
-      Location="file://localhost/Users/dj/Music/Mira%20Vale%20-%20Copper%20Tide.mp3"><TEMPO Inizio="0.05" Bpm="122.00" Metro="4/4" Battito="1"/></TRACK>
+      Location="file://localhost/Users/dj/Music/Mira%20Vale%20-%20Copper%20Tide.mp3"><TEMPO Inizio="0.05" Bpm="122.00" Metro="4/4" Battito="1"/><POSITION_MARK Name="Drop" Type="0" Start="24.000" Num="-1"/></TRACK>
     <TRACK Name="Glass Orchard" Artist="Mira Vale" Genre="Deep House" AverageBpm="124.50" Tonality="9A" TotalTime="300"
       Location="file://localhost/Users/dj/Music/Mira%20Vale%20-%20Glass%20Orchard.mp3"><TEMPO Inizio="0.05" Bpm="124.50" Metro="4/4" Battito="1"/></TRACK>
     <TRACK Name="Low Lanterns" Artist="Otto Fenn" Genre="Techno" AverageBpm="132.00" Tonality="C" TotalTime="420"
@@ -20,25 +20,59 @@ const REKORDBOX_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </COLLECTION>
 </DJ_PLAYLISTS>`;
 
+/** A file the init script makes into a real WAV of this many seconds (a quiet tone), for the mini player. */
+const WAV_SECONDS = "wav:120";
+
 const FILES: Readonly<Record<string, string>> = {
-  "Mira Vale - Copper Tide.mp3": "not music",
-  "Mira Vale - Glass Orchard.mp3": "not music",
+  "Mira Vale - Copper Tide.mp3": WAV_SECONDS,
+  "Mira Vale - Glass Orchard.mp3": WAV_SECONDS,
   "Otto Fenn - Low Lanterns.mp3": "not music",
   "Juno Reyes-Park - Paper Comets.mp3": "not music",
   "Nobody - Unknown Signal.mp3": "not music",
   "rekordbox.xml": REKORDBOX_XML,
 };
 
-/** Replaces the folder picker with an in-memory folder named "Music". */
+/** Replaces the folder picker with an in-memory folder named "Music". A file whose text is "wav:N" is an N-second WAV. */
 async function stubPicker(page: Page, files: Readonly<Record<string, string>>): Promise<void> {
   await page.addInitScript((initial: Record<string, string>) => {
+    // 8 kHz mono 16-bit: a quiet 220 Hz tone. Chromium runs muted; nothing sounds.
+    const wav = (seconds: number): ArrayBuffer => {
+      const rate = 8000;
+      const samples = seconds * rate;
+      const bytes = new DataView(new ArrayBuffer(44 + samples * 2));
+      const text = (at: number, value: string) => {
+        for (let index = 0; index < value.length; index += 1) bytes.setUint8(at + index, value.charCodeAt(index));
+      };
+      text(0, "RIFF");
+      bytes.setUint32(4, 36 + samples * 2, true);
+      text(8, "WAVEfmt ");
+      bytes.setUint32(16, 16, true);
+      bytes.setUint16(20, 1, true);
+      bytes.setUint16(22, 1, true);
+      bytes.setUint32(24, rate, true);
+      bytes.setUint32(28, rate * 2, true);
+      bytes.setUint16(32, 2, true);
+      bytes.setUint16(34, 16, true);
+      text(36, "data");
+      bytes.setUint32(40, samples * 2, true);
+      for (let index = 0; index < samples; index += 1) bytes.setInt16(44 + index * 2, Math.round(1000 * Math.sin((2 * Math.PI * 220 * index) / rate)), true);
+      return bytes.buffer;
+    };
+    const contents = new Map<string, BlobPart>();
+    const contentOf = (text: string): BlobPart => {
+      const known = contents.get(text);
+      if (known !== undefined) return known;
+      const made = text.startsWith("wav:") ? wav(Number(text.slice(4))) : text;
+      contents.set(text, made);
+      return made;
+    };
     const entries = Object.entries(initial).map(([name, text], index) => ({ name, text, lastModified: 1_700_000_000_000 + index * 1000 }));
     const root = {
       kind: "directory",
       name: "Music",
       async *values() {
         for (const entry of entries) {
-          yield await Promise.resolve({ kind: "file", name: entry.name, getFile: () => Promise.resolve(new File([entry.text], entry.name, { lastModified: entry.lastModified })) });
+          yield await Promise.resolve({ kind: "file", name: entry.name, getFile: () => Promise.resolve(new File([contentOf(entry.text)], entry.name, { lastModified: entry.lastModified })) });
         }
       },
       queryPermission: () => Promise.resolve("granted"),
@@ -127,6 +161,53 @@ test("Mix plans: browse the library by keyboard, sort, filter, browse by genre a
   await expect(playOrder(page)).toHaveText([/A · Glass Orchard/, /B · Copper Tide/]);
 });
 
+const trackRow = (page: Page, title: string) => tracks(page).filter({ hasText: title });
+const whereIn = (page: Page, title: string) => trackRow(page, title).getByRole("slider", { name: `Where in ${title}` });
+const secondsIn = async (page: Page, title: string) => Number(await whereIn(page, title).getAttribute("aria-valuenow"));
+
+test("Mix plans: the mini player previews a track from its Drop cue, jumps 16 bars, seeks, and plays one at a time", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openNewPlan(page, learner("library-preview"));
+  const library = browserRegion(page);
+  await expect(library.getByTestId("preview-hint")).toContainText("Space on a track: preview");
+
+  // ▶ opens the file and plays from rekordbox's "Drop" memory cue at 0:24.
+  const copper = trackRow(page, "Copper Tide");
+  await copper.getByRole("button", { name: "Play a preview of Copper Tide" }).click();
+  await expect(copper).toHaveAttribute("data-preview", "playing");
+  await expect(copper.getByTestId("preview-elapsed")).toHaveText(/^0:2\d \/ 2:00$/);
+  expect(await secondsIn(page, "Copper Tide")).toBeGreaterThanOrEqual(24);
+
+  // → jumps 16 bars (122 BPM: 31.5 s), ← back.
+  await copper.focus();
+  const before = await secondsIn(page, "Copper Tide");
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => secondsIn(page, "Copper Tide")).toBeGreaterThanOrEqual(before + 30);
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(() => secondsIn(page, "Copper Tide")).toBeLessThan(before + 10);
+
+  // A click on the bar seeks there (90 % of 2:00 is 1:48).
+  const bar = await whereIn(page, "Copper Tide").boundingBox();
+  if (bar === null) throw new Error("the progress bar is not on screen");
+  await page.mouse.click(bar.x + bar.width * 0.9, bar.y + bar.height / 2);
+  await expect.poll(() => secondsIn(page, "Copper Tide")).toBeGreaterThanOrEqual(100);
+  await expect(copper).toHaveAttribute("data-preview", "playing");
+
+  // Space on another row: that one plays, the first stops; Space again pauses it.
+  const glass = trackRow(page, "Glass Orchard");
+  await glass.focus();
+  await page.keyboard.press("Space");
+  await expect(glass).toHaveAttribute("data-preview", "playing");
+  await expect(copper).not.toHaveAttribute("data-preview");
+  await expect(library.getByTestId("mini-player")).toHaveCount(1);
+  await page.keyboard.press("Space");
+  await expect(glass).toHaveAttribute("data-preview", "paused");
+
+  // Picking still adds to the play order.
+  await page.keyboard.press("Enter");
+  await expect(playOrder(page)).toHaveText([/A · Glass Orchard/]);
+});
+
 test("Mix plans at phone width: the browser fits the screen and a tap on + Add adds a track", async ({ page }) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 360, height: 740 });
@@ -143,6 +224,18 @@ test("Mix plans at phone width: the browser fits the screen and a tap on + Add a
   await expect(first.locator(".lb-col-album")).toBeHidden();
   await first.getByRole("button", { name: "Add Copper Tide" }).click();
   await expect(playOrder(page)).toHaveText([/A · Copper Tide/]);
+
+  // A finger-sized ▶; the playing row's bar and time take its second line, and nothing scrolls sideways.
+  const play = first.getByRole("button", { name: "Play a preview of Copper Tide" });
+  const box = await play.boundingBox();
+  expect(box?.width).toBeGreaterThanOrEqual(44);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
+  await play.click();
+  await expect(first).toHaveAttribute("data-preview", "playing");
+  await expect(first.getByTestId("preview-elapsed")).toBeVisible();
+  await expect(first.getByRole("slider", { name: "Where in Copper Tide" })).toBeVisible();
+  const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(sideways).toBeLessThanOrEqual(0);
 });
 
 /** Right edges of the New plan card, the browser and its list; and how far the page scrolls sideways. */

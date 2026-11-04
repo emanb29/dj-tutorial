@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { ORIGINALS_PATH, OriginalMetaSchema, OriginalSummarySchema, type OriginalMeta, type OriginalSummary } from "@shared/originals.ts";
 import { decodeAndHash, decodeOffline, fetchBytes, fetchJson, matchesQuery, type AudioDecoder } from "./load-audio.ts";
-import type { KnownBeatGrid, Result, Track, TrackSource } from "./types.ts";
+import type { KnownBeatGrid, PreviewHints, Result, Track, TrackSource } from "./types.ts";
 
 const BEATS_PER_BAR = 4;
 
@@ -83,6 +83,21 @@ export function createOriginalsSource(options: OriginalsOptions = {}): TrackSour
       const bytes = await fetchBytes(fetchFn, `${base}/${id}/audio`, { credentials: "same-origin" }, what, loadOptions);
       if (!bytes.ok) return bytes;
       return decodeAndHash(track, bytes.value, decode, loadOptions, { knownGrid: knownGridFromMeta(meta.value.data) });
+    },
+    // The API serves the audio with byte ranges (server/originals.ts), so a preview streams it; the
+    // meta's grid and phrases say where the drop is.
+    preview(track) {
+      if (track.source !== "original") return null;
+      const id = encodeURIComponent(track.id);
+      return {
+        media: { kind: "url", url: `${base}/${id}/audio` },
+        async hints(): Promise<PreviewHints> {
+          const meta = await fetchJson(fetchFn, `${base}/${id}/meta`, { credentials: "same-origin" }, what, envelope(OriginalMetaSchema));
+          if (!meta.ok) return track.durationSec === undefined ? {} : { durationSec: track.durationSec };
+          const grid = knownGridFromMeta(meta.value.data);
+          return { durationSec: grid.durationSec, grid: { bpm: grid.bpm, barOneSec: grid.firstBeatSec }, sections: grid.phrases };
+        },
+      };
     },
   };
 }

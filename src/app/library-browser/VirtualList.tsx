@@ -4,7 +4,7 @@
 // The FLX4 and the keyboard: every drawn row is a stop for the ring (BROWSE turn, Tab). Ringing a row
 // scrolls it into view (focus-navigation.ts), which draws the rows past it before the next detent, so
 // BROWSE turns through the whole list. ↑ / ↓, Page Up / Down, Home and End move by rows as well.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 /** Rows drawn beyond each edge of the view: more than a fast BROWSE spin moves in one message. */
 const OVERSCAN = 8;
@@ -24,6 +24,11 @@ export interface VirtualListProps<Item> {
   readonly onRowFocus?: (item: Item, index: number) => void;
   /** A click or tap on the row, and BROWSE press with the ring on it. */
   readonly onRowClick?: (item: Item) => void;
+  /**
+   * BROWSE press with the ring on the row, and not a click or tap: the navigator clicks the row itself
+   * (focus-navigation.ts), where a pointer's click has a `detail` of 1 or more, or lands on a cell.
+   */
+  readonly onRowPress?: (item: Item) => void;
   /** A key on a row that is not a move: return true when it was handled. */
   readonly onRowKey?: (item: Item, event: KeyboardEvent<HTMLLIElement>) => boolean;
   /** Changes when the list should put the ring on its first row (after a facet is picked). */
@@ -39,7 +44,7 @@ const MOVES: Readonly<Record<string, (index: number, page: number, last: number)
   End: (_index, _page, last) => last,
 };
 
-export function VirtualList<Item>({ items, rowHeight, itemKey, render, rowProps, label, navStart = false, onRowFocus, onRowClick, onRowKey, focusFirstSignal }: VirtualListProps<Item>) {
+export function VirtualList<Item>({ items, rowHeight, itemKey, render, rowProps, label, navStart = false, onRowFocus, onRowClick, onRowPress, onRowKey, focusFirstSignal }: VirtualListProps<Item>) {
   const scroller = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewPx, setViewPx] = useState(FALLBACK_VIEW_PX);
@@ -144,7 +149,14 @@ export function VirtualList<Item>({ items, rowHeight, itemKey, render, rowProps,
                 if (event.target === event.currentTarget) onRowFocus?.(item, index);
               }}
               onKeyDown={onKeyDown(item, index)}
-              {...(onRowClick === undefined ? {} : { onClick: () => { onRowClick(item); } })}
+              {...(onRowClick === undefined && onRowPress === undefined
+                ? {}
+                : {
+                    onClick: (event: MouseEvent<HTMLLIElement>) => {
+                      onRowClick?.(item);
+                      if (event.target === event.currentTarget && event.detail === 0) onRowPress?.(item);
+                    },
+                  })}
             >
               {render(item, index)}
             </li>

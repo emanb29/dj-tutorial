@@ -301,3 +301,95 @@
 .lb-col[aria-sort="descending"] {
   color: var(--ink);
 }
+
+/* The mini player. ▶ sits first among the row's buttons; the playing row shows its progress bar and
+   the time: on the second line in two-line rows (in place of artist · BPM · key · length), along the
+   row's foot in one row of columns. Tap or click the bar to seek; its hit area is taller than its line. */
+.lb-actions .lb-preview {
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-actions .lb-preview[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.library-browser .lb-previewing {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.lb-row .lb-player {
+  grid-column: 1 / 5;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.lb-row.lb-previewing > .lb-col-artist,
+.lb-row.lb-previewing > .lb-col-bpm,
+.lb-row.lb-previewing > .lb-col-key,
+.lb-row.lb-previewing > .lb-col-length {
+  display: none;
+}
+
+.lb-seek {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+  cursor: pointer;
+}
+
+.lb-seek::before,
+.lb-seek-fill {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.lb-seek::before {
+  content: "";
+  right: 0;
+  background: var(--panel-edge);
+}
+
+.lb-seek-fill {
+  display: block;
+  background: var(--accent);
+}
+
+.lb-elapsed {
+  flex: none;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* One row of columns keeps every cell (the wide rule above outranks the hiding), and the player runs
+   along the row's foot. */
+.library-browser[data-layout="wide"] .lb-row .lb-player {
+  position: absolute;
+  left: var(--lb-inset);
+  right: var(--lb-inset);
+  bottom: 0;
+  height: 16px;
+}
+
+.library-browser[data-layout="wide"] .lb-row .lb-seek {
+  height: 16px;
+}
+
+.library-browser[data-layout="wide"] .lb-row .lb-seek::before,
+.library-browser[data-layout="wide"] .lb-row .lb-seek-fill {
+  top: 10px;
+  height: 3px;
+}
+
+.lb-preview-problem {
+  color: var(--ink);
+}
