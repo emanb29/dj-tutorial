@@ -1,8 +1,8 @@
 /**
- * Library metadata enrichment, step 1 (ISS-198): a track's name, offline.
+ * Step 1 of library enrichment: a track's name, offline.
  *
  * Turns a track's raw name (rekordbox's Name, or a file name), plus its file name and any tags it
- * already has, into proposed fields: artist, a clean title, the remixer and mix kind, featuring,
+ * already has, into proposed fields: artist, original artist, a clean title, the remixer and mix kind, featuring,
  * flags (free download, premiere, preview, streaming quality, official video) and the SoundCloud ID
  * from a trailing "[digits]". Pure and deterministic; it never reads or writes a file.
  *
@@ -12,6 +12,9 @@
  * - Only junk leaves the clean title: free download, premiere, preview, streaming quality, the ID,
  *   "Official Video", version tags such as "(MASTER3)", catalogue numbers, "OUT NOW". Each removal
  *   is listed with its rule.
+ * - A remix, edit, bootleg, flip, VIP, re-work or mashup by X is X's track: artist = X, and the
+ *   artist the name credits first is the original artist. That is how most SoundCloud DJs credit
+ *   their edits. "(Original Mix)", "(Extended Mix)" and "(X Mix)" name no one new.
  * - An existing tag beats a parsed value, always; the parser never overwrites one.
  * - "A - B" is "Artist - Title" unless the sides say otherwise; an ambiguous split is medium or low.
  * - Every proposed field carries a confidence band and the rule that produced it.
@@ -20,7 +23,7 @@
  * older version is re-run.
  */
 
-export const NAME_PARSER_VERSION = 1;
+export const NAME_PARSER_VERSION = 2;
 
 export type ConfidenceBand = "high" | "medium" | "low";
 /** Where a value came from: a tag the track already had, the raw name, or the file name. */
@@ -73,7 +76,10 @@ export interface NameParseInput {
 export interface NameParse {
   readonly version: number;
   readonly raw: { readonly name: string; readonly fileName: string | null };
+  /** Who the track is by: the remixer of a remix (and edit, bootleg…), else the credited artist. */
   readonly artist: ProposedField<string> | null;
+  /** The artist the name credits, when the track is someone else's remix of it; null otherwise. */
+  readonly originalArtist: ProposedField<string> | null;
   /** The clean title: the raw name without the artist and the junk. "" only when there is no name at all. */
   readonly title: ProposedField<string>;
   /** The last (outermost) mix token's maker: "(X Remix) (Y Edit)" is Y's edit of X's remix. */
@@ -129,6 +135,9 @@ function mixKindOf(keyword: string): MixKind {
   if (word === "bootleg" || word === "flip" || word === "vip") return word;
   return "mix";
 }
+
+/** Mix kinds whose maker is the track's artist. */
+const CREDITED_KINDS: ReadonlySet<MixKind> = new Set(["remix", "edit", "vip", "bootleg", "flip", "rework", "mashup"]);
 
 // --- Junk -----------------------------------------------------------------------------------------
 
@@ -652,7 +661,7 @@ function parseOne(source: string, artistTag: string | null): SingleParse {
 
 // --- The track ------------------------------------------------------------------------------------
 
-
+const sameCredit = (a: string, b: string) => comparable(a) === comparable(b);
 
 function tagOf(value: string | undefined): string | null {
   const trimmed = value?.trim() ?? "";
@@ -690,7 +699,6 @@ export function parseTrackName(input: NameParseInput): NameParse {
     return null;
   };
 
-  const artist: ProposedField<string> | null = artistTag !== null ? { value: artistTag, band: "high", rule: "existing-tag", source: "tag" } : pick(primary?.artist ?? null, secondary?.artist ?? null);
   const title: ProposedField<string> =
     titleTag !== null ? { value: titleTag, band: "high", rule: "existing-tag", source: "tag" } : primary === null ? { value: "", band: "low", rule: "no-name", source: "name" } : field(primary.title, primarySource);
 
@@ -705,6 +713,23 @@ export function parseTrackName(input: NameParseInput): NameParse {
   const fileRemixer = lastMix === undefined || lastFileMix?.kind === lastMix.kind ? remixerFound(lastFileMix) : null;
   const remixer: ProposedField<string> | null = remixerTag !== null ? { value: remixerTag, band: "high", rule: "existing-tag", source: "tag" } : pick(remixerFound(lastMix), fileRemixer);
 
+  // The remixer of a credited kind is the artist; the name's own artist becomes the original artist.
+  const credited = mixKind !== null && CREDITED_KINDS.has(mixKind.value) ? remixer : null;
+  const namedArtist = pick(primary?.artist ?? null, secondary?.artist ?? null);
+  const original = namedArtist !== null && credited !== null && !sameCredit(namedArtist.value, credited.value) ? { ...namedArtist, rule: `original-${namedArtist.rule}` } : null;
+  let artist: ProposedField<string> | null;
+  let originalArtist: ProposedField<string> | null = null;
+  if (artistTag !== null) {
+    artist = { value: artistTag, band: "high", rule: "existing-tag", source: "tag" };
+    // A tag naming the remixer agrees with the rule, and the name's artist is still the original.
+    if (credited !== null && sameCredit(artistTag, credited.value)) originalArtist = original;
+  } else if (credited !== null) {
+    artist = { value: credited.value, band: credited.band, rule: `remixer-is-artist:${credited.rule}`, source: credited.source };
+    originalArtist = original;
+  } else {
+    artist = namedArtist;
+  }
+
   const flags = [...(primary?.flags ?? [])];
   for (const flag of secondary?.flags ?? []) if (!flags.some((existing) => existing.flag === flag.flag)) flags.push(flag);
 
@@ -712,6 +737,7 @@ export function parseTrackName(input: NameParseInput): NameParse {
     version: NAME_PARSER_VERSION,
     raw: { name: input.rawName, fileName },
     artist,
+    originalArtist,
     title,
     remixer,
     mixKind,

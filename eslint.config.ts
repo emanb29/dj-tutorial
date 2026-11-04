@@ -16,6 +16,8 @@ export default defineConfig(
     // Throwaway work, kept out of the build and the lint.
     "prototypes/",
     "spikes/",
+    // Tooling outside the app, each with its own lint (tools/*/eslint.config.ts).
+    "tools/",
   ]),
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,

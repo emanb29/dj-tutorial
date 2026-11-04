@@ -1,6 +1,6 @@
 // Synthetic names only (the repo is public).
 import { describe, expect, it } from "vitest";
-import { artistAgreement, buildEnrichReport, creditsAgreement, type EnrichTrack } from "./enrich-names-report.ts";
+import { artistAgreement, buildEnrichReport, creditsAgreement, type EnrichTrack } from "./calibration.ts";
 
 const track = (rawName: string, artist = "", fileName: string | null = null): EnrichTrack => ({ rawName, fileName, tags: { artist } });
 
@@ -19,17 +19,17 @@ describe("artistAgreement", () => {
 
 describe("creditsAgreement", () => {
   it("agrees when the tag lists the featured artist or the remixer too, as tags often do", () => {
-    expect(creditsAgreement({ artist: "Moss Harbor", featuring: "Kit Lane", remixer: null }, "Moss Harbor feat. Kit Lane")).toBe("agree");
-    expect(creditsAgreement({ artist: "Moss Harbor", featuring: null, remixer: "Tinwhistle" }, "Moss Harbor, Tinwhistle")).toBe("agree");
+    expect(creditsAgreement({ artist: "Moss Harbor", originalArtist: null, featuring: "Kit Lane", remixer: null }, "Moss Harbor feat. Kit Lane")).toBe("agree");
+    expect(creditsAgreement({ artist: "Tinwhistle", originalArtist: "Moss Harbor", featuring: null, remixer: "Tinwhistle" }, "Moss Harbor, Tinwhistle")).toBe("agree");
   });
 
   it("is partial when a parsed artist is missing from the tag, or the tag names someone the parse does not", () => {
-    expect(creditsAgreement({ artist: "Moss Harbor & Kit Lane", featuring: null, remixer: null }, "Moss Harbor")).toBe("partial");
-    expect(creditsAgreement({ artist: "Moss Harbor", featuring: null, remixer: null }, "Moss Harbor, Someone")).toBe("partial");
+    expect(creditsAgreement({ artist: "Moss Harbor & Kit Lane", originalArtist: null, featuring: null, remixer: null }, "Moss Harbor")).toBe("partial");
+    expect(creditsAgreement({ artist: "Moss Harbor", originalArtist: null, featuring: null, remixer: null }, "Moss Harbor, Someone")).toBe("partial");
   });
 
   it("disagrees when the parsed artist is not in the tag at all", () => {
-    expect(creditsAgreement({ artist: "Glass Rivers", featuring: null, remixer: "Moss Harbor" }, "Moss Harbor")).toBe("disagree");
+    expect(creditsAgreement({ artist: "Glass Rivers", originalArtist: null, featuring: null, remixer: null }, "Moss Harbor")).toBe("disagree");
   });
 });
 
@@ -41,8 +41,10 @@ describe("buildEnrichReport", () => {
     track("Night Bus", "Della Vane", "Night Bus (Orrin Flip) - Della Vane ft. Kip Rowe [1926700001].m4a"),
     // The tag is an uploader the name never mentions: nothing to compare.
     track("Lumen - Harbour Lights", "Someone Else"),
-    // The tag is the remixer, not the artist.
+    // The tag is the remixer: by the remixer-is-artist rule, that agrees.
     track("Kit Lane - Paper Boats (Tinwhistle Remix)", "Tinwhistle"),
+    // The tag is the original artist of a remix: the other convention, counted apart.
+    track("Kit Lane - Paper Boats (Arlo Remix)", "Kit Lane"),
     // A real disagreement: the tag is in the name, on the other side.
     track("Glass Rivers - Moss Harbor", "Moss Harbor"),
     track("Plain Things - KIT, Tayla Rue [2228600001]"),
@@ -50,10 +52,11 @@ describe("buildEnrichReport", () => {
   const report = buildEnrichReport(tracks, { sources: { xml: "collection.xml", folder: null } });
 
   it("counts each field before and after, per band", () => {
-    expect(report.trackCount).toBe(8);
-    expect(report.fields.artist.before).toBe(5);
-    // Five tags kept; Moss Harbor (high) and Plain Things (medium) parsed.
-    expect(report.fields.artist.after).toMatchObject({ existing: 5, high: 1, medium: 1, low: 0, total: 7 });
+    expect(report.trackCount).toBe(9);
+    expect(report.fields.artist.before).toBe(6);
+    // Six tags kept; Tinwhistle (the remixer of Moss Harbor's track, high) and Plain Things (medium) parsed.
+    expect(report.fields.artist.after).toMatchObject({ existing: 6, high: 1, medium: 1, low: 0, total: 8 });
+    expect(report.fields.originalArtist.after.total).toBeGreaterThanOrEqual(2);
     expect(report.fields.sourceId.after.total).toBe(5);
     expect(report.fields.remixer.after.total).toBeGreaterThanOrEqual(1);
     expect(report.flags["free-download"]).toBe(1);
@@ -71,15 +74,16 @@ describe("buildEnrichReport", () => {
   });
 
   it("calibrates the parsed artist against tracks that already have one, per band", () => {
-    // Jakob Ory & Snailfish (from the file, agrees), Della Vane (reversed, agrees), Someone Else (not in
-    // the name), Tinwhistle (the remixer), Glass Rivers vs Moss Harbor (disagrees).
-    expect(report.calibration.tracksWithArtistTag).toBe(5);
+    // Jakob Ory & Snailfish (from the file, agrees), Someone Else (not in the name), Tinwhistle (the
+    // remixer, agrees), Kit Lane (the original artist), Glass Rivers vs Moss Harbor (disagrees), and
+    // Della Vane, whose file name says Orrin flipped it: the tag names the original artist.
+    expect(report.calibration.tracksWithArtistTag).toBe(6);
     const all = Object.values(report.calibration.bands);
-    const sum = (key: "proposed" | "agree" | "disagree" | "tagIsRemixer" | "tagNotInName") => all.reduce((total, band) => total + band[key], 0);
-    expect(sum("proposed")).toBe(5);
+    const sum = (key: "proposed" | "agree" | "disagree" | "tagIsOriginalArtist" | "tagNotInName") => all.reduce((total, band) => total + band[key], 0);
+    expect(sum("proposed")).toBe(6);
     expect(sum("agree")).toBe(2);
     expect(sum("tagNotInName")).toBe(1);
-    expect(sum("tagIsRemixer")).toBe(1);
+    expect(sum("tagIsOriginalArtist")).toBe(2);
     expect(sum("disagree")).toBe(1);
     const high = report.calibration.bands.high;
     expect(high.precision).toBeCloseTo(high.agree / high.proposed);

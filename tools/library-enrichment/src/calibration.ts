@@ -1,8 +1,8 @@
-// The dry-run report of name parsing (ISS-198 step 1): what parseTrackName would fill, per field
-// and band, which rules did it, sample diffs, and how often the parsed artist agrees with an artist
-// tag the track already has (calibration). Pure: scripts/enrich-names.ts reads the library and
-// writes the JSON. The report names real tracks, so it belongs outside the repo.
-import { NAME_PARSER_VERSION, parseTrackName, type ConfidenceBand, type ExistingTags, type NameFlag, type NameParse, type ProposedField } from "../shared/name-parse.ts";
+// The dry-run report of name parsing (step 1): what parseTrackName would fill, per field and band,
+// which rules did it, sample diffs, and how often the parsed artist agrees with an artist tag the
+// track already has (calibration). Pure: the CLI reads the library and writes the JSON. The report
+// names real tracks, so it belongs outside the repo.
+import { NAME_PARSER_VERSION, parseTrackName, type ConfidenceBand, type ExistingTags, type NameFlag, type NameParse, type ProposedField } from "./name-parse.ts";
 
 export interface EnrichTrack {
   readonly rawName: string;
@@ -11,7 +11,7 @@ export interface EnrichTrack {
 }
 
 const BANDS: readonly ConfidenceBand[] = ["high", "medium", "low"];
-type ProposedFieldName = "artist" | "remixer" | "mixKind" | "featuring" | "sourceId";
+type ProposedFieldName = "artist" | "originalArtist" | "remixer" | "mixKind" | "featuring" | "sourceId";
 
 export interface BandCounts {
   /** Kept from a tag the track already had. */
@@ -24,8 +24,10 @@ export interface BandCounts {
 
 /**
  * An artist tag is not ground truth: on downloaded tracks it is often the uploader (a label, a
- * promo channel) or the remixer. Those are counted apart: `tagIsRemixer` (the tag names the parsed
- * remixer) and `tagNotInName` (no name in the tag appears in the raw or file name, so the name
+ * promo channel), and on a remix it may name the original artist where the parser, by the
+ * remixer-is-artist rule, names the remixer. A tag naming the remixer agrees. Counted apart:
+ * `tagIsOriginalArtist` (the tag names the parsed original artist: the other convention, not an
+ * error) and `tagNotInName` (no name in the tag appears in the raw or file name, so the name
  * cannot confirm or refute it). `comparablePrecision` leaves both out.
  */
 export interface CalibrationBand {
@@ -33,7 +35,7 @@ export interface CalibrationBand {
   readonly agree: number;
   readonly partial: number;
   readonly disagree: number;
-  readonly tagIsRemixer: number;
+  readonly tagIsOriginalArtist: number;
   readonly tagNotInName: number;
   /** agree / proposed; null with nothing proposed. */
   readonly precision: number | null;
@@ -43,7 +45,7 @@ export interface CalibrationBand {
   readonly comparablePrecision: number | null;
 }
 
-type Verdict = "agree" | "partial" | "disagree" | "tagIsRemixer" | "tagNotInName";
+type Verdict = "agree" | "partial" | "disagree" | "tagIsOriginalArtist" | "tagNotInName";
 
 export interface SampleDiff {
   /** The lowest band among the fields this track's parse proposes. */
@@ -53,6 +55,7 @@ export interface SampleDiff {
   readonly before: { readonly artist: string | null; readonly title: string };
   readonly after: {
     readonly artist: ProposedField<string> | null;
+    readonly originalArtist: ProposedField<string> | null;
     readonly title: string;
     readonly remixer: ProposedField<string> | null;
     readonly mixKind: string | null;
@@ -117,6 +120,7 @@ export function artistAgreement(parsed: string, tagged: string): "agree" | "part
 
 export interface ParsedCredits {
   readonly artist: string;
+  readonly originalArtist: string | null;
   readonly featuring: string | null;
   readonly remixer: string | null;
 }
@@ -124,11 +128,11 @@ export interface ParsedCredits {
 /**
  * The parsed credits against an artist tag. Tags often list everyone ("A feat. B", "A, Remixer"),
  * so it agrees when every parsed artist is in the tag and every name in the tag is a parsed
- * artist, featured artist or remixer.
+ * artist, original artist, featured artist or remixer.
  */
 export function creditsAgreement(credits: ParsedCredits, tagged: string): "agree" | "partial" | "disagree" {
   const artists = artistNames(credits.artist);
-  const everyone = new Set([...artists, ...artistNames(credits.featuring ?? ""), ...artistNames(credits.remixer ?? "")]);
+  const everyone = new Set([...artists, ...artistNames(credits.originalArtist ?? ""), ...artistNames(credits.featuring ?? ""), ...artistNames(credits.remixer ?? "")]);
   const tag = artistNames(tagged);
   const artistsInTag = [...artists].filter((name) => tag.has(name)).length;
   if (artistsInTag === 0) return "disagree";
@@ -155,7 +159,7 @@ function bandCounts(fields: readonly (ProposedField<unknown> | null)[]): BandCou
 const normalized = (text: string) => text.normalize("NFKC").replace(/\s+/g, " ").trim();
 
 function sampleOf(track: EnrichTrack, result: NameParse): SampleDiff {
-  const parsedBands = [result.artist, result.title, result.remixer, result.featuring, result.sourceId]
+  const parsedBands = [result.artist, result.originalArtist, result.title, result.remixer, result.featuring, result.sourceId]
     .filter((value) => value !== null && value.source !== "tag")
     .map((value) => value?.band ?? "high");
   return {
@@ -165,6 +169,7 @@ function sampleOf(track: EnrichTrack, result: NameParse): SampleDiff {
     before: { artist: track.tags.artist?.trim() === "" ? null : (track.tags.artist ?? null), title: track.rawName },
     after: {
       artist: result.artist,
+      originalArtist: result.originalArtist,
       title: result.title.value,
       remixer: result.remixer,
       mixKind: result.mixKind?.value ?? null,
@@ -193,7 +198,7 @@ export function buildEnrichReport(tracks: readonly EnrichTrack[], options: Repor
   const removedByRule: Record<string, number> = {};
   const flags: Record<NameFlag, number> = { "free-download": 0, premiere: 0, preview: 0, "streaming-quality": 0, "official-video": 0 };
   for (const result of results) {
-    for (const value of [result.artist, result.title, result.remixer, result.mixKind, result.featuring, result.sourceId]) if (value !== null) count(value.rule);
+    for (const value of [result.artist, result.originalArtist, result.title, result.remixer, result.mixKind, result.featuring, result.sourceId]) if (value !== null) count(value.rule);
     for (const flag of result.flags) flags[flag.flag]++;
     for (const removed of result.removed) removedByRule[removed.rule] = (removedByRule[removed.rule] ?? 0) + 1;
   }
@@ -208,7 +213,7 @@ export function buildEnrichReport(tracks: readonly EnrichTrack[], options: Repor
 
   // Calibration: the same parse with the artist tag hidden, against that tag.
   const tagged = tracks.filter((track) => hasTag(track.tags.artist));
-  const tally = Object.fromEntries(BANDS.map((band) => [band, { proposed: 0, agree: 0, partial: 0, disagree: 0, tagIsRemixer: 0, tagNotInName: 0 }])) as Record<
+  const tally = Object.fromEntries(BANDS.map((band) => [band, { proposed: 0, agree: 0, partial: 0, disagree: 0, tagIsOriginalArtist: 0, tagNotInName: 0 }])) as Record<
     ConfidenceBand,
     Record<"proposed" | Verdict, number>
   >;
@@ -222,13 +227,16 @@ export function buildEnrichReport(tracks: readonly EnrichTrack[], options: Repor
       noProposal++;
       continue;
     }
-    const agreement = creditsAgreement({ artist: blind.artist.value, featuring: blind.featuring?.value ?? null, remixer: blind.remixer?.value ?? null }, tag);
+    const agreement = creditsAgreement(
+      { artist: blind.artist.value, originalArtist: blind.originalArtist?.value ?? null, featuring: blind.featuring?.value ?? null, remixer: blind.remixer?.value ?? null },
+      tag,
+    );
     const inName = comparableText(`${track.rawName} ${track.fileName ?? ""}`);
     const verdict: Verdict =
       agreement !== "disagree"
         ? agreement
-        : blind.remixer !== null && artistAgreement(blind.remixer.value, tag) !== "disagree"
-          ? "tagIsRemixer"
+        : blind.originalArtist !== null && artistAgreement(blind.originalArtist.value, tag) !== "disagree"
+          ? "tagIsOriginalArtist"
           : [...artistNames(tag)].some((name) => inName.includes(name))
             ? "disagree"
             : "tagNotInName";
@@ -272,6 +280,7 @@ export function buildEnrichReport(tracks: readonly EnrichTrack[], options: Repor
     trackCount: tracks.length,
     fields: {
       artist: field("artist"),
+      originalArtist: field("originalArtist"),
       remixer: field("remixer"),
       mixKind: field("mixKind"),
       featuring: field("featuring"),

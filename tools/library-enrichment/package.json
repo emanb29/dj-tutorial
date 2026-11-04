@@ -1,0 +1,12 @@
+{
+  "name": "library-enrichment",
+  "private": true,
+  "type": "module",
+  "description": "Personal tooling, not part of the app: proposes missing artist, genre and year for a music library and writes an enriched copy of a rekordbox collection XML.",
+  "scripts": {
+    "enrich": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint ."
+  }
+}

@@ -34,8 +34,8 @@ function lessonGroup(lessonIds: readonly string[], catalogue: readonly string[],
 export const SPEC_RULES: readonly SpecRule[] = [
   // The check job runs every unit and browser test; changing one, or its fixtures, needs no end-to-end run.
   { paths: ["**/*.test.ts", "**/*.test.tsx", "src/**/test-support.ts", "src/checks/testing/**", "src/tracks/fixtures/**"], specs: [] },
-  // Docs, prototypes and the composer are outside the build.
-  { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
+  // Docs, prototypes and tools/ (the composer, library enrichment: tooling with its own tests, never imported by the app) are outside the build.
+  { paths: ["docs/**", "**/*.md", "tools/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
   // Mix plans (ISS-186): its store, resolution and model are unit and browser tested; its track picker
   // is the library browser, played end to end in library-browser.spec.ts.
   { paths: ["src/app/mix-plans/**"], specs: ["e2e/library-browser.spec.ts"] },
@@ -54,9 +54,6 @@ export const SPEC_RULES: readonly SpecRule[] = [
   },
   // The Mix Editor (ISS-189): so far only pure derivations (Execution plan, Complexity rating), with no screen; unit tested.
   { paths: ["src/app/mix-editor/**"], specs: [] },
-  // Library metadata enrichment (ISS-198), step 1: the pure name parser and its dry-run script. Nothing
-  // in the app imports them yet; unit tested.
-  { paths: ["shared/name-parse.ts", "scripts/enrich-names.ts", "scripts/enrich-names-report.ts"], specs: [] },
   // The spec itself, when only it changed.
   { paths: ["e2e/*.spec.ts"], specs: "self" },
   // Shared by everything: any change here runs the whole suite.
