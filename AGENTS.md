@@ -45,8 +45,12 @@ The API reads `API_HOST` and `API_PORT` (defaults `127.0.0.1`, `5180`). It also 
   | LOAD B | Ready; Freestyle: loads it onto B (a playing deck refuses); Mix plans, the set builder: adds it | R |
   | SHIFT + LOAD A | practice | P |
   | SHIFT + LOAD B | Not yet (Placement) | N |
+  | BROWSE press on a track (a library) | previews it in the mini player: play / pause | Space |
+  | SHIFT + BROWSE turn | jumps the playing preview 16 bars (30 s with no grid); with none playing, moves the ring | ← / → |
 
   The "your music" pickers (Freestyle, Mix plans, the set builder) are one library browser, `src/app/library-browser/`: search, sort, filters and browse by artist, genre or key, from metadata only (it never opens a file; `large-library.test.ts` proves it on 10,000 tracks). It draws only the rows in view; ringing a row scrolls it into view, which draws the next ones, so BROWSE turns through all of them. It takes LOAD itself (`FLX4_LOAD_EVENT`) while the ring is on a row; the keyboard has ↑ / ↓, Enter (A) and Shift + Enter (B).
+
+  Each row has a mini player (`preview-player.ts`): ▶ (or BROWSE press, Space) previews the track in an `<audio>` element of its own, one at a time, never through the decks or the AudioEngine. A file is opened only on play (a local one through an object URL, revoked when it stops; a server-library file or an Original streamed by URL with byte ranges: `TrackMedia` on `FolderFile` and `TrackSource.preview`), and nothing is decoded. It starts at a rekordbox cue named Drop or Chorus, an Original's drop, the analysis's first big energy rise, else a third in (`preview-start.ts`), and plays in the headphones when the output mode has a headphone path (`preview-route.ts`). The playing row shows a bar to tap and the time; SHIFT + BROWSE turn (`FLX4_PREVIEW_JUMP_EVENT`) or ← / → jump 16 bars.
 
   TAP is SHIFT + BEAT ▶, plus the borrowed pads and BEAT ◀ / ▶; the BROWSE press is no longer TAP (one meaning per control). Typing and picking a file need the keyboard, mouse or screen, and the page says so when the ring is on one. Starting the sound needs one click, tap or key per page load: browsers do not count MIDI as a gesture.
 - The FLX4 cannot report its fader and knob positions (no such message in AlphaTheta's list). `src/midi/positions.ts` remembers each control once it has moved, so a controller on screen shows pickup marks at once. The unofficial Mixxx SysEx position request got no answer from a DDJ-FLX4-N, so the app does not send it.

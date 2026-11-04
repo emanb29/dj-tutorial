@@ -195,7 +195,7 @@
 }
 
 .lb-row .lb-col-title {
-  grid-column: 1 / 5;
+  grid-column: 1 / 4;
   grid-row: 1;
 }
 
@@ -209,14 +209,17 @@
   grid-row: 2;
 }
 
+/* The length beside the title, so the second line keeps its room for BPM and key next to ▶ and the
+   picker's buttons on a phone. */
 .lb-row .lb-col-key {
-  grid-column: 3;
+  grid-column: 3 / 5;
   grid-row: 2;
 }
 
 .lb-row .lb-col-length {
   grid-column: 4;
-  grid-row: 2;
+  grid-row: 1;
+  justify-self: end;
 }
 
 .lb-row .lb-col-album,
@@ -266,10 +269,12 @@
   display: block;
   grid-row: 1;
   grid-column: auto;
+  justify-self: stretch;
 }
 
 .library-browser[data-layout="wide"] .lb-row:not(.lb-facet) > .lb-actions {
   display: flex;
+  justify-self: end;
 }
 
 .lb-head {
@@ -329,8 +334,7 @@
 
 .lb-row.lb-previewing > .lb-col-artist,
 .lb-row.lb-previewing > .lb-col-bpm,
-.lb-row.lb-previewing > .lb-col-key,
-.lb-row.lb-previewing > .lb-col-length {
+.lb-row.lb-previewing > .lb-col-key {
   display: none;
 }
 
@@ -373,9 +377,11 @@
 /* One row of columns keeps every cell (the wide rule above outranks the hiding), and the player runs
    along the row's foot. */
 .library-browser[data-layout="wide"] .lb-row .lb-player {
+  /* Out of the grid's areas, so it is placed against the whole row; it stops short of the buttons. */
+  grid-area: auto;
   position: absolute;
   left: var(--lb-inset);
-  right: var(--lb-inset);
+  right: calc(var(--lb-inset) + var(--lb-actions) + var(--lb-gap));
   bottom: 0;
   height: 16px;
 }

@@ -117,7 +117,7 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
   const columns = useMemo(() => shownColumns(rows), [rows]);
   const layout = layoutFor(widthPx - scrollbarPx, columns, actionsPx);
   const sortChoices = columns.includes(sort.column) ? columns : [...columns, sort.column];
-  const layoutStyle = { "--lb-columns": columnTemplate(columns, actionsPx), "--lb-gap": `${String(COLUMN_GAP_PX)}px`, "--lb-inset": `${String(ROW_PADDING_PX)}px`, "--lb-scrollbar": `${String(scrollbarPx)}px` } as CSSProperties;
+  const layoutStyle = { "--lb-columns": columnTemplate(columns, actionsPx), "--lb-gap": `${String(COLUMN_GAP_PX)}px`, "--lb-inset": `${String(ROW_PADDING_PX)}px`, "--lb-scrollbar": `${String(scrollbarPx)}px`, "--lb-actions": `${String(actionsPx)}px` } as CSSProperties;
 
   // The row's buttons (+ Add, → A, → B) are the picker's: their width is read off a drawn row. The
   // list's scrollbar narrows the rows and not the header, so the header makes room for it too.
