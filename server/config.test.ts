@@ -8,6 +8,8 @@ describe("loadRuntimeConfig", () => {
       config: {
         dataDir: ".local/data",
         originalsDir: ".local/tracks/originals",
+        musicDir: null,
+        rekordboxXml: null,
         anthropicApiKey: null,
         coachMonthlyCapUsd: 5,
         coachLogPayloads: false,
@@ -16,6 +18,11 @@ describe("loadRuntimeConfig", () => {
         maxLearners: 16,
       },
     });
+  });
+
+  it("treats an empty MUSIC_DIR or REKORDBOX_XML as none, so an empty value in the environment overrides .env", () => {
+    const result = loadRuntimeConfig({ MUSIC_DIR: "", REKORDBOX_XML: "  " });
+    expect(result.ok && [result.config.musicDir, result.config.rekordboxXml]).toEqual([null, null]);
   });
 
   it("treats a blank ANTHROPIC_API_KEY as no key", () => {
@@ -27,6 +34,8 @@ describe("loadRuntimeConfig", () => {
     const result = loadRuntimeConfig({
       DATA_DIR: "/tmp/dj",
       ORIGINALS_DIR: "/tmp/originals",
+      MUSIC_DIR: " /srv/Music ",
+      REKORDBOX_XML: "/srv/rekordbox.xml",
       ANTHROPIC_API_KEY: "test-key-not-real",
       COACH_MONTHLY_CAP_USD: "2.5",
       COACH_LOG_PAYLOADS: "1",
@@ -38,6 +47,8 @@ describe("loadRuntimeConfig", () => {
       config: {
         dataDir: "/tmp/dj",
         originalsDir: "/tmp/originals",
+        musicDir: "/srv/Music",
+        rekordboxXml: "/srv/rekordbox.xml",
         anthropicApiKey: "test-key-not-real",
         coachMonthlyCapUsd: 2.5,
         coachLogPayloads: true,

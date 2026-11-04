@@ -4,7 +4,8 @@
 //
 // Cheap first, as a large library needs (the folder is never decoded to find a track):
 // 1. a file the library already analysed with that hash: no read at all;
-// 2. files with the same name and a length that fits: their first 4 MB are hashed (no decode), a few at most;
+// 2. files with the same name and a length that fits: their first 4 MB are hashed (no decode), a few at most
+//    (a file in the server's library sends only those 4 MB);
 // 3. a file with the same name and length but other bytes (re-encoded, re-tagged): found "by name",
 //    and its grid is checked against the plan's (a gridHash mismatch says which Transitions to check);
 // 4. otherwise missing: the page offers "Find <file>", and the plan still opens.
@@ -12,7 +13,7 @@
 // the plan's own tracks are ever analysed. Nothing here sends anything anywhere.
 import { CONTENT_HASH_PREFIX_BYTES, hashTrackBytes } from "@shared/track-hash.ts";
 import type { PlanGrid, PlanTrack } from "@shared/mix-plan.ts";
-import type { FolderFile } from "@tracks";
+import type { FolderFile, ReadPrefix } from "@tracks";
 
 /** How far a file's known length may be from the plan's and still be the same track. */
 const DURATION_TOLERANCE_SEC = 1;
@@ -27,10 +28,12 @@ const sameName = (a: string, b: string) => a.localeCompare(b, undefined, { sensi
 const lengthFits = (file: Pick<FolderFile, "durationSec">, track: PlanTrack) =>
   file.durationSec === null || Math.abs(file.durationSec - track.durationMs / 1000) <= DURATION_TOLERANCE_SEC;
 
-/** The track's content hash for `file`, reading only the part the hash covers and taking the plan's length (no decode). */
-export async function hashAsTrack(file: Blob, track: Pick<PlanTrack, "durationMs">): Promise<string> {
-  const prefix = await file.slice(0, CONTENT_HASH_PREFIX_BYTES).arrayBuffer();
-  return hashTrackBytes(prefix, track.durationMs / 1000);
+/**
+ * The track's content hash for a file, reading only the part the hash covers and taking the plan's
+ * length (no decode). A server library file reads that part with one Range request.
+ */
+export async function hashAsTrack(readPrefix: ReadPrefix, track: Pick<PlanTrack, "durationMs">): Promise<string> {
+  return hashTrackBytes(await readPrefix(CONTENT_HASH_PREFIX_BYTES), track.durationMs / 1000);
 }
 
 /** Finds each of `tracks` among the library's `files`, in plan order. */
@@ -46,7 +49,7 @@ async function resolveOne(track: PlanTrack, files: readonly FolderFile[], byHash
   // A file whose hash is known (and is not this one) has other bytes: no need to read it.
   for (const file of named.filter((each) => each.contentHash === null).slice(0, MAX_HASHED_PER_TRACK)) {
     try {
-      if ((await hashAsTrack(await file.read(), track)) === track.contentHash) return { kind: "found", matchedBy: "hash", file };
+      if ((await hashAsTrack(file.readPrefix, track)) === track.contentHash) return { kind: "found", matchedBy: "hash", file };
     } catch (error) {
       // Moved or deleted since the last scan: the next candidate, or missing.
       console.warn("mixPlans.resolve.unreadable", { file: file.name, error });

@@ -11,10 +11,8 @@
  * (after symlinks) must be inside the originals directory's real path. Anything else is a 404.
  * The routes sit under `/api/*`, so the same-origin guard in app.ts applies to them.
  */
-import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
-import { Readable } from "node:stream";
 import { Hono, type Context } from "hono";
 import type { ApiFailure, ApiSuccess } from "@shared";
 import { describeIssues } from "@shared/learner.ts";
@@ -26,6 +24,7 @@ import {
   type OriginalMeta,
   type OriginalSummary,
 } from "@shared/originals.ts";
+import { fileResponse } from "./byte-range.ts";
 import type { Logger } from "./logger.ts";
 
 const SAFE_FOLDER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -82,25 +81,6 @@ async function resolveInside(root: string, folder: string, file: string): Promis
     if (isMissing(error)) return null;
     throw error;
   }
-}
-
-type ByteRange = { readonly start: number; readonly end: number } | "unsatisfiable" | null;
-
-/** Parses a single `bytes=a-b`, `bytes=a-` or `bytes=-n` range. Multiple ranges get the whole file. */
-function parseRange(header: string | undefined, size: number): ByteRange {
-  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (match === null) return null;
-  const [, from = "", to = ""] = match;
-  if (from === "" && to === "") return null;
-  if (from === "") {
-    const length = Number(to);
-    return length === 0 ? "unsatisfiable" : { start: Math.max(0, size - length), end: size - 1 };
-  }
-  const start = Number(from);
-  // An invalid range (end before start) is ignored, per RFC 9110 §14.2: the whole file is sent.
-  if (to !== "" && Number(to) < start) return null;
-  const end = to === "" ? size - 1 : Math.min(Number(to), size - 1);
-  return start >= size ? "unsatisfiable" : { start, end };
 }
 
 export function originalsRoutes(root: string, logger: Logger): Hono {
@@ -164,22 +144,7 @@ export function originalsRoutes(root: string, logger: Logger): Hono {
       if (isMissing(error)) return failure(context, 404, "notFound", "This Original's track.mp3 just disappeared. Try again.");
       throw error;
     }
-    const headers: Record<string, string> = {
-      "content-type": "audio/mpeg",
-      "accept-ranges": "bytes",
-      "cache-control": "private, no-cache",
-    };
-    if (size === 0) return new Response(null, { status: 200, headers: { ...headers, "content-length": "0" } });
-    const range = parseRange(context.req.header("range"), size);
-    if (range === "unsatisfiable") {
-      return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${String(size)}` } });
-    }
-    const { start, end } = range ?? { start: 0, end: size - 1 };
-    const body = Readable.toWeb(createReadStream(located.path, { start, end })) as ReadableStream<Uint8Array>;
-    headers["content-length"] = String(end - start + 1);
-    if (range === null) return new Response(body, { status: 200, headers });
-    headers["content-range"] = `bytes ${String(start)}-${String(end)}/${String(size)}`;
-    return new Response(body, { status: 206, headers });
+    return fileResponse(located.path, size, context.req.header("range"), { "content-type": "audio/mpeg", "cache-control": "private, no-cache" });
   });
 
   return routes;

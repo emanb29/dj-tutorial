@@ -1,15 +1,36 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlanTrack } from "@shared/mix-plan.ts";
 import { testGrid, testPlan } from "@shared/mix-plan-test-support.ts";
-import { hashTrackBytes } from "@shared/track-hash.ts";
-import type { FolderFile } from "@tracks";
+import { CONTENT_HASH_PREFIX_BYTES, hashTrackBytes } from "@shared/track-hash.ts";
+import { MUSIC_LIBRARY_PATH, type MusicLibraryIndex } from "@shared/music-library.ts";
+import { blobPrefix, createMusicFolder, probeServerLibrary, scanServerLibrary, type FolderFile } from "@tracks";
 import { gridForFile, hashAsTrack, resolvePlanTracks } from "./resolve.ts";
 
-/** A library file whose bytes are `text`; counts how often it is opened. */
+/** A library file whose bytes are `text`; counts how often it is opened whole, and how often its start is read. */
 function libraryFile(name: string, text: string, known: Partial<Pick<FolderFile, "durationSec" | "contentHash" | "rekordboxGrid">> = {}) {
   const read = vi.fn(() => Promise.resolve(new File([text], name)));
-  const file: FolderFile = { trackId: `Music/${name}|1|1`, name, album: null, durationSec: null, contentHash: null, rekordboxGrid: null, read, ...known };
-  return { file, read };
+  const readPrefix = vi.fn((length: number) => blobPrefix(new File([text], name))(length));
+  const file: FolderFile = { trackId: `Music/${name}|1|1`, name, album: null, durationSec: null, contentHash: null, rekordboxGrid: null, read, readPrefix, ...known };
+  return { file, read, readPrefix };
+}
+
+/** A fake API holding one library file, `bytes`, that honours single byte ranges as server/byte-range.ts does. Counts the bytes it sends. */
+function rangeServer(path: string, bytes: Uint8Array) {
+  const index: MusicLibraryIndex = { configured: true, name: "Music", files: [{ path, size: bytes.length, lastModified: 1 }], xml: [], rekordboxXml: null, skipped: 0, truncated: false };
+  const sent = { bytes: 0, ranges: [] as (string | null)[] };
+  const fetch = vi.fn((input: string, init?: RequestInit) => {
+    if (input === MUSIC_LIBRARY_PATH) return Promise.resolve(Response.json({ success: true, data: index }));
+    const range = new Headers(init?.headers).get("range");
+    sent.ranges.push(range);
+    const match = range === null ? null : /^bytes=(\d+)-(\d+)$/.exec(range);
+    const start = Number(match?.[1] ?? 0);
+    const end = Math.min(Number(match?.[2] ?? bytes.length - 1), bytes.length - 1);
+    const body = bytes.slice(start, end + 1);
+    sent.bytes += body.length;
+    const headers: Record<string, string> = match === null ? {} : { "content-range": `bytes ${String(start)}-${String(end)}/${String(bytes.length)}` };
+    return Promise.resolve(new Response(body, { status: match === null ? 200 : 206, headers }));
+  });
+  return { fetch: fetch as unknown as typeof globalThis.fetch, sent };
 }
 
 /** A plan track whose file holds `text` and lasts `durationMs`. */
@@ -29,7 +50,7 @@ describe("resolvePlanTracks", () => {
     const renamed = libraryFile("renamed.mp3", "AAA", { contentHash: track.contentHash, durationSec: 300 });
 
     expect(await resolvePlanTracks([track], [renamed.file])).toEqual([{ kind: "found", matchedBy: "hash", file: renamed.file }]);
-    expect(renamed.read).not.toHaveBeenCalled();
+    expect(renamed.readPrefix).not.toHaveBeenCalled();
   });
 
   it("hashes same-named files it has not analysed, without decoding them", async () => {
@@ -38,8 +59,9 @@ describe("resolvePlanTracks", () => {
     const same = libraryFile("Kay Grove - Brothers.mp3", "BROTHERS");
 
     expect(await resolvePlanTracks([track], [other.file, same.file])).toEqual([{ kind: "found", matchedBy: "hash", file: same.file }]);
-    expect(other.read).toHaveBeenCalledTimes(1);
-    expect(same.read).toHaveBeenCalledTimes(1);
+    expect(other.readPrefix).toHaveBeenCalledExactlyOnceWith(CONTENT_HASH_PREFIX_BYTES);
+    expect(same.readPrefix).toHaveBeenCalledExactlyOnceWith(CONTENT_HASH_PREFIX_BYTES);
+    expect([other.read, same.read].every((read) => read.mock.calls.length === 0)).toBe(true);
   });
 
   it("falls back to a file with the same name and length but other bytes, saying so", async () => {
@@ -48,7 +70,7 @@ describe("resolvePlanTracks", () => {
     const tooLong = libraryFile("a.mp3", "EXTENDED MIX", { contentHash: "e".repeat(64), durationSec: 420 });
 
     expect(await resolvePlanTracks([track], [tooLong.file, reencoded.file])).toEqual([{ kind: "found", matchedBy: "name", file: reencoded.file }]);
-    expect(reencoded.read).not.toHaveBeenCalled();
+    expect(reencoded.readPrefix).not.toHaveBeenCalled();
   });
 
   it("says Find <file> for a track that is not in the library", async () => {
@@ -67,7 +89,7 @@ describe("resolvePlanTracks", () => {
     const resolved = await resolvePlanTracks(tracks, library.map((each) => each.file));
 
     expect(resolved.map((each) => each.kind)).toEqual(["missing", "missing"]);
-    expect(library.every((each) => each.read.mock.calls.length === 0)).toBe(true);
+    expect(library.every((each) => each.read.mock.calls.length + each.readPrefix.mock.calls.length === 0)).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(performance.now() - started).toBeLessThan(200);
   });
@@ -75,8 +97,30 @@ describe("resolvePlanTracks", () => {
   it("reads only the hashed prefix of a long file", async () => {
     const big = new Blob([new Uint8Array(6 * 1024 * 1024)]);
     const sliced = vi.spyOn(big, "slice");
-    await hashAsTrack(big, { durationMs: 1000 });
+    await hashAsTrack(blobPrefix(big), { durationMs: 1000 });
     expect(sliced).toHaveBeenCalledWith(0, 4 * 1024 * 1024);
+  });
+
+  it("finds a file in the server's library with one Range request for its first 4 MB, hashing it as the local file", async () => {
+    const bytes = Uint8Array.from({ length: CONTENT_HASH_PREFIX_BYTES + 1024 * 1024 }, (_, index) => (index * 31) % 251);
+    const local = new File([bytes], "Kay Grove - Brothers.mp3");
+    const track: PlanTrack = { ...(await planTrack("Kay Grove - Brothers.mp3", "")), contentHash: await hashAsTrack(blobPrefix(local), { durationMs: 300_000 }) };
+    const server = rangeServer("House/Kay Grove - Brothers.mp3", bytes);
+    const music = createMusicFolder({
+      analyse: () => Promise.reject(new Error("resolving never decodes")),
+      scan: (root, options) => scanServerLibrary({ fetch: server.fetch })(root, options),
+      watch: () => Promise.resolve({ how: "polling", stop: () => undefined }),
+      server: () => probeServerLibrary({ fetch: server.fetch }),
+      notifyEveryMs: 0,
+    });
+    await music.start();
+    await music.settled();
+
+    const [resolved] = await resolvePlanTracks([track], music.files());
+
+    expect(resolved).toMatchObject({ kind: "found", matchedBy: "hash", file: { name: "Kay Grove - Brothers.mp3" } });
+    expect(server.sent).toEqual({ bytes: CONTENT_HASH_PREFIX_BYTES, ranges: [`bytes=0-${String(CONTENT_HASH_PREFIX_BYTES - 1)}`] });
+    music.dispose();
   });
 });
 

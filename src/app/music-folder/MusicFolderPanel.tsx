@@ -3,6 +3,8 @@
 // Opening the browser's folder picker, and allowing access again, need a click, tap or key: MIDI
 // is not a user gesture, so with the FLX4 the ring's caption says so. The same goes for picking
 // rekordbox.xml ("Use rekordbox.xml"), whose BPMs, grids, keys and cues fill in the folder's tracks.
+// When the API server has a music library (MUSIC_DIR), it is the folder on every device: there is
+// nothing to pick, import or forget here, only Rescan, and its rekordbox.xml is the server's too.
 import { useState, useSyncExternalStore } from "react";
 import type { MusicFolder, MusicFolderSnapshot } from "@tracks";
 import { useControllerConnected } from "../controller/KeyHint.tsx";
@@ -10,6 +12,12 @@ import "./music-folder.css";
 
 /** Where rekordbox.xml comes from, for a Learner who has not made one. */
 export const REKORDBOX_HOW = "rekordbox: File → Export Collection in xml format. Pick it, or save it in your music folder.";
+
+/** Where the server's library takes rekordbox.xml from, in place of "Use rekordbox.xml". */
+export const SERVER_REKORDBOX_LINE = "rekordbox.xml comes from the server, the same on every device: REKORDBOX_XML in its .env, or rekordbox.xml in MUSIC_DIR.";
+
+/** Where the server's library comes from, and how often it is checked. */
+export const SERVER_LINE = "The server's MUSIC_DIR sets this library, the same on every device. Checks for new tracks every 30 s.";
 
 export const GESTURE_NOTICE = "Picking a folder or file needs the mouse, keyboard or screen. Turn BROWSE to go past it.";
 
@@ -37,6 +45,11 @@ export function folderCounts(snapshot: MusicFolderSnapshot): string {
 
 /** The caption: what is going on, in one short line. */
 export function folderCaption(snapshot: MusicFolderSnapshot): string {
+  if (snapshot.source === "server") {
+    if (snapshot.folder === null) return "The server's music library can't be read.";
+    const name = `“${snapshot.folder}” on the server`;
+    return snapshot.scanning ? `Looking in ${name}… ${plural(snapshot.found, "track")} so far` : `${name}: ${folderCounts(snapshot)}`;
+  }
   const name = snapshot.folder === null ? "" : `“${snapshot.folder}”`;
   if (snapshot.access === "none") return snapshot.canPick ? "Pick your music folder. New tracks show up by themselves." : "Import your music folder.";
   if (snapshot.access === "needs-permission") return `${name}: the browser needs one click to read it again.`;
@@ -55,8 +68,17 @@ export function rekordboxLine(snapshot: MusicFolderSnapshot): string | null {
   return `rekordbox: matched ${linked.matched.toLocaleString()} of ${snapshot.found.toLocaleString()}${skipped}`;
 }
 
+/** Where rekordbox.xml comes from, under the buttons: the server, or how to make one. Null when nothing needs saying. */
+export function rekordboxHint(snapshot: MusicFolderSnapshot): string | null {
+  const linked = snapshot.rekordbox;
+  if (linked === null) return null;
+  if (linked.serverExport) return SERVER_REKORDBOX_LINE;
+  return linked.from === null && !linked.reading ? REKORDBOX_HOW : null;
+}
+
 /** How new tracks get in. */
-function refreshLine(snapshot: MusicFolderSnapshot): string | null {
+export function refreshLine(snapshot: MusicFolderSnapshot): string | null {
+  if (snapshot.source === "server") return snapshot.access === "granted" ? SERVER_LINE : null;
   if (snapshot.access === "imported") return "Imported once. This browser can't watch a folder: import again for new tracks.";
   if (snapshot.access !== "granted") return null;
   if (snapshot.refresh === "observer") return "New tracks show up by themselves.";
@@ -86,7 +108,8 @@ export function MusicFolderPanel({ folder, compact = false }: MusicFolderPanelPr
     },
   };
 
-  const pickButton = snapshot.canPick ? (
+  const onServer = snapshot.source === "server";
+  const pickButton = onServer ? null : snapshot.canPick ? (
     <button type="button" className="btn" {...gestureProps} onClick={() => { run(() => folder.pick()); }}>
       {snapshot.access === "none" ? "Pick a folder" : "Change folder"}
     </button>
@@ -114,9 +137,16 @@ export function MusicFolderPanel({ folder, compact = false }: MusicFolderPanelPr
   const link = folder.rekordbox;
   const linked = snapshot.rekordbox;
   const rekordboxText = rekordboxLine(snapshot);
+  const rekordboxHintText = rekordboxHint(snapshot);
 
   return (
-    <div className={compact ? "music-folder music-folder-compact" : "music-folder"} data-testid="music-folder" data-access={snapshot.access} data-scanning={snapshot.scanning}>
+    <div
+      className={compact ? "music-folder music-folder-compact" : "music-folder"}
+      data-testid="music-folder"
+      data-access={snapshot.access}
+      data-source={snapshot.source}
+      data-scanning={snapshot.scanning}
+    >
       <p className="music-folder-caption" role="status" aria-live="polite">
         {folderCaption(snapshot)}
       </p>
@@ -133,7 +163,7 @@ export function MusicFolderPanel({ folder, compact = false }: MusicFolderPanelPr
             Rescan now
           </button>
         ) : null}
-        {!compact && snapshot.access !== "none" ? (
+        {!compact && !onServer && snapshot.access !== "none" ? (
           <button type="button" className="btn btn-quiet" onClick={() => void folder.forget()}>
             Forget folder
           </button>
@@ -144,7 +174,7 @@ export function MusicFolderPanel({ folder, compact = false }: MusicFolderPanelPr
           {rekordboxText}
         </p>
       )}
-      {!compact && link !== null && linked !== null ? (
+      {!compact && link !== null && linked !== null && !linked.serverExport ? (
         <div className="music-folder-buttons">
           {linked.canPickFile ? (
             <button type="button" className="btn" {...gestureProps} onClick={() => { run(() => link.pickFile()); }}>
@@ -171,13 +201,17 @@ export function MusicFolderPanel({ folder, compact = false }: MusicFolderPanelPr
           ) : null}
         </div>
       ) : null}
-      {!compact && linked !== null && linked.from === null && !linked.reading ? <p className="hw-hint">{REKORDBOX_HOW}</p> : null}
+      {!compact && rekordboxHintText !== null ? (
+        <p className="hw-hint" data-testid="rekordbox-hint">
+          {rekordboxHintText}
+        </p>
+      ) : null}
       {controllerConnected && ringOnPicker ? (
         <p className="hw-hint" data-testid="music-folder-gesture">
           {GESTURE_NOTICE}
         </p>
       ) : null}
-      {!compact && !snapshot.canPick && snapshot.access === "none" ? (
+      {!compact && !onServer && !snapshot.canPick && snapshot.access === "none" ? (
         <p className="hw-hint">This browser can't watch a folder: import again for new tracks.</p>
       ) : null}
       {shownProblem === null ? null : (

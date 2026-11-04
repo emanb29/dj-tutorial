@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -183,3 +183,84 @@ test("without a folder picker (Android Chrome), a folder is imported once and th
     rmSync(folder, { recursive: true, force: true });
   }
 });
+
+// The server's music library (MUSIC_DIR): the e2e API has none (playwright.config.ts), so the page's
+// requests to /api/music-library are answered here as the server would, in shared/music-library.ts's
+// shape (server/music-library.test.ts tests the real route). A real MP3 so its BPM can be found.
+const MP3 = readFileSync(join(import.meta.dirname, "fixtures", "original.mp3"));
+// The server's REKORDBOX_XML, knowing one of the two files.
+const SERVER_REKORDBOX = `<?xml version="1.0" encoding="UTF-8"?><DJ_PLAYLISTS Version="1.0.0"><PRODUCT Name="rekordbox"/><COLLECTION Entries="1">
+<TRACK TrackID="1" Name="Brothers" Artist="Kay Grove" AverageBpm="123.00" Size="${String(MP3.length)}" Location="file://localhost/D:/Server%20Music/House/Kay%20Grove%20-%20Brothers.mp3"/>
+</COLLECTION></DJ_PLAYLISTS>`;
+
+async function serveLibrary(page: Page): Promise<string[]> {
+  const asked: string[] = [];
+  await page.route("**/api/music-library**", async (route) => {
+    const url = new URL(route.request().url());
+    asked.push(`${url.pathname}${url.search}`);
+    if (url.pathname === "/api/music-library") {
+      await route.fulfill({
+        json: {
+          success: true,
+          data: {
+            configured: true,
+            name: "Server Music",
+            files: [
+              { path: "House/Kay Grove - Brothers.mp3", size: MP3.length, lastModified: 1_700_000_000_000 },
+              { path: "Broken - Not Music.mp3", size: 9, lastModified: 1_700_000_000_000 },
+            ],
+            xml: [],
+            rekordboxXml: { size: SERVER_REKORDBOX.length, lastModified: 1_700_000_000_000 },
+            skipped: 0,
+            truncated: false,
+          },
+        },
+      });
+      return;
+    }
+    if (url.pathname === "/api/music-library/rekordbox.xml") {
+      await route.fulfill({ body: SERVER_REKORDBOX, contentType: "application/xml" });
+      return;
+    }
+    const path = url.searchParams.get("path");
+    if (path === "House/Kay Grove - Brothers.mp3") await route.fulfill({ body: MP3, contentType: "audio/mpeg" });
+    else if (path === "Broken - Not Music.mp3") await route.fulfill({ body: "not music", contentType: "audio/mpeg" });
+    else await route.fulfill({ status: 404, json: { success: false, error: "No such file." } });
+  });
+  return asked;
+}
+
+test("the server's music library: every device gets it with nothing to pick, and its files are analysed from the server", async ({ page }) => {
+  test.setTimeout(120_000);
+  const id = learner("music-server");
+  // A browser with no folder picker (a phone) gets the same library.
+  await page.addInitScript(() => {
+    delete (window as { showDirectoryPicker?: unknown }).showDirectoryPicker;
+  });
+  const asked = await serveLibrary(page);
+  await ensureProfile(page, id);
+
+  await page.goto(`/controller?learner=${id}`);
+  const setting = page.getByRole("region", { name: "Music folder" });
+  await expect(setting.getByRole("status")).toContainText("“Server Music” on the server: 2 tracks");
+  await expect(setting).toContainText("The server's MUSIC_DIR sets this library");
+  await expect(setting.getByRole("button", { name: /Pick a folder|Forget folder/ })).toHaveCount(0);
+  await expect(setting.getByText("Import a folder")).toHaveCount(0);
+  await expect(setting.getByRole("button", { name: "Rescan now" })).toBeVisible();
+  // rekordbox.xml is the server's too: nothing to pick on this device, and the page says where it comes from.
+  await expect(setting.getByTestId("rekordbox-status")).toHaveText("rekordbox: matched 1 of 2");
+  await expect(setting.getByTestId("rekordbox-hint")).toContainText("rekordbox.xml comes from the server");
+  await expect(setting.getByText("Use rekordbox.xml")).toHaveCount(0);
+
+  await page.goto(`/?learner=${id}&track=synthetic`);
+  await page.getByRole("button", { name: "Freestyle" }).click();
+  await expect(page.locator("main.freestyle")).toHaveAttribute("data-phase", "ready");
+  const library = page.getByRole("region", { name: "Library" });
+  await expect(library.getByRole("listitem", { name: "Brothers" })).toBeVisible();
+  await expect(library.getByRole("listitem", { name: "Not Music" })).toBeVisible();
+
+  // The background pass (no deck playing) fetches each file from the server and analyses it.
+  await expect(folderPanel(page).getByRole("status")).toContainText("BPM for 1 · 1 with no BPM", { timeout: 60_000 });
+  expect(asked).toContain("/api/music-library/file?path=House%2FKay%20Grove%20-%20Brothers.mp3");
+});
+
