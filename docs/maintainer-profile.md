@@ -26,6 +26,10 @@ project"), and why the Coach's eval cases use it (`docs/coach-design.md`, C1–C
 ## Setup
 
 - **Controller:** Pioneer DDJ-FLX4-N (the Gold Edition; same MIDI as the DDJ-FLX4).
+- **Controller set-up (the default):** rekordbox's [Preferences] > [Controller] > [Mixer] set to:
+  CROSSFADER Curve a little right of centre (between gradual and sharp); Channel Fader Curve Linear;
+  EQ mode (not ISOLATOR), EQ Type DJM-900NXS2; Auto Gain on. What each one does, and how far the
+  app's model differs, is in `docs/research/rekordbox-mixer-settings.md`.
 - **Devices:** a MacBook (trackpad) and an Android phone, both on Chromium browsers, often reaching
   the dev server remotely through a `PUBLIC_HOSTS` tunnel. The UI must work on a phone.
 - **Music:** a large local library (filter on metadata first; decode only a few tracks), plus the
