@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { COACH_CRITERIA_MAX, CheckLineRequestSchema, CurriculumRequestSchema } from "@shared/coach-contract.ts";
-import { deterministicLine } from "@shared/coach-deterministic.ts";
+import { criterionPlainName, deterministicLine, hasPlainName } from "@shared/coach-deterministic.ts";
 import type { CheckResult, CriterionResult } from "@shared/check-result.ts";
-import type { RetentionChange } from "@checks";
+import { gradableCriteria, type RetentionChange } from "@checks";
 import { emptySkillProfile, type CriterionRecord, type SkillProfile } from "@shared/skill-profile.ts";
 import type { LessonId } from "@shared/catalogue.ts";
 import { emptyLearnerRecord, type LearnerRecord } from "@shared/learner.ts";
@@ -110,7 +110,7 @@ describe("toCoachSummary", () => {
       const request = checkLineRequest(tempoResult, { requestId: "6f1c1f0e-8a8b-4c39-9d43-1f2a3b4c5d6e", lessonTitle: "Match tempo by ear", attemptToday, recentLines: [], facts: NO_FACTS, missionTags: [] });
       expect(CheckLineRequestSchema.safeParse(request).success).toBe(true);
       const line = deterministicLine(request);
-      expect(line).toContain("tempo match");
+      expect(line).toContain("matching the tempo by ear");
       expect(line).not.toContain("staying out of the red");
     }
   });
@@ -119,6 +119,31 @@ describe("toCoachSummary", () => {
     const passes = Array.from({ length: COACH_CRITERIA_MAX }, () => beatTaps);
     const crowded: CheckResult = { ...result, criteria: [...passes, fadeOut] };
     expect(toCoachSummary(crowded).criteria.map((criterion) => criterion.status)).toContain("notMet");
+  });
+});
+
+describe("no caption shows a criterion's internal id", () => {
+  // The id's own name ("cfx-back"), or the whole id: hyphenated names only, since a one-word name ("hold") is a word.
+  const idsOf = (id: string) => [id, ...(id.split(".")[1]?.includes("-") === true ? [id.split(".")[1] ?? id] : [])];
+
+  it.each(gradableCriteria())("%s has a plain name, and its result lines never show the id", (id) => {
+    expect(hasPlainName(id)).toBe(true);
+    const lines = (["met", "notMet"] as const).flatMap((status) =>
+      [1, null].map((measured) =>
+        describeCriterion({ id, severity: "fail", status, measured, unit: "count", threshold: { op: "<=", value: 1, unit: "count" }, margin: null, evidence: [] }),
+      ),
+    );
+    const failed = { id, severity: "fail", status: "notMet", measured: 2, unit: "count", threshold: { op: "<=", value: 1, unit: "count" }, margin: -1 } as const;
+    const coachLines = [0, 1, 2].map((attemptToday) =>
+      deterministicLine({
+        requestId: "7d6f8e0a-2b8c-4b3e-9a51-1f2d3c4b5a69",
+        result: { lessonId: "crossfader", mode: "lesson", variant: "full", outcome: "failed", criteria: [failed, { ...failed, id: "standing.no-clip", margin: 0 }], metrics: {} },
+        context: { lessonTitle: "x", focusHistory: [], bestMarginBefore: null, retentionChange: null, attemptToday, missionTags: [], recentLines: [] },
+      }),
+    );
+    for (const line of [...lines, ...coachLines, criterionPlainName(id)]) {
+      for (const leak of idsOf(id)) expect(line.toLowerCase()).not.toContain(leak.toLowerCase());
+    }
   });
 });
 
@@ -224,7 +249,9 @@ describe("describeCriterion", () => {
       "Filter on 7.9 bars before A went out (need 8–16)",
     );
     expect(describeCriterion(criterion("filter-transition.filter-length", null, "bars", 0))).toBe("Filter: no sweep was still on as A went out");
-    expect(describeCriterion(criterion("filter-transition.cfx-back", 0.25, "bars", 1))).toBe("CFX A back 0.25 bars after A went out (need 1 or less)");
+    expect(describeCriterion(criterion("filter-transition.cfx-back", -0.86, "bars", 0))).toBe("CFX A back in the middle before A was heard again");
+    expect(describeCriterion({ ...criterion("filter-transition.cfx-back", null, "bars", 0), status: "notMet" })).toBe("CFX A: not back in the middle by the end");
+    expect(describeCriterion({ ...criterion("filter-transition.cfx-back", 1, "bars", 0), status: "notMet" })).toBe("CFX A: still filtered when A came back in");
   });
 });
 

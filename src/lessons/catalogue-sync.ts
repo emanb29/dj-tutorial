@@ -370,14 +370,16 @@ const crossfaderLesson: LessonDefinition = {
       autoPlay: true,
       faderAtStart: 1,
       deckA: { headphoneCue: false, sync: false, tempoPercent: 0 },
-      // B plays from the Check's start, synced, phrase on phrase with A: silent behind the crossfader.
-      ...(decks.B === undefined ? {} : { deckB: { ...decks.B, play: true, headphoneCue: false } }),
+      // B plays from the Check's start, synced, phrase on phrase with A: silent behind the crossfader,
+      // and cued in the headphones already (the Lesson starts it, as it syncs it), so the blend's
+      // incoming deck is cued first (standing.cued-first); CUE A before the cut is the Learner's.
+      ...(decks.B === undefined ? {} : { deckB: { ...decks.B, play: true, headphoneCue: true } }),
       crossfader: 0,
       firstPhraseAction: blendPos,
       endWhen: { kind: "position", pos: cutPos + barsSec(track, XF_TAIL_BARS) + beat },
       timeoutSec: barsSec(track, BLEND_LEAD_BARS + XF_CUT_BARS + XF_TAIL_BARS) + 5,
       cues: [
-        { fromPos: leadPos, caption: "Phrase 1: B plays, crossfader on A. Crossfader toward B at Phrase 2, bar 1" },
+        { fromPos: leadPos, caption: "Phrase 1: B plays in 🎧, crossfader on A. Crossfader toward B at Phrase 2, bar 1" },
         { fromPos: blendPos, caption: `Crossfader toward B now, slow and steady: ${String(BLEND_ASKED_BARS)} bars` },
         { fromPos: blendPos + barsSec(track, BLEND_ASKED_BARS), caption: "Blend done. CUE 🎧 A on", checkpoint: true },
         { fromPos: blendPos + barsSec(track, 12), caption: "CUE 🎧 A on. Cut back to A at Phrase 4, bar 1 (C)" },
@@ -397,8 +399,12 @@ const crossfaderLesson: LessonDefinition = {
   },
   tips: {
     "crossfader.xf-blend": ["Crossfader toward B at Phrase 2, bar 1: watch the count.", `One hand, one slow move: the crossfader holds the level (no ¾ steps). Take ${String(BLEND_ASKED_BARS)} bars.`],
-    "crossfader.xf-cut": ["CUE 🎧 A on early, then snap to A at Phrase 4, bar 1 (C).", "Watch the count: snap to A (C) when it reads Phrase 4 · bar 1."],
-    "crossfader.faders-up": ["Leave both channel faders up: the crossfader does it all."],
+    "crossfader.xf-cut": [
+      "CUE 🎧 A on early, then snap to A at Phrase 4, bar 1 (C).",
+      "Watch the count: snap to A (C) when it reads Phrase 4 · bar 1.",
+      "A louder or quieter than B? Turn TRIM A a little while it's cued.",
+    ],
+    "crossfader.faders-up": ["Leave both channel faders up: the crossfader fades, TRIM evens the levels."],
   },
 };
 
