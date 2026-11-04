@@ -373,7 +373,7 @@ const beatsOff = (label: string, measured: number | null, never: string) =>
  */
 const loopBarsText = (bars: number, met: boolean) => (met ? String(Math.round(bars)) : bars.toFixed(2));
 
-/** Lessons 17–19; null for criteria of other Lessons. */
+/** Lessons 14–16; null for criteria of other Lessons. */
 function describePerformance(criterion: CriterionResult): string | null {
   const measured = criterion.measured;
   const need = thresholdValue(criterion);

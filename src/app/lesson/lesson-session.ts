@@ -227,7 +227,7 @@ export class LessonSession {
    * it stops, and when its seek takes effect (before then, the heard playhead is still where A was).
    */
   private preview: { readonly phrase: number; readonly previews: PhrasePreviews; readonly untilPos: number; readonly seekCtx: number } | null = null;
-  /** The by-ear practice drill running now (Lessons 14–16), if any. */
+  /** The by-ear practice drill running now (Lessons 17–19), if any. */
   private drill: DrillRunner | null = null;
   /**
    * Check attempts started, for the plan's per-attempt variation (which clip has Master Tempo on). It
@@ -1136,7 +1136,7 @@ export class LessonSession {
     this.watchLoop({ A: waiting.A }, this.setUpLoop(planned.A.pos));
   }
 
-  /** A by-ear drill (Lessons 14–16) over the practice set-up, or null for a Lesson without one. */
+  /** A by-ear drill (Lessons 17–19) over the practice set-up, or null for a Lesson without one. */
   private startDrill(decks: DeckSetups): DrillRunner | null {
     this.stopDrill();
     const drill = this.definition.drill;

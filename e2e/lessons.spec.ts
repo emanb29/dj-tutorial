@@ -209,3 +209,36 @@ test("a Lesson whose prerequisites are not passed is locked in the list", async 
   await expect(page.locator('li[data-lesson="deck-basics"]')).toHaveAttribute("data-standing", "ready");
   await expect(page.locator('li[data-lesson="phrases"]')).toHaveAttribute("data-standing", "locked");
 });
+
+test("the list shows the recorded-mix path, its first mix after the cut, then the live path (ISS-199)", async ({ page }) => {
+  const learnerId = learner("paths");
+  await seedPassed(page, learnerId, ["deck-basics", "beats-and-bars", "phrases", "gain-staging", "headphone-cue", "cue-point", "cut-on-phrase"]);
+  await page.goto(`/?learner=${learnerId}`);
+  const recorded = page.locator('section[data-path="recorded"]');
+  const live = page.locator('section[data-path="live"]');
+  await expect(recorded.getByRole("heading", { name: "Recorded mixes" })).toBeVisible();
+  await expect(live.getByRole("heading", { name: "Live sets (later)" })).toBeVisible();
+  // Course order: hot cues are Lesson 14 on the recorded path; the by-ear Lessons are 17–19, live.
+  await expect(recorded.locator('li[data-lesson="hot-cues"] .lesson-number')).toHaveText("14");
+  await expect(live.locator('li[data-lesson="nudge-phase"] .lesson-number')).toHaveText("17");
+  await expect(live.locator("li")).toHaveCount(4);
+  // The early win is open right after the cut; the final project waits for Lessons 1–16.
+  await expect(recorded.locator('li[data-milestone="first-mix"]')).toHaveAttribute("data-standing", "ready");
+  await expect(recorded.locator('li[data-milestone="recorded-mix"]')).toHaveAttribute("data-standing", "locked");
+  await expect(recorded.locator('li[data-milestone="recorded-mix"]')).toContainText("Pass 9 more Lessons first");
+  // LOAD A (Enter) still starts the next recorded-path Lesson.
+  await expect(page.locator('li[data-lesson="tempo-fader"]')).toHaveAttribute("data-start", "true");
+
+  for (const [name, size] of [["desktop", { width: 1707, height: 960 }], ["phone", { width: 360, height: 740 }]] as const) {
+    await page.setViewportSize(size);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, `${name}: no sideways scroll`).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: `test-results/course-paths/lesson-list-${name}.png`, fullPage: true });
+    await live.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `test-results/course-paths/lesson-list-${name}-live.png` });
+  }
+
+  // The milestone opens Mix plans, where the Mix Editor and Render join it.
+  await recorded.locator('li[data-milestone="first-mix"]').getByRole("button", { name: "Plan it" }).click();
+  await expect(page.getByRole("heading", { name: "Mix plans" })).toBeVisible();
+});

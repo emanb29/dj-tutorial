@@ -1,4 +1,4 @@
-// Lesson 17, `hot-cues`: set hot cues on phrase starts, then trigger each on A's phrase start
+// Lesson 14, `hot-cues`: set hot cues on phrase starts, then trigger each on A's phrase start
 // (check-design §4). One deck: each trigger jumps A to another phrase, on the phrase.
 import type { CriterionResult } from "@shared/check-result.ts";
 import { loadedDeck, type LessonCheck, type TaskOf } from "../context.ts";

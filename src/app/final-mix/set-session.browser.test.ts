@@ -113,7 +113,7 @@ describe.each([
       press({ control: "channel-fader", deck: "B", value: 1 });
       press({ control: "channel-fader", deck: "A", value: 0 });
       press({ control: "headphone-cue", deck: "B", value: false });
-      // Track 3 onto the free deck, cued in the headphones with its LOW cut (Lesson 16).
+      // Track 3 onto the free deck, cued in the headphones with its LOW cut (Lesson 19).
       await offline.renderTo(offline.now() + 2);
       expect(await session.loadNext(signal)).toEqual({ ok: true });
       press({ control: "headphone-cue", deck: "A", value: true });

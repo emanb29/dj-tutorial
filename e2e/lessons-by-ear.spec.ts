@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { caption, commandsAtBeats, learner, openLesson, readyFromPhraseStart, resultCard, seedPassed, type LessonWindow } from "./lesson-support.ts";
 
-// Lessons 14–16 end to end, muted, on the synthetic grooves: deck A 124 BPM, and for the two-track
+// Lessons 17–19 end to end, muted, on the synthetic grooves: deck A 124 BPM, and for the two-track
 // Lessons a 121 BPM groove on deck B; both have the first beat at 0 s and bar 1 on beat 0. The jog
 // nudges and the tempo moves go through the Learner's own input path: nudge keys held on the window
 // (the controller's key handler), and arrow keys on the focused TEMPO B fader. A test "ear" reads the

@@ -1,4 +1,4 @@
-// Lessons 17–19 as data: each plan sets the decks up as the Lesson needs, an attempt recorded on that
+// Lessons 14–16 as data: each plan sets the decks up as the Lesson needs, an attempt recorded on that
 // plan grades as the Check should, and what the hook and practice left in the recording (the same
 // positions, the same pads) before the Check's own cue never reaches the grade. Attempts are synthetic.
 import { describe, expect, it } from "vitest";
@@ -37,7 +37,7 @@ const byId = (result: CheckResult, id: string) => result.criteria.find((criterio
 const failed = (result: CheckResult) => (result.outcome.kind === "failed" ? result.outcome.failedCriteria : []);
 const masterFrames = (to: number) => frames(RECORDER_START, to, (t) => (t < CUED ? PRACTICE_CLIP : MUSIC));
 
-describe("the Lesson catalogue for Lessons 17–19", () => {
+describe("the Lesson catalogue for Lessons 14–16", () => {
   it("adds hot-cues, loop-transition and echo-out, in catalogue order", () => {
     const ids = LESSONS.map((lesson) => lesson.id);
     expect(ids.filter((id) => ["hot-cues", "loop-transition", "echo-out"].includes(id))).toEqual(["hot-cues", "loop-transition", "echo-out"]);

@@ -293,7 +293,7 @@ export type CheckEnd =
   | { readonly kind: "did-then"; readonly what: HookTrigger; readonly count: number; readonly bars: number };
 
 /**
- * A by-ear practice drill (Lessons 14–16): short rounds, one rep each, run live by the app. A round
+ * A by-ear practice drill (Lessons 17–19): short rounds, one rep each, run live by the app. A round
  * starts both decks again from their practice set-up with B `offsetsBeats[i]` out of phase and
  * `apartPercents[i]` off A's tempo (rotating through the lists); between rounds, `revealMs` of feedback
  * (and the covered displays shown, `LessonDefinition.locks`).
@@ -477,7 +477,7 @@ export interface LessonDefinition {
    * display and phase meter covered (catalogue §1, Q5). A drill shows them between rounds.
    */
   readonly locks?: readonly ControlId[];
-  /** By-ear practice (Lessons 14–16): rounds run live by the app; see `PracticeDrill`. */
+  /** By-ear practice (Lessons 17–19): rounds run live by the app; see `PracticeDrill`. */
   readonly drill?: PracticeDrill;
   /**
    * Grade from the Check's own cue on every deck it sets up, not from the recorder's start: for the

@@ -845,7 +845,7 @@ export function describeLessons(first: number, last: number): void {
     "$name passes",
     { timeout: 120_000 },
     async ({ pick, index }) => {
-      // Every earlier Lesson passed: the plan's captions may build on them (Lesson 18's bass swap after Lesson 12).
+      // Every earlier Lesson passed: the plan's captions may build on them (Lesson 15's bass swap after Lesson 12).
       const passed = LESSONS.slice(0, index).map((lesson) => lesson.id);
       const run = await harness(pick, passed);
       // A moment of practice first, as the Learner has: the recorded playheads hold it too.
