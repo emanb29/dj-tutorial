@@ -62,6 +62,17 @@ describe("local file source", () => {
     expect(await source.list()).toMatchObject({ ok: true, value: [{ title: "Brothers" }, { title: "loop" }] });
   });
 
+  it("takes the whole file name as the title when the part after ' - ' is only punctuation", () => {
+    const source = createLocalFileSource({ decode: fakeDecoder().decode, handleStore: memoryHandleStore() });
+
+    const tracks = source.addFiles([file("Kay Grove - -.mp3"), file("Kay Grove - ....mp3")]);
+
+    expect(tracks).toMatchObject([
+      { title: "Kay Grove - -", artist: "Unknown artist" },
+      { title: "Kay Grove - ...", artist: "Unknown artist" },
+    ]);
+  });
+
   it("ignores files that are not audio and does not add the same file twice", () => {
     const source = createLocalFileSource({ decode: fakeDecoder().decode, handleStore: memoryHandleStore() });
 

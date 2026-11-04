@@ -144,3 +144,34 @@ test("Mix plans at phone width: the browser fits the screen and a tap on + Add a
   await first.getByRole("button", { name: "Add Copper Tide" }).click();
   await expect(playOrder(page)).toHaveText([/A · Copper Tide/]);
 });
+
+test("Mix plans in a 963 px window: the browser stays inside its card, and its rows match its header", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 963, height: 1037 });
+  await openNewPlan(page, learner("library-browser-963"));
+  const library = browserRegion(page);
+  await expect(library.getByTestId("library-count")).toHaveText("5 tracks");
+
+  const card = page.getByRole("region", { name: "New plan" });
+  const edges = async () => {
+    const [cardBox, libraryBox, listBox] = await Promise.all([card.boundingBox(), library.boundingBox(), library.locator(".lb-scroll").boundingBox()]);
+    if (cardBox === null || libraryBox === null || listBox === null) throw new Error("the card, the browser or its list is not on screen");
+    return { card: cardBox.x + cardBox.width, library: libraryBox.x + libraryBox.width, list: listBox.x + listBox.width };
+  };
+  const { card: cardRight, library: libraryRight, list: listRight } = await edges();
+  expect(libraryRight).toBeLessThanOrEqual(cardRight);
+  expect(listRight).toBeLessThanOrEqual(cardRight);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  // Too narrow there for one row of columns: two lines a track, and no column headers over them.
+  await expect(library).toHaveAttribute("data-layout", "narrow");
+  await expect(library.locator(".lb-head")).toHaveCount(0);
+
+  // The filters open from a control that shows, and still fit the card.
+  const toggle = library.locator("summary", { hasText: "Filters" });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(library.getByLabel("Genre filter")).toBeVisible();
+  expect((await edges()).library).toBeLessThanOrEqual(cardRight);
+});

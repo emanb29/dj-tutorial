@@ -1,9 +1,13 @@
-/* The library browser: two lines per track at phone width (title, then artist · BPM · key · length),
-   one row of columns from 760 px. Rows are ROW_HEIGHT (56 px, LibraryBrowser.tsx) tall: the list draws
-   only those in view, so the height must not change with the content. */
+/* The library browser: two lines per track (title, then artist · BPM · key · length), or one row of
+   columns once the browser itself is wide enough for them (data-layout="wide", chosen in layout.ts from
+   the browser's measured width, never the window's). The header and the rows share one template,
+   --lb-columns, so the headers sit over their cells. Rows are ROW_HEIGHT (56 px, LibraryBrowser.tsx)
+   tall: the list draws only those in view, so the height must not change with the content. */
 
 .library-browser {
   display: grid;
+  /* One column no wider than the browser: a wide child (the header) must not stretch it past its card. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   min-width: 0;
 }
@@ -14,6 +18,7 @@
   flex-wrap: wrap;
   align-items: end;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .lb-search {
@@ -31,6 +36,7 @@
 
 .lb-field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   color: var(--ink-dim);
   font-size: var(--text-xs);
@@ -84,24 +90,61 @@
   padding: 0 var(--space-2);
 }
 
-.lb-filters summary {
+/* The filters' fold: a button-like control with an arrow (▸ closed, ▾ open), not a bare heading. */
+.lb-filters > summary {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
   min-height: 44px;
   display: flex;
   align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+  color: var(--ink);
+  list-style: none;
   cursor: pointer;
   font-size: var(--text-sm);
 }
 
+.lb-filters > summary::-webkit-details-marker {
+  display: none;
+}
+
+.lb-filters > summary::before {
+  content: "▸";
+}
+
+.lb-filters[open] > summary::before {
+  content: "▾";
+}
+
+.lb-filters[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
 .lb-filter-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(9.5rem, 100%), 1fr));
   gap: var(--space-2);
   padding-bottom: var(--space-2);
+}
+
+/* A long genre or artist name must not widen its cell past the browser: the list shortens instead. */
+.lb-filter-grid > .lb-field {
+  min-width: 0;
+}
+
+.lb-filter-grid > .lb-field select {
+  width: 100%;
 }
 
 .lb-scroll {
   position: relative;
   max-height: min(60vh, 560px);
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--panel-edge);
@@ -125,8 +168,8 @@
   grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   grid-template-rows: auto auto;
   align-items: center;
-  column-gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
+  column-gap: var(--lb-gap);
+  padding: var(--space-1) var(--lb-inset);
   border-bottom: 1px solid var(--panel-edge);
   overflow: hidden;
   font-size: var(--text-sm);
@@ -184,9 +227,12 @@
   display: none;
 }
 
+/* Its own width, whatever the column: LibraryBrowser.tsx reads it to size the column. */
 .lb-row .lb-actions {
   grid-column: 5;
   grid-row: 1 / span 2;
+  justify-self: end;
+  width: max-content;
   display: flex;
   gap: var(--space-1);
   overflow: visible;
@@ -209,54 +255,49 @@
   font-variant-numeric: tabular-nums;
 }
 
-.lb-head {
-  display: none;
+/* One row of columns. These selectors outrank the two-line ones above, cell by cell. */
+.library-browser[data-layout="wide"] .lb-row:not(.lb-facet),
+.library-browser[data-layout="wide"] .lb-head {
+  grid-template-columns: var(--lb-columns);
+  grid-template-rows: auto;
 }
 
-@media (min-width: 760px) {
-  .library-browser .lb-row,
-  .lb-head {
-    grid-template-columns: minmax(8rem, 2fr) minmax(6rem, 1.4fr) minmax(5rem, 1fr) minmax(5rem, 1fr) 6.5em 6.5em 3.5em 5em 5em 4em auto;
-    grid-template-rows: auto;
-  }
+.library-browser[data-layout="wide"] .lb-row:not(.lb-facet) > span {
+  display: block;
+  grid-row: 1;
+  grid-column: auto;
+}
 
-  .lb-head {
-    display: grid;
-    column-gap: var(--space-2);
-    padding: 0 var(--space-3);
-  }
+.library-browser[data-layout="wide"] .lb-row:not(.lb-facet) > .lb-actions {
+  display: flex;
+}
 
-  .lb-row > span,
-  .lb-row .lb-col-album,
-  .lb-row .lb-col-genre,
-  .lb-row .lb-col-rating,
-  .lb-row .lb-col-playCount,
-  .lb-row .lb-col-gridReady {
-    display: block;
-    grid-row: 1;
-    grid-column: auto;
-  }
+.lb-head {
+  display: grid;
+  column-gap: var(--lb-gap);
+  /* The list's 1 px border, then the rows' own inset; on the right, the list's scrollbar as well. */
+  padding: 0 calc(var(--lb-inset) + 1px + var(--lb-scrollbar)) 0 calc(var(--lb-inset) + 1px);
+  min-width: 0;
+  overflow: hidden;
+}
 
-  .lb-row .lb-actions {
-    display: flex;
-    grid-column: auto;
-    grid-row: 1;
-  }
+.lb-col {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
 
-  .lb-col {
-    min-height: 32px;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--ink-dim);
-    font: inherit;
-    font-size: var(--text-xs);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .lb-col[aria-sort="ascending"],
-  .lb-col[aria-sort="descending"] {
-    color: var(--ink);
-  }
+.lb-col[aria-sort="ascending"],
+.lb-col[aria-sort="descending"] {
+  color: var(--ink);
 }

@@ -24,7 +24,7 @@
  * from a click, asks. Local tracks are not shareable: their licence is unknown.
  */
 import { abortedError, decodeAndHash, matchesQuery, type AudioDecoder } from "../load-audio.ts";
-import { isAudioFile, memoryHandleStore, trackForFile, type DirectoryHandleLike, type HandleStore } from "../local-files.ts";
+import { hasWords, isAudioFile, memoryHandleStore, trackForFile, type DirectoryHandleLike, type HandleStore } from "../local-files.ts";
 import { camelotFromTonality, knownGridFromRekordbox, rekordboxGrid } from "../rekordbox/grid.ts";
 import type { RekordboxLink, RekordboxStatus, XmlCandidate } from "../rekordbox/rekordbox-link.ts";
 import type { RekordboxTrack } from "../rekordbox/xml.ts";
@@ -200,7 +200,8 @@ function withRekordbox(base: Track, linked: RekordboxTrack | null): Track {
   const key = camelot ?? (filled(linked.tonality) ? linked.tonality.trim() : null);
   return {
     ...base,
-    ...(filled(linked.name) ? { title: linked.name.trim() } : {}),
+    // A title of only punctuation ("-") is as good as none: the file name's stays.
+    ...(hasWords(linked.name) ? { title: linked.name.trim() } : {}),
     ...(filled(linked.artist) ? { artist: linked.artist.trim() } : {}),
     ...(filled(linked.genre) ? { genre: linked.genre.trim() } : {}),
     ...(bpm === null ? {} : { bpmHint: bpm }),

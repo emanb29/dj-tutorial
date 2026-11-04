@@ -9,7 +9,7 @@
 // the rows; BROWSE press opens a list (sort, browse by, a filter) or presses a button; LOAD A / LOAD B
 // pick the track with the ring (the picker says what picking does); SHIFT + BROWSE leaves an open
 // facet list. The keyboard: Tab or ↑ / ↓, Enter (A), Shift + Enter (B), Esc.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useControllerConnected } from "../controller/KeyHint.tsx";
 import { FLX4_LOAD_EVENT, TYPING_NOTICE, type Flx4LoadDetail } from "../controller/focus-navigation.ts";
 import {
@@ -31,12 +31,13 @@ import {
   type LibraryRow,
   type SortColumn,
 } from "./browse.ts";
+import { columnTemplate, COLUMN_GAP_PX, layoutFor, ROW_PADDING_PX, shownColumns } from "./layout.ts";
 import { LibraryFilters } from "./LibraryFilters.tsx";
 import { readBrowseState, writeBrowseState, type BrowseState } from "./remembered.ts";
 import { VirtualList } from "./VirtualList.tsx";
 import "./library-browser.css";
 
-/** One row's height, px: two lines at phone width, one row of columns on a wide screen (library-browser.css). */
+/** One row's height, px: two lines when narrow, one row of columns when they fit (layout.ts). */
 export const ROW_HEIGHT = 56;
 
 export type Deck = "A" | "B";
@@ -71,6 +72,24 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
   const browseBySelect = useRef<HTMLSelectElement>(null);
   const controllerConnected = useControllerConnected();
   const { filter, sort, browseBy } = state;
+  const [widthPx, setWidthPx] = useState(0);
+  const [actionsPx, setActionsPx] = useState(0);
+  const [scrollbarPx, setScrollbarPx] = useState(0);
+
+  // The layout follows the browser's own width (a card on a wide screen can be narrow), so measure it.
+  useLayoutEffect(() => {
+    const element = section.current;
+    if (element === null) return;
+    const measure = () => {
+      setWidthPx(element.clientWidth);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     writeBrowseState(picker, state);
@@ -79,6 +98,20 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
   const shown = useMemo(() => sortRows(filterRows(rows, filter), sort), [rows, filter, sort]);
   const facets = useMemo(() => (browseBy === null ? null : facetValues(rows, filter, browseBy)), [rows, filter, browseBy]);
   const byKey = useMemo(() => new Map(shown.map((row) => [row.key, row])), [shown]);
+  const columns = useMemo(() => shownColumns(rows), [rows]);
+  const layout = layoutFor(widthPx - scrollbarPx, columns, actionsPx);
+  const sortChoices = columns.includes(sort.column) ? columns : [...columns, sort.column];
+  const layoutStyle = { "--lb-columns": columnTemplate(columns, actionsPx), "--lb-gap": `${String(COLUMN_GAP_PX)}px`, "--lb-inset": `${String(ROW_PADDING_PX)}px`, "--lb-scrollbar": `${String(scrollbarPx)}px` } as CSSProperties;
+
+  // The row's buttons (+ Add, → A, → B) are the picker's: their width is read off a drawn row. The
+  // list's scrollbar narrows the rows and not the header, so the header makes room for it too.
+  // React skips the render when a measure is unchanged.
+  useLayoutEffect(() => {
+    const drawn = section.current?.querySelector<HTMLElement>("li[data-library] .lb-actions");
+    setActionsPx(drawn == null ? 0 : Math.ceil(drawn.getBoundingClientRect().width));
+    const scroller = section.current?.querySelector<HTMLElement>(".lb-scroll");
+    setScrollbarPx(scroller == null ? 0 : Math.max(0, scroller.offsetWidth - scroller.clientWidth - 2));
+  }, [shown, browseBy, widthPx]);
 
   const update = (next: Partial<BrowseState>) => {
     setState((now) => ({ ...now, ...next }));
@@ -130,6 +163,8 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
       className="library-browser"
       aria-label="Library browser"
       data-picker={picker}
+      data-layout={layout}
+      style={layoutStyle}
       onKeyDown={(event) => {
         // SHIFT + BROWSE (Esc) leaves an open facet list, before the page's own back.
         if (event.key === "Escape" && browseBy !== null) {
@@ -187,7 +222,7 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
               if (column !== undefined) update({ sort: { ...sort, column } });
             }}
           >
-            {SORT_COLUMNS.map((column) => (
+            {sortChoices.map((column) => (
               <option key={column} value={column}>
                 {COLUMN_NAMES[column]}
               </option>
@@ -274,23 +309,27 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
         <p className="lb-note">No tracks match. Clear a filter to see more.</p>
       ) : (
         <>
-          <div className="lb-head" data-nav-skip>
-            {SORT_COLUMNS.map((column) => (
-              <button
-                key={column}
-                type="button"
-                tabIndex={-1}
-                className={`lb-col lb-col-${column}`}
-                aria-sort={sort.column === column ? (sort.descending ? "descending" : "ascending") : "none"}
-                onClick={() => {
-                  sortBy(column);
-                }}
-              >
-                {COLUMN_NAMES[column]}
-                {sort.column === column ? ` ${pressed(sort.descending)}` : ""}
-              </button>
-            ))}
-          </div>
+          {/* Two lines have no columns to head: the Sort list sorts there. */}
+          {layout === "wide" ? (
+            <div className="lb-head" data-nav-skip>
+              {columns.map((column) => (
+                <button
+                  key={column}
+                  type="button"
+                  tabIndex={-1}
+                  className="lb-col"
+                  data-column={column}
+                  aria-sort={sort.column === column ? (sort.descending ? "descending" : "ascending") : "none"}
+                  onClick={() => {
+                    sortBy(column);
+                  }}
+                >
+                  {COLUMN_NAMES[column]}
+                  {sort.column === column ? ` ${pressed(sort.descending)}` : ""}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <VirtualList<LibraryRow>
             items={shown}
             rowHeight={ROW_HEIGHT}
@@ -305,7 +344,7 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
               onLoad(row, event.shiftKey ? "B" : "A");
               return true;
             }}
-            render={(row) => <TrackCells row={row} actions={actions?.(row) ?? null} />}
+            render={(row) => <TrackCells row={row} columns={columns} actions={actions?.(row) ?? null} />}
           />
         </>
       )}
@@ -313,19 +352,28 @@ export function LibraryBrowser({ picker, rows, onLoad, onLoadOffList, onRowFocus
   );
 }
 
-function TrackCells({ row, actions }: { readonly row: LibraryRow; readonly actions: ReactNode }) {
+const CELLS: Readonly<Record<SortColumn, (row: LibraryRow) => ReactNode>> = {
+  title: (row) => row.title,
+  artist: (row) => row.artist ?? "Unknown artist",
+  album: (row) => row.album ?? "",
+  genre: (row) => row.genre ?? "",
+  bpm: (row) => bpmText(row.bpm),
+  key: (row) => keyText(row.camelot),
+  length: (row) => lengthText(row.lengthSec),
+  rating: (row) => (row.rating === null ? "" : <span aria-label={`${String(row.rating)} stars`}>{"★".repeat(row.rating)}</span>),
+  playCount: (row) => (row.playCount === null ? "" : `${row.playCount.toLocaleString()} plays`),
+  gridReady: (row) => (row.gridReady ? <span aria-label="Grid ready">▦ grid</span> : ""),
+};
+
+/** The row's cells, one per shown column, in the header's order; the picker's buttons last. */
+function TrackCells({ row, columns, actions }: { readonly row: LibraryRow; readonly columns: readonly SortColumn[]; readonly actions: ReactNode }) {
   return (
     <>
-      <span className="lb-col-title lb-title">{row.title}</span>
-      <span className="lb-col-artist">{row.artist ?? "Unknown artist"}</span>
-      <span className="lb-col-album">{row.album ?? ""}</span>
-      <span className="lb-col-genre">{row.genre ?? ""}</span>
-      <span className="lb-col-bpm">{bpmText(row.bpm)}</span>
-      <span className="lb-col-key">{keyText(row.camelot)}</span>
-      <span className="lb-col-length">{lengthText(row.lengthSec)}</span>
-      <span className="lb-col-rating">{row.rating === null ? "" : <span aria-label={`${String(row.rating)} stars`}>{"★".repeat(row.rating)}</span>}</span>
-      <span className="lb-col-playCount">{row.playCount === null ? "" : `${row.playCount.toLocaleString()} plays`}</span>
-      <span className="lb-col-gridReady">{row.gridReady ? <span aria-label="Grid ready">▦ grid</span> : ""}</span>
+      {columns.map((column) => (
+        <span key={column} className={column === "title" ? "lb-col-title lb-title" : `lb-col-${column}`}>
+          {CELLS[column](row)}
+        </span>
+      ))}
       {actions === null ? null : <span className="lb-actions">{actions}</span>}
     </>
   );
