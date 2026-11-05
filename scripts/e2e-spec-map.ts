@@ -34,8 +34,8 @@ function lessonGroup(lessonIds: readonly string[], catalogue: readonly string[],
 export const SPEC_RULES: readonly SpecRule[] = [
   // The check job runs every unit and browser test; changing one, or its fixtures, needs no end-to-end run.
   { paths: ["**/*.test.ts", "**/*.test.tsx", "src/**/test-support.ts", "src/checks/testing/**", "src/tracks/fixtures/**"], specs: [] },
-  // Docs, prototypes and the composer are outside the build.
-  { paths: ["docs/**", "**/*.md", "tools/composer/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
+  // Docs, prototypes and tools/ (the composer, the remix finder: tooling with its own tests, never imported by the app) are outside the build.
+  { paths: ["docs/**", "**/*.md", "tools/**", "prototypes/**", "spikes/**", ".claude/**"], specs: [] },
   // Mix plans (ISS-186): its store, resolution and model are unit and browser tested; its track picker
   // is the library browser, played end to end in library-browser.spec.ts.
   { paths: ["src/app/mix-plans/**"], specs: ["e2e/library-browser.spec.ts"] },
